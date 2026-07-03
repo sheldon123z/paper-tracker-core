@@ -1,0 +1,52 @@
+# claude-auto-review-loop 项目配置
+# 由 setup.sh 自动生成于 2026-04-03
+
+project:
+  name: "paper-tracker-pro"
+  root: "/Users/xiaodongzheng/exps/paper-tracker-pro"
+  repo: "ChenShi-Tech/paper-tracker-pro"
+  tech_stack: ""
+  language: ""
+
+commands:
+  claude: "claude"
+  claude_variants:
+    - cmd: "claude"
+      desc: "默认 (Anthropic API)"
+  lint: "make lint"
+  test: "pytest backend/tests/ && cd frontend && npm run test"
+  format: "cd backend && ruff format app/"
+
+discovery:
+  incremental_interval: "6h"
+  full_interval: "7d"
+
+fixer:
+  interval: "1h"
+  max_prs_per_round: 3
+  max_lines_per_pr: 200
+
+reviewer:
+  interval: "1h"
+  offset_minutes: 40
+  max_shelve_rounds: 3
+  needs_human_files:
+
+contributing:
+  commit_format: "<type>: <描述>"
+
+known_pitfalls:
+"
+
+roborev:
+  enabled: true
+  post_commit_review: "commit"
+  excluded_commit_patterns:
+    - "[roborev]"
+    - "style: ruff"
+    - "chore:"
+  hook_script: ".roborev-issue.sh"
+  auto_fix: false
+
+sensitive_files:
+

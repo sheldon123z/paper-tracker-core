@@ -1,0 +1,6 @@
+lint_cmd=make lint
+test_cmd=pytest backend/tests/ && cd frontend && npm run test
+format_cmd=cd backend && ruff format app/
+critical_files=backend/app/main.py backend/app/models.py backend/app/database.py frontend/src/api.js frontend/src/store.js CLAUDE.md .env.example
+coding_standards=中文代码审查;严格 Git Worktree 隔离开发;1 Issue = 1 Branch + 1 PR;数据删除前必须备份;主工作区保持 main 分支
+module_structure=多服务架构：backend (FastAPI), frontend (React), copilot-runtime (Express), notion-worker (TS), cf-worker (TS)

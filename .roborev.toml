@@ -1,0 +1,36 @@
+# Default agent for this repo when no workflow-specific agent is set.
+agent = 'codex'
+# Backup agent for this repo if the primary agent fails.
+backup_agent = 'claude-code'
+# Extra review instructions added to prompts for this repo.
+review_guidelines = '''所有 review 结论、摘要、问题说明、修复建议默认使用简体中文输出。代码、命令、路径、配置键名、类名、函数名、错误消息原文保持不翻译。
+
+项目特定审查规则 (Paper Tracker Pro):
+1. Fernet 加密: ENCRYPTION_KEY 必须惰性加载（不能在模块 import 时读取），否则 dotenv 未加载会导致启动失败
+2. litellm 供应商前缀: openai→"openai", claude→"anthropic", deepseek→"openai", 自定义供应商用 "openai/" 前缀 + base_url
+3. ResolvedLLMConfig: frozen=True dataclass，新字段必须有默认值且放在末尾
+4. AG-UI 工具返回格式: 必须返回 { "type": tool_name, "summary": text, "data": structured_data }，不能返回裸字符串
+5. 数据库迁移: 新列用 ALTER TABLE ADD COLUMN（db_migrations.py），新表用 CREATE TABLE IF NOT EXISTS
+6. API 路由: 所有路由注册在 backend/app/routes/ 下，前端通过 VITE_API_BASE_URL 连接
+7. CopilotRuntime 代理: Express 代理层桥接 CopilotKit 到 FastAPI AG-UI，修改端点时需同步更新 copilot-runtime/server.js
+8. 敏感文件: 不读取 .env / ENCRYPTION_KEY / *_API_KEY 的实际值
+9. Token 提取: litellm 返回 usage 的路径因供应商而异（usage_metadata 或 response_metadata.token_usage），必须有 fallback
+10. 日志格式: logger 使用 %s lazy 格式化，禁止 f-string 日志'''
+# Filenames or glob patterns to exclude from review diffs for this repo.
+exclude_patterns = ['*.md', '*.txt', 'docs/**', 'frontend/package-lock.json', 'copilot-runtime/package-lock.json', 'notion-worker/package-lock.json', 'cf-worker/package-lock.json', '*.spec', 'design-system/**']
+# Display name shown for this repo in the TUI and output.
+display_name = 'PaperTrackerPro'
+# Reasoning level for reviews in this repo: fast, standard, medium, thorough, or maximum.
+review_reasoning = 'medium'
+# Commit message substrings that should skip review for this repo.
+excluded_commit_patterns = ['[roborev]', 'roborev close', 'style: ruff', 'chore:']
+# Automatic post-commit review mode for this repo: commit or branch.
+post_commit_review = 'commit'
+# Agent override for fix in this repo.
+fix_agent = 'codex'
+
+# 评审失败时自动创建 GitHub Issue + 触发 roborev refine 迭代修复
+# HOOK 已禁用 - 改为手动通过子 agent 修复
+# [[hooks]]
+# event = 'review.completed'
+# command = "[ '{verdict}' = 'F' ] && \"$(git rev-parse --show-toplevel)/.roborev-issue.sh\" {job_id} {sha}"

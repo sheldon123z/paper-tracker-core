@@ -1,0 +1,204 @@
+import { useEffect, useState } from 'react'
+import api from '../../api'
+import { Card } from '../ui'
+import BudgetSection from './BudgetSection'
+
+export default function MonitorSection() {
+  const [summary, setSummary] = useState(null)
+  const [byModel, setByModel] = useState([])
+  const [timeline, setTimeline] = useState([])
+  const [cost, setCost] = useState(null)
+  const [configs, setConfigs] = useState([])
+  const [days, setDays] = useState(30)
+
+  useEffect(() => {
+    Promise.all([
+      api.get('/api/usage/summary', { params: { days } }),
+      api.get('/api/usage/by-model', { params: { days } }),
+      api.get('/api/usage/timeline', { params: { days } }),
+      api.get('/api/usage/cost', { params: { days } }),
+      api.get('/api/llm-configs'),
+    ]).then(([sumR, modelR, tlR, costR, cfgR]) => {
+      setSummary(sumR.data)
+      setByModel(modelR.data)
+      setTimeline(tlR.data)
+      setCost(costR.data)
+      setConfigs(cfgR.data)
+    }).catch(() => {})
+  }, [days])
+
+  const healthCounts = configs.reduce(
+    (acc, c) => {
+      const s = c.health_status || 'unknown'
+      acc[s] = (acc[s] || 0) + 1
+      return acc
+    },
+    {},
+  )
+
+  return (
+    <div className="space-y-4">
+      {/* Period selector */}
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>统计周期:</span>
+        {[7, 30, 90].map((d) => (
+          <button
+            key={d}
+            onClick={() => setDays(d)}
+            className="px-2 py-1 rounded text-xs cursor-pointer transition-colors"
+            style={{
+              backgroundColor: days === d ? 'var(--accent)' : 'var(--bg-secondary)',
+              color: days === d ? '#fff' : 'var(--text-secondary)',
+              border: 'none',
+            }}
+          >
+            {d} 天
+          </button>
+        ))}
+      </div>
+
+      {/* Stat cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatCard label="总模型数" value={configs.length} />
+        <StatCard label="健康模型" value={healthCounts.ok || 0} color="var(--success)" />
+        <StatCard label="总调用次数" value={summary?.total_calls || 0} />
+        <StatCard label="总 Tokens" value={formatNum(summary?.total_tokens || 0)} />
+      </div>
+
+      {/* Health matrix */}
+      <Card title="模型健康状态">
+        <div className="flex flex-wrap gap-2">
+          {configs.map((c) => (
+            <div
+              key={c.id}
+              className="flex items-center gap-1.5 px-2 py-1 rounded text-xs"
+              style={{ backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)' }}
+              title={`${c.display_name || c.model_name}: ${c.health_status}`}
+            >
+              <span
+                style={{
+                  width: 8, height: 8, borderRadius: '50%',
+                  backgroundColor: c.health_status === 'ok' ? '#22c55e' : c.health_status === 'unknown' ? '#94a3b8' : '#ef4444',
+                }}
+              />
+              <span className="truncate" style={{ maxWidth: 100 }}>{c.display_name || c.model_name}</span>
+            </div>
+          ))}
+          {configs.length === 0 && <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>暂无模型</span>}
+        </div>
+      </Card>
+
+      {/* Usage by model */}
+      <Card title="按模型使用量">
+        {byModel.length === 0 ? (
+          <p className="text-xs py-4 text-center" style={{ color: 'var(--text-secondary)' }}>暂无使用数据</p>
+        ) : (
+          <div className="space-y-2">
+            {byModel.map((m, i) => {
+              const maxTokens = Math.max(...byModel.map((x) => x.total_tokens || 1))
+              const pct = Math.round(((m.total_tokens || 0) / maxTokens) * 100)
+              return (
+                <div key={i}>
+                  <div className="flex items-center justify-between text-xs mb-0.5">
+                    <span style={{ color: 'var(--text-primary)' }}>
+                      {m.model_name} <span style={{ color: 'var(--text-secondary)' }}>({m.provider})</span>
+                    </span>
+                    <span className="tabular-nums" style={{ color: 'var(--text-secondary)' }}>
+                      {m.call_count} 次 / {formatNum(m.total_tokens)} tok
+                    </span>
+                  </div>
+                  <div className="h-1.5 rounded-full" style={{ backgroundColor: 'var(--bg-primary)' }}>
+                    <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: 'var(--accent)', transition: 'width 0.3s' }} />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </Card>
+
+      {/* Cost summary */}
+      {cost && (
+        <Card title="成本估算">
+          <div className="flex items-baseline gap-2 mb-3">
+            <span className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
+              ${cost.total_estimated_cost_usd?.toFixed(4) || '0.00'}
+            </span>
+            <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>/ {days} 天</span>
+          </div>
+          {cost.breakdown?.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs" style={{ color: 'var(--text-primary)' }}>
+                <thead>
+                  <tr style={{ backgroundColor: 'var(--bg-secondary)' }}>
+                    <th className="px-2 py-1 text-left font-medium">模型</th>
+                    <th className="px-2 py-1 text-right font-medium">调用</th>
+                    <th className="px-2 py-1 text-right font-medium">Tokens</th>
+                    <th className="px-2 py-1 text-right font-medium">估算成本</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cost.breakdown.map((row, i) => (
+                    <tr key={i} className="border-t" style={{ borderColor: 'var(--border)' }}>
+                      <td className="px-2 py-1 font-mono">{row.model_name}</td>
+                      <td className="px-2 py-1 text-right tabular-nums">{row.call_count}</td>
+                      <td className="px-2 py-1 text-right tabular-nums">{formatNum(row.total_tokens)}</td>
+                      <td className="px-2 py-1 text-right tabular-nums">
+                        {row.estimated_cost_usd != null ? `$${row.estimated_cost_usd.toFixed(4)}` : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* Timeline */}
+      {timeline.length > 0 && (
+        <Card title="调用趋势">
+          <div className="flex items-end gap-px" style={{ height: 80 }}>
+            {(() => {
+              const maxCalls = Math.max(...timeline.map((t) => t.calls || 1))
+              return timeline.map((t, i) => (
+                <div
+                  key={i}
+                  className="flex-1 rounded-t"
+                  style={{
+                    backgroundColor: 'var(--accent)',
+                    height: `${Math.max(2, ((t.calls || 0) / maxCalls) * 100)}%`,
+                    opacity: 0.7,
+                  }}
+                  title={`${t.date}: ${t.calls} 次, ${formatNum(t.tokens)} tokens`}
+                />
+              ))
+            })()}
+          </div>
+          <div className="flex justify-between text-[10px] mt-1" style={{ color: 'var(--text-secondary)' }}>
+            <span>{timeline[0]?.date}</span>
+            <span>{timeline[timeline.length - 1]?.date}</span>
+          </div>
+        </Card>
+      )}
+
+      {/* Budget alerts */}
+      <BudgetSection />
+    </div>
+  )
+}
+
+function StatCard({ label, value, color }) {
+  return (
+    <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-secondary)' }}>
+      <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>{label}</div>
+      <div className="text-xl font-bold mt-0.5" style={{ color: color || 'var(--text-primary)' }}>{value}</div>
+    </div>
+  )
+}
+
+function formatNum(n) {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
+  return String(n)
+}

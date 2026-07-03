@@ -1,0 +1,133 @@
+name: Build and Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            platform: macos-arm64
+            pkg_target: node18-macos-arm64
+          - os: macos-13
+            platform: macos-x64
+            pkg_target: node18-macos-x64
+          - os: windows-latest
+            platform: windows-x64
+            pkg_target: node18-win-x64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      # ---------- Frontend ----------
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          cp .env.packaging .env.production.local
+          npm run build
+          rm -f .env.production.local
+
+      # ---------- CopilotRuntime ----------
+      - name: Bundle CopilotRuntime
+        working-directory: copilot-runtime
+        run: |
+          npm ci
+          npx esbuild server.js --bundle --platform=node --target=node18 --outfile=dist/server.cjs --format=cjs
+
+      - name: Package CopilotRuntime binary
+        working-directory: copilot-runtime
+        run: npx @yao-pkg/pkg dist/server.cjs --target ${{ matrix.pkg_target }} --output dist/bin/copilot-runtime
+
+      # ---------- Backend + PyInstaller ----------
+      - name: Install Python dependencies
+        working-directory: backend
+        run: |
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Create .env.example
+        run: |
+          cat > .env.example << 'EOF'
+          # PaperTrackerPro Configuration
+          # ENCRYPTION_KEY=
+          # DEEPSEEK_API_KEY=
+          # OPENAI_API_KEY=
+          EOF
+
+      - name: Build with PyInstaller
+        run: pyinstaller paper_tracker.spec --noconfirm
+
+      # ---------- Assemble distribution ----------
+      - name: Copy CopilotRuntime binary (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          cp copilot-runtime/dist/bin/copilot-runtime dist/PaperTrackerPro/ || true
+          cp .env.example dist/PaperTrackerPro/
+
+      - name: Copy CopilotRuntime binary (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          Copy-Item copilot-runtime/dist/bin/copilot-runtime.exe dist/PaperTrackerPro/ -ErrorAction SilentlyContinue
+          Copy-Item .env.example dist/PaperTrackerPro/
+
+      - name: Create README
+        run: |
+          cat > dist/PaperTrackerPro/README.txt << 'EOF'
+          PaperTrackerPro - Academic Paper Tracking System
+          1. Edit .env file and add your API keys
+          2. Run PaperTrackerPro to start
+          3. Browser opens at http://localhost:5002
+          EOF
+
+      # ---------- Package ----------
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          cd dist
+          zip -r PaperTrackerPro-${{ matrix.platform }}.zip PaperTrackerPro/
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        run: Compress-Archive -Path dist/PaperTrackerPro -DestinationPath dist/PaperTrackerPro-${{ matrix.platform }}.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PaperTrackerPro-${{ matrix.platform }}
+          path: dist/PaperTrackerPro-${{ matrix.platform }}.zip
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: artifacts/**/*.zip

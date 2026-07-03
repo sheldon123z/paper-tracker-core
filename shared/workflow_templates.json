@@ -1,0 +1,263 @@
+{
+  "version": 1,
+  "commonSteps": [
+    {
+      "id": "topic",
+      "label": "研究主题",
+      "type": "text",
+      "placeholder": "例如：检索增强生成在科研助手中的应用",
+      "required": true
+    },
+    {
+      "id": "timeRange",
+      "label": "检索时间范围",
+      "type": "select",
+      "options": ["近1年", "近3年", "近5年", "全部"],
+      "default": "近3年"
+    },
+    {
+      "id": "sources",
+      "label": "检索来源",
+      "type": "multiselect",
+      "options": ["本地论文库"],
+      "default": ["本地论文库"]
+    },
+    {
+      "id": "depth",
+      "label": "分析深度",
+      "type": "select",
+      "options": ["概要分析", "深度分析"],
+      "default": "深度分析"
+    }
+  ],
+  "templates": [
+    {
+      "id": "literature_survey",
+      "name": "文献调研",
+      "description": "自动检索相关论文、筛选重点文献并生成调研报告。",
+      "status": "active",
+      "execution": {
+        "stages": ["normalize", "search", "select", "analysis", "trends", "synthesis"],
+        "defaultSelectionCount": 8,
+        "synthesisGoal": "生成带有研究脉络、代表性方法、趋势与建议的文献综述。",
+        "synthesisInstructions": [
+          "报告需包含：研究背景、代表性工作脉络、方法分群、关键趋势、结论。",
+          "末尾必须包含 `## 建议` 与 `## 后续问题` 两个二级标题。"
+        ]
+      },
+      "ui": {
+        "icon": "📚",
+        "color": "#3b82f6",
+        "resultLabel": "调研报告",
+        "stageLabels": {
+          "queued": "已创建",
+          "normalize": "初始化",
+          "search": "文献检索",
+          "select": "重点筛选",
+          "analysis": "论文分析",
+          "trends": "趋势分析",
+          "synthesis": "报告生成",
+          "discussion": "结果追问",
+          "completed": "已完成"
+        },
+        "steps": [
+          {
+            "id": "deliverableStyle",
+            "label": "输出形式",
+            "type": "select",
+            "options": ["结构化综述", "重点摘要", "研究备忘录"],
+            "default": "结构化综述"
+          }
+        ]
+      }
+    },
+    {
+      "id": "trend_radar",
+      "name": "趋势分析",
+      "description": "追踪研究方向演进、热点主题和方法分布。",
+      "status": "active",
+      "execution": {
+        "stages": ["normalize", "search", "select", "trends", "synthesis"],
+        "defaultSelectionCount": 10,
+        "synthesisGoal": "生成趋势雷达，强调热点演化、增长方向和监测建议。",
+        "synthesisInstructions": [
+          "报告需包含：热点方向、增长信号、风险点、值得持续监测的子主题。",
+          "末尾必须包含 `## 建议` 与 `## 后续问题`。"
+        ]
+      },
+      "ui": {
+        "icon": "📈",
+        "color": "#f59e0b",
+        "resultLabel": "趋势雷达",
+        "stageLabels": {
+          "queued": "已创建",
+          "normalize": "初始化",
+          "search": "数据收集",
+          "select": "样本确认",
+          "trends": "趋势聚类",
+          "synthesis": "趋势总结",
+          "discussion": "结果追问",
+          "completed": "已完成"
+        },
+        "steps": [
+          {
+            "id": "trendFocus",
+            "label": "重点观察",
+            "type": "select",
+            "options": ["方法演进", "应用场景", "数据集与评测", "热点作者/机构"],
+            "default": "方法演进"
+          },
+          {
+            "id": "comparisonWindow",
+            "label": "对比窗口",
+            "type": "select",
+            "options": ["近2年 vs 近5年", "近1年 vs 近3年", "全量时间线"],
+            "default": "近2年 vs 近5年"
+          }
+        ]
+      }
+    },
+    {
+      "id": "paper_comparison",
+      "name": "论文对比",
+      "description": "围绕同一主题对比多篇论文的方法、指标和贡献。",
+      "status": "active",
+      "execution": {
+        "stages": ["normalize", "search", "select", "analysis", "comparison", "synthesis"],
+        "defaultSelectionCount": 3,
+        "synthesisGoal": "生成多篇论文对比报告，给出差异、互补性和选型建议。",
+        "synthesisInstructions": [
+          "报告需包含：对比维度表、主要差异、各论文适用场景、综合建议。",
+          "末尾必须包含 `## 建议` 与 `## 后续问题`。"
+        ]
+      },
+      "ui": {
+        "icon": "🔄",
+        "color": "#8b5cf6",
+        "resultLabel": "对比报告",
+        "stageLabels": {
+          "queued": "已创建",
+          "normalize": "初始化",
+          "search": "候选收集",
+          "select": "样本确认",
+          "analysis": "基础分析",
+          "comparison": "差异对比",
+          "synthesis": "结论生成",
+          "discussion": "结果追问",
+          "completed": "已完成"
+        },
+        "steps": [
+          {
+            "id": "comparisonFocus",
+            "label": "对比重点",
+            "type": "multiselect",
+            "options": ["方法设计", "实验结果", "创新点", "局限性"],
+            "default": ["方法设计", "实验结果"]
+          },
+          {
+            "id": "targetPaperCount",
+            "label": "目标论文数量",
+            "type": "select",
+            "options": ["3 篇", "5 篇", "8 篇"],
+            "default": "5 篇"
+          }
+        ]
+      }
+    },
+    {
+      "id": "gap_finder",
+      "name": "研究空白发现",
+      "description": "识别研究盲点、方法缺口和潜在突破方向。",
+      "status": "active",
+      "execution": {
+        "stages": ["normalize", "search", "select", "analysis", "gap", "synthesis"],
+        "defaultSelectionCount": 6,
+        "synthesisGoal": "生成研究空白分析，提出可执行的研究切入点。",
+        "synthesisInstructions": [
+          "报告需包含：已有研究覆盖、发现的空白、潜在切入点、验证建议。",
+          "末尾必须包含 `## 建议` 与 `## 后续问题`。"
+        ]
+      },
+      "ui": {
+        "icon": "🧭",
+        "color": "#10b981",
+        "resultLabel": "空白分析",
+        "stageLabels": {
+          "queued": "已创建",
+          "normalize": "初始化",
+          "search": "领域扫描",
+          "select": "代表论文",
+          "analysis": "问题归纳",
+          "gap": "空白识别",
+          "synthesis": "机会总结",
+          "discussion": "结果追问",
+          "completed": "已完成"
+        },
+        "steps": [
+          {
+            "id": "gapLens",
+            "label": "空白视角",
+            "type": "multiselect",
+            "options": ["理论假设", "实验设计", "数据与基准", "真实应用落地"],
+            "default": ["实验设计", "真实应用落地"]
+          },
+          {
+            "id": "noveltyGoal",
+            "label": "期望目标",
+            "type": "select",
+            "options": ["寻找新选题", "定位论文创新点", "验证项目方向"],
+            "default": "寻找新选题"
+          }
+        ]
+      }
+    },
+    {
+      "id": "submission_prep",
+      "name": "投稿准备",
+      "description": "汇总相关工作、评估新颖性并形成投稿行动方案。",
+      "status": "active",
+      "execution": {
+        "stages": ["normalize", "search", "select", "analysis", "comparison", "submission", "synthesis"],
+        "defaultSelectionCount": 6,
+        "synthesisGoal": "生成投稿准备简报，涵盖相关工作、差异化定位和 venue 建议。",
+        "synthesisInstructions": [
+          "报告需包含：相关工作概况、与目标方向最接近的工作、新颖性定位、投稿建议。",
+          "末尾必须包含 `## 建议` 与 `## 后续问题`。"
+        ]
+      },
+      "ui": {
+        "icon": "📝",
+        "color": "#ec4899",
+        "resultLabel": "投稿计划",
+        "stageLabels": {
+          "queued": "已创建",
+          "normalize": "初始化",
+          "search": "相关工作",
+          "select": "代表论文",
+          "analysis": "新颖性判断",
+          "comparison": "竞品对标",
+          "submission": "投稿规划",
+          "synthesis": "总结合成",
+          "discussion": "结果追问",
+          "completed": "已完成"
+        },
+        "steps": [
+          {
+            "id": "submissionTarget",
+            "label": "目标投稿类型",
+            "type": "select",
+            "options": ["顶会", "期刊", "Workshop", "暂未确定"],
+            "default": "暂未确定"
+          },
+          {
+            "id": "readiness",
+            "label": "当前完成度",
+            "type": "select",
+            "options": ["只有想法", "已有实验", "已有初稿", "接近投稿"],
+            "default": "已有实验"
+          }
+        ]
+      }
+    }
+  ]
+}

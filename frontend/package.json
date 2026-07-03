@@ -1,0 +1,50 @@
+{
+  "name": "paper-tracker-core-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 3457",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 3457",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@capacitor/cli": "^8.2.0",
+    "@capacitor/core": "^8.2.0",
+    "@capacitor/ios": "^8.2.0",
+    "@copilotkit/react-core": "^1.54.0",
+    "@copilotkit/react-ui": "^1.54.0",
+    "@headlessui/react": "^2.2.9",
+    "@tanstack/react-table": "^8.21.3",
+    "axios": "^1.7.7",
+    "docx-preview": "^0.3.7",
+    "highlight.js": "^11.11.1",
+    "html-to-docx": "^1.8.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-markdown": "^10.1.0",
+    "react-pdf": "^10.4.1",
+    "react-router-dom": "^6.26.2",
+    "recharts": "^2.12.7",
+    "rehype-highlight": "^7.0.2",
+    "xlsx": "^0.18.5",
+    "zustand": "^5.0.11"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@vitejs/plugin-react": "^4.7.0",
+    "autoprefixer": "^10.4.20",
+    "jsdom": "^29.0.1",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.13",
+    "typescript": "^5.9.3",
+    "vite": "^5.4.8",
+    "vite-plugin-node-polyfills": "^0.25.0",
+    "vitest": "^4.1.2"
+  }
+}

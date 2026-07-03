@@ -1,0 +1,75 @@
+name: CI Checks
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  backend-lint:
+    name: Backend Lint (Ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install ruff
+      - run: ruff check backend/ --output-format=github
+
+  backend-syntax:
+    name: Backend Syntax Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m compileall backend/app/ -q
+
+  backend-test:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+    needs: backend-lint
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: pip install -r backend/requirements.txt pytest
+      - name: Run tests
+        run: python -m pytest backend/tests/ -v --tb=short
+        env:
+          ENCRYPTION_KEY: lK5o9r4iJmP2uV1xYw8nQaBcDeFgHiJkLmNoPqRsTuU=
+          JWT_SECRET_KEY: test-jwt-secret-key-for-ci-pipeline-only
+          DATABASE_URL: sqlite:///./test.db
+          LANGCHAIN_TRACING_V2: "false"
+
+  frontend-build:
+    name: Frontend Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Build frontend
+        working-directory: frontend
+        run: npm ci && npm run build
+
+  copilot-runtime-check:
+    name: CopilotRuntime Syntax Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        working-directory: copilot-runtime
+        run: npm ci
+      - name: Syntax check
+        working-directory: copilot-runtime
+        run: node -c server.js

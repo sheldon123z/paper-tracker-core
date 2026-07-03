@@ -1,0 +1,98 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build
+frontend/dist/
+frontend/frontend/
+frontend/ios/
+notion-worker/dist/
+notion-worker/node_modules/
+notion-worker/.env
+
+# Environment
+.env
+.env.local
+.env.production.local
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+*.db.bak
+*.sqlite
+*.sqlite3
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Runtime / local state
+backend/logs/
+backend/data/
+backend/graph_checkpoints.db-shm
+backend/graph_checkpoints.db-wal
+backend/=*
+workers.json
+results/
+
+# Agent / plugin configs (local only)
+.agents/
+.antigravity/
+.mcp.json
+
+# Claude Code (worktrees, plans, memory — local state)
+.claude/
+!.claude/settings.json
+!.claude/agents/
+!.claude/agents/*.md
+
+# OMC local state
+.omc/
+backend/.omc/
+
+# Conda environment (unused, backend uses .venv.bak/)
+.conda/
+
+# Cloudflare Worker (separate deploy)
+cf-worker/node_modules/
+cf-worker/dist/
+cf-worker/.dev.vars
+
+# MCP server
+mcp_server/__pycache__/
+.firecrawl/
+
+# PyInstaller
+*.spec.bak
+build/
+dist/
+
+# CopilotRuntime build artifacts
+copilot-runtime/dist/
+copilot-runtime-bin/
+
+# RoboRev autofix logs
+logs/

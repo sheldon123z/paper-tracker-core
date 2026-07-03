@@ -1,0 +1,22 @@
+{
+  "name": "paper-tracker-copilot-runtime",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "build:bundle": "esbuild server.js --bundle --platform=node --target=node18 --outfile=dist/server.cjs --format=cjs",
+    "build:pkg": "pkg dist/server.cjs --target node18-macos-arm64,node18-macos-x64,node18-win-x64 --out-path dist/bin"
+  },
+  "dependencies": {
+    "@ag-ui/client": "^0.0.47",
+    "@copilotkit/runtime": "^1.54.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
+    "express": "^4.21.0"
+  },
+  "devDependencies": {
+    "@yao-pkg/pkg": "^5.11.0",
+    "esbuild": "^0.20.0"
+  }
+}
