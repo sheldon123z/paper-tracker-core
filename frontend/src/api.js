@@ -20,8 +20,9 @@ api.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config
 
-    // Skip refresh for auth endpoints that should not trigger auto-refresh (login, register, refresh)
-    const shouldSkipRefresh = ['/api/auth/login', '/api/auth/register', '/api/auth/refresh'].includes(originalRequest.url)
+    // Skip refresh for auth endpoints and explicit session probes.
+    const shouldSkipRefresh = originalRequest.skipAuthRefresh
+      || ['/api/auth/login', '/api/auth/register', '/api/auth/refresh'].includes(originalRequest.url)
     if (shouldSkipRefresh) {
       return Promise.reject(error)
     }

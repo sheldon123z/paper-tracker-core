@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Paper Tracker Core">
+  <rect width="128" height="128" rx="24" fill="#0a1020"/>
+  <path d="M36 24h42l18 18v62H36z" fill="#f8fafc"/>
+  <path d="M78 24v20h18z" fill="#c7d2fe"/>
+  <path d="M48 58h32M48 72h32M48 86h20" stroke="#2563eb" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="90" cy="88" r="18" fill="#14b8a6"/>
+  <path d="m82 88 6 6 12-14" fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

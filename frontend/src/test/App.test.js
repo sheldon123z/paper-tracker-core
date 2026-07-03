@@ -9,9 +9,11 @@ vi.mock('../store', () => ({
       activeTabId: null,
       tabs: [],
       closeTab: vi.fn(),
+      user: { id: 1 },
       isAuthenticated: true,
       authPending: false,
       checkSession: vi.fn(),
+      clearAuth: vi.fn(),
     }
     return selector ? selector(state) : state
   },
@@ -124,9 +126,11 @@ describe('App Component', () => {
           activeTabId: null,
           tabs: [],
           closeTab: vi.fn(),
+          user: null,
           isAuthenticated: false,
           authPending: false,
           checkSession: vi.fn(),
+          clearAuth: vi.fn(),
         }
         return selector ? selector(state) : state
       },

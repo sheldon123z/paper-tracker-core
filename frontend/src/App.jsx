@@ -47,14 +47,19 @@ const SuspenseFallback = (
 )
 
 export default function App() {
-  const { darkMode, activeTabId, tabs, closeTab, isAuthenticated, checkSession, authPending } = useStore()
+  const { darkMode, activeTabId, tabs, closeTab, user, isAuthenticated, checkSession, clearAuth, authPending } = useStore()
   const location = useLocation()
   const isMobile = useIsMobile()
+  const userId = user?.id
 
   // Validate httpOnly cookie session on mount (replaces localStorage token check)
   useEffect(() => {
+    if (location.pathname === '/login' && !userId) {
+      clearAuth()
+      return
+    }
     checkSession()
-  }, [checkSession])
+  }, [checkSession, clearAuth, location.pathname, userId])
 
   const activeTab = tabs.find((t) => t.id === activeTabId)
 
