@@ -23,7 +23,6 @@ FastAPI 后端 (localhost:5002)
     | - LangGraph 图引擎
     | - SQLite 数据库
     |
-    +--> 可选 Cloudflare Worker + D1 sync
     +--> 可选 MCP server
 ```
 

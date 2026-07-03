@@ -10,7 +10,7 @@ Usage:
 
 Environment:
     PAPER_TRACKER_API_URL  - Base URL of the Paper Tracker API
-                             (default: https://api.sheldon123z.win)
+                             (default: http://localhost:5002)
 """
 
 import json
@@ -21,7 +21,7 @@ from typing import Optional
 import httpx
 from mcp.server.fastmcp import FastMCP
 
-API_BASE = os.environ.get("PAPER_TRACKER_API_URL", "https://api.sheldon123z.win")
+API_BASE = os.environ.get("PAPER_TRACKER_API_URL", "http://localhost:5002")
 
 _MCP_INSTRUCTIONS = (
     "MCP server for academic paper tracking, search, and AI analysis."

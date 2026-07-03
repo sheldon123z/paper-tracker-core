@@ -11,7 +11,7 @@ Paper Tracker Core 是一个面向学术论文追踪和研究助手的全栈系�
 - AI 助手、论文侧边对话和全局研究助手
 - 五类科研 workflow：文献调研、趋势分析、论文对比、研究空白、投稿准备
 - 多供应商大模型接入与统一运行时
-- 可选 Cloudflare D1 同步和 MCP 工具服务
+- MCP 工具服务
 
 ## 2. 服务结构
 
@@ -20,7 +20,6 @@ Paper Tracker Core 是一个面向学术论文追踪和研究助手的全栈系�
 - `backend/`：FastAPI + SQLAlchemy + SQLite，默认端口 `5002`
 - `frontend/`：React 18 + Vite + Tailwind + Zustand，默认端口 `3457`
 - `copilot-runtime/`：CopilotKit runtime 代理，默认端口 `4100`
-- `cf-worker/`：Cloudflare Worker + D1 同步路由
 - `mcp_server/`：面向 MCP 客户端的论文库工具
 
 主要交互链路：
@@ -29,7 +28,7 @@ Paper Tracker Core 是一个面向学术论文追踪和研究助手的全栈系�
 2. 后端 REST API 或 AG-UI 路由处理请求
 3. LangGraph 图编排调用统一 LLM Runtime
 4. LLM Runtime 通过 Provider Registry 适配具体模型供应商
-5. 结果回写前端、SQLite 数据库或 D1 同步端
+5. 结果回写前端或 SQLite 数据库
 
 ## 3. 本地开发命令
 

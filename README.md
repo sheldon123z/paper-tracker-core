@@ -1,6 +1,6 @@
 # Paper Tracker Core
 
-A full-stack research paper tracking system with RSS ingestion, AI-powered analysis, local paper library management, and multi-stage research workflows.
+A full-stack local research paper tracking system with RSS ingestion, AI-powered analysis, local paper library management, and multi-stage research workflows.
 
 ## Documentation
 
@@ -43,7 +43,6 @@ A full-stack research paper tracking system with RSS ingestion, AI-powered analy
 | Frontend | React 18, Vite 5, Tailwind CSS, Zustand |
 | AI | litellm, AG-UI, CopilotKit, SSE streaming |
 | Scheduler | APScheduler |
-| Edge sync | Cloudflare Worker, D1 |
 | Encryption | cryptography (Fernet) |
 
 ## Quick Start
@@ -158,7 +157,6 @@ paper-tracker-core/
 │   │   └── store.js         # Zustand state
 │   └── package.json
 ├── copilot-runtime/         # CopilotKit runtime proxy
-├── cf-worker/               # Cloudflare Worker and D1 sync
 ├── mcp_server/              # MCP server for paper tracking tools
 └── docs/                    # Architecture and workflow docs
 ```

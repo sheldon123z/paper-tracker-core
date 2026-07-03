@@ -186,9 +186,7 @@ def validate_runtime_secrets() -> dict[str, bool]:
     These are optional for development but recommended for production.
     """
     load_environment()
-    sync_secret = os.getenv("SYNC_SECRET", "").strip()
     return {
         "COPILOT_RUNTIME_SECRET": bool(os.getenv("COPILOT_RUNTIME_SECRET")),
         "LLM_CONFIG_ADMIN_TOKEN": bool(os.getenv("LLM_CONFIG_ADMIN_TOKEN")),
-        "SYNC_SECRET": bool(sync_secret) and sync_secret != "your-sync-secret-here",
     }

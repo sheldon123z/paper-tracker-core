@@ -4,7 +4,7 @@ This file provides guidance to Codex when working with code in this repository.
 
 ## Project Overview
 
-Paper Tracker Core is a full-stack academic paper tracking system with RSS ingestion, AI-powered analysis, local paper library management, attachment viewing, Cloudflare D1 sync, and AG-UI/CopilotKit workflows.
+Paper Tracker Core is a local-first full-stack academic paper tracking system with RSS ingestion, AI-powered analysis, local paper library management, attachment viewing, and AG-UI/CopilotKit workflows.
 
 ## Development Commands
 
@@ -35,14 +35,6 @@ npm install
 node server.js                    # Proxy server on port 4100
 ```
 
-### Cloudflare Worker
-
-```bash
-cd cf-worker
-npm install
-npm run build
-```
-
 ### One-Click Start
 
 ```bash
@@ -62,7 +54,6 @@ python scripts/scheduled_fetch.py --base-url http://localhost:5002
 - **Backend** (`backend/`): FastAPI + SQLAlchemy + SQLite on port 5002
 - **Frontend** (`frontend/`): React 18 + Vite + Tailwind + Zustand on port 3457
 - **Copilot Runtime** (`copilot-runtime/`): CopilotKit runtime proxy on port 4100
-- **Cloudflare Worker** (`cf-worker/`): Optional D1-backed edge routes and sync
 - **MCP Server** (`mcp_server/`): Paper tracking tools for MCP clients
 
 ### Backend Structure (`backend/app/`)
@@ -126,7 +117,7 @@ litellm provider prefixes: `openai` -> `openai`, `Codex` -> `anthropic`, `deepse
 2. Schema migrations run for existing local databases.
 3. Prompt templates, LLM configs, system prompts, and agent skills are seeded.
 4. APScheduler initializes jobs for active feeds.
-5. Optional D1 sync and database backup jobs are registered.
+5. Database backup jobs are registered.
 
 ## AG-UI Protocol Reference
 

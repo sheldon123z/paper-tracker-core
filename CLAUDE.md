@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Paper Tracker Core is a full-stack academic paper tracking system focused on local paper library management, RSS ingestion, AI analysis, AG-UI workflows, attachment viewing, and optional Cloudflare D1 sync.
+Paper Tracker Core is a local-first full-stack academic paper tracking system focused on local paper library management, RSS ingestion, AI analysis, AG-UI workflows, and attachment viewing.
 
 ## Development Commands
 
@@ -36,14 +36,6 @@ node server.js
 
 Runs the CopilotKit runtime proxy on `http://localhost:4100`.
 
-### Cloudflare Worker
-
-```bash
-cd cf-worker
-npm install
-npm run build
-```
-
 ### Manual Feed Ingestion
 
 ```bash
@@ -55,7 +47,6 @@ python scripts/scheduled_fetch.py --base-url http://localhost:5002
 - `backend/`: FastAPI, SQLAlchemy, SQLite, APScheduler, AG-UI endpoints, LLM configuration, paper/files/tags/feed APIs.
 - `frontend/`: React 18, Vite, Tailwind, Zustand, CopilotKit UI, workflow pages, paper viewer.
 - `copilot-runtime/`: Node/Express CopilotKit runtime proxy with AG-UI agents for paper, global, assistant, and workflow chats.
-- `cf-worker/`: Hono-based Cloudflare Worker with D1-backed public routes and sync endpoints.
 - `mcp_server/`: MCP tools for paper search, stats, feeds, and library operations.
 - `shared/`: Shared workflow template definitions.
 
@@ -88,7 +79,7 @@ Required or important:
 - `DATABASE_URL`: defaults to `sqlite:///./paper_tracker.db`.
 - `TRACKER_KEYWORDS`: relevance scoring weights, e.g. `llm:2.0,transformer:1.5`.
 - LLM provider keys such as `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `ARK_API_KEY`, `OPENROUTER_API_KEY`.
-- `COPILOT_RUNTIME_SECRET`, `LLM_CONFIG_ADMIN_TOKEN`, and `SYNC_SECRET` are optional hardening secrets.
+- `COPILOT_RUNTIME_SECRET` and `LLM_CONFIG_ADMIN_TOKEN` are optional hardening secrets.
 
 ## Startup Sequence
 
@@ -97,7 +88,7 @@ Required or important:
 3. Create or migrate database tables.
 4. Seed prompt templates, system prompts, LLM configs, and agent skills.
 5. Initialize feed scheduler.
-6. Register optional D1 sync and backup jobs.
+6. Register database backup jobs.
 7. Open the LangGraph checkpointer.
 
 ## Testing

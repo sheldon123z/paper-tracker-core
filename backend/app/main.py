@@ -34,7 +34,6 @@ from .routes.tags import router as tags_router
 from .routes.usage import router as usage_router
 from .schemas import StatsOut
 from .services.checkpointer import close_checkpointer, open_checkpointer
-from .services.d1_sync import register_sync_job
 from .services.db_backup import perform_backup, schedule_backups
 from .services.db_migrations import migrate_database_schema, migrate_llm_config_rows
 from .services.scheduler import get_scheduler, init_scheduler, shutdown_scheduler
@@ -174,7 +173,7 @@ async def add_security_headers(request, call_next):
         "style-src 'self' 'unsafe-inline'; "
         "img-src 'self' data: blob: https:; "
         "font-src 'self' data:; "
-        "connect-src 'self' http://localhost:* ws://localhost:* https://*.sheldon123z.win https://paper.sheldon123z.win; "
+        "connect-src 'self' http://localhost:* ws://localhost:*; "
         "frame-ancestors 'none'; "
         "base-uri 'self'; "
         "form-action 'self'"
@@ -245,7 +244,7 @@ def startup_event():
     missing = [name for name, is_set in runtime_status.items() if not is_set]
     if missing:
         logger.info("Optional security hardening not configured: %s", ", ".join(missing))
-        logger.info("For production deployment, consider setting: COPILOT_RUNTIME_SECRET, LLM_CONFIG_ADMIN_TOKEN, SYNC_SECRET")
+        logger.info("For production deployment, consider setting: COPILOT_RUNTIME_SECRET, LLM_CONFIG_ADMIN_TOKEN")
 
     Base.metadata.create_all(bind=engine)
     migrate_database_schema(engine)
@@ -265,11 +264,6 @@ def startup_event():
     finally:
         db.close()
     init_scheduler()
-
-    # Register D1 sync job if SYNC_SECRET is configured (and not the default placeholder)
-    sync_secret = os.getenv("SYNC_SECRET", "").strip()
-    if sync_secret and sync_secret != "your-sync-secret-here":
-        register_sync_job(get_scheduler())
 
     # Register periodic database backup and run one immediately on startup
     schedule_backups(get_scheduler())
