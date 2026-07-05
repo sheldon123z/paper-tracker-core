@@ -61,11 +61,15 @@ const corsOptions = {
 
 // ---------------------------------------------------------------------------
 // Shared-secret authentication middleware
-// COPILOT_RUNTIME_SECRET: if set, all /copilotkit requests must include
+// COPILOT_RUNTIME_SECRET: if set, all Copilot runtime requests must include
 //   X-Copilot-Secret header with matching value.
 // If not set, auth is skipped (convenient for local development).
 // ---------------------------------------------------------------------------
 const RUNTIME_SECRET = process.env.COPILOT_RUNTIME_SECRET || null;
+const configuredRuntimeEndpoint = process.env.COPILOT_RUNTIME_ENDPOINT || "/api/copilotkit";
+const RUNTIME_ENDPOINT = configuredRuntimeEndpoint.startsWith("/")
+  ? configuredRuntimeEndpoint
+  : `/${configuredRuntimeEndpoint}`;
 
 function secretAuth(req, res, next) {
   if (!RUNTIME_SECRET) return next();
@@ -230,18 +234,19 @@ app.get("/health", (_req, res) => {
 //
 // NOTE: CopilotKit SDK 1.54+ uses an internal Hono app with basePath routing.
 // Express strips the mount prefix from req.url before passing it to the handler,
-// so the Hono app never sees "/copilotkit" and fails to match its routes.
+// so the Hono app never sees the runtime endpoint and fails to match its routes.
 // Fix: mount at "/" and let Hono handle the full path matching itself.
 app.use("/", secretAuth, copilotRuntimeNodeExpressEndpoint({
   runtime,
   serviceAdapter,
-  endpoint: "/copilotkit",
+  endpoint: RUNTIME_ENDPOINT,
 }));
 
 const PORT = process.env.PORT || 4100;
 app.listen(PORT, () => {
   console.log(`CopilotRuntime proxy running on port ${PORT}`);
   console.log(`Backend: ${BACKEND_URL}`);
+  console.log(`Endpoint: ${RUNTIME_ENDPOINT}`);
   console.log(`CORS allowed origins: ${ALLOWED_ORIGINS.join(", ")}`);
   if (RUNTIME_SECRET) {
     console.log("Auth: X-Copilot-Secret header required");

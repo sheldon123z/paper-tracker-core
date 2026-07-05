@@ -75,7 +75,7 @@ const useStore = create((set, get) => ({
   checkSession: async () => {
     try {
       const api = (await import('./api')).default
-      const res = await api.get('/api/auth/me', { skipAuthRefresh: true })
+      const res = await api.get('/api/auth/me')
       set({ user: res.data, isAuthenticated: true, authPending: false })
       try { localStorage.setItem('auth_user', JSON.stringify(res.data)) } catch { /* ignore */ }
     } catch {
