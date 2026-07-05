@@ -9,6 +9,7 @@ A full-stack local research paper tracking system with RSS ingestion, AI-powered
 - Workflow implementation guide: `docs/WORKFLOWS.md`
 - LLM provider registry plan: `docs/llm-provider-registry-plan.md`
 - AG-UI protocol reference: `docs/llms.md`
+- Local dev & pre-test guide: `docs/local-dev.md`
 
 ## Features
 
@@ -87,6 +88,27 @@ UI: `http://localhost:3457`
 ```bash
 ./start.sh
 ```
+
+## Development Workflow
+
+本项目采用"本地预测试为主、远程 CI 兜底"的策略，以减少 GitHub Actions 分钟数消耗。完整说明见 [`docs/local-dev.md`](docs/local-dev.md)。
+
+```bash
+make install-hooks   # 一次性安装 git hooks（pre-commit + pre-push）
+make precheck        # 完整本地门禁：lint + 格式 + 全套测试（发版前/合并前跑）
+make test-quick      # 快速测试子集（约 15 秒）
+```
+
+- **pre-commit**（自动）：对暂存的 Python 文件运行 `ruff format` + `check --fix`。
+- **pre-push**（自动）：运行 `make lint-all` 快速门禁（约 10-20 秒）。
+- **CI**：兜底跑 lint + 全套测试，密钥从 GitHub Secrets 注入。
+
+仓库管理员需在 GitHub **Settings → Secrets and variables → Actions** 配置：
+
+| Secret 名 | 生成命令 |
+|---|---|
+| `CI_ENCRYPTION_KEY` | `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` |
+| `CI_JWT_SECRET_KEY` | `python -c "import secrets; print(secrets.token_urlsafe(64))"` |
 
 ## Environment Variables
 

@@ -1,0 +1,40 @@
+#!/bin/bash
+# pre-commit: 对已暂存的 Python 文件运行 ruff format + check --fix
+# 设计目标: 快（3-5 秒），只处理暂存文件，自动重暂存格式化后的内容
+set -euo pipefail
+
+# 锚定仓库根目录
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+# 收集已暂存的 Python 文件（仅新增/修改，排除删除/重命名）
+STAGED_PY="$(git diff --cached --name-only --diff-filter=ACM -- '*.py' || true)"
+if [ -z "$STAGED_PY" ]; then
+  # 无 Python 文件变更，放行（前端文件交给 pre-push 的 build 检查）
+  exit 0
+fi
+
+# ruff 可能不在 PATH（未激活 venv）—做一次探测并给出清晰提示
+if ! command -v ruff >/dev/null 2>&1; then
+  echo "⚠️  未找到 ruff，请先安装:  pip install ruff" >&2
+  echo "   或激活 backend 虚拟环境: source backend/.venv/bin/activate" >&2
+  exit 1
+fi
+
+echo "▶ ruff format（暂存文件）"
+# shellcheck disable=SC2086  # 故意按空格分词展开文件列表
+ruff format $STAGED_PY
+
+echo "▶ ruff check --fix（暂存文件）"
+# shellcheck disable=SC2086
+if ! ruff check --fix $STAGED_PY; then
+  echo "❌ ruff check 发现无法自动修复的问题，请处理后重新 git add" >&2
+  exit 1
+fi
+
+# 重新暂存被 ruff 修改过的文件
+# shellcheck disable=SC2086
+git add $STAGED_PY 2>/dev/null || true
+
+echo "✓ pre-commit 通过"
+exit 0
