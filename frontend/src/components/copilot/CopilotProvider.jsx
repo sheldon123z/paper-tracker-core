@@ -4,9 +4,11 @@ import useStore from '../../store'
 import ToolCallRenderer from './ToolCallRenderer'
 
 // Auto-detect CopilotRuntime URL based on current host
-// 局域网/外网访问时自动替换 hostname，保持端口 4100
+// 局域网/外网访问时自动替换 hostname，保持端口 4100。
+// Keep the endpoint under /api so the backend's /api-scoped httpOnly auth
+// cookies are sent to the runtime proxy as well.
 const RUNTIME_URL = import.meta.env.VITE_COPILOT_RUNTIME_URL ||
-  `${window.location.protocol}//${window.location.hostname}:4100/copilotkit`
+  `${window.location.protocol}//${window.location.hostname}:4100/api/copilotkit`
 
 /**
  * CopilotKit provider wrapper that passes dynamic properties to AG-UI agents.
@@ -88,6 +90,7 @@ export default function CopilotProvider({ children }) {
       agent="assistantAgent"
       showDevConsole={false}
       enableInspector={false}
+      credentials="include"
       headers={copilotHeaders}
       properties={properties}
     >

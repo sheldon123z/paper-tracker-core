@@ -20,7 +20,7 @@ api.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config
 
-    // Skip refresh for auth endpoints and explicit session probes.
+    // Skip refresh for auth endpoints and callers that explicitly opt out.
     const shouldSkipRefresh = originalRequest.skipAuthRefresh
       || ['/api/auth/login', '/api/auth/register', '/api/auth/refresh'].includes(originalRequest.url)
     if (shouldSkipRefresh) {
