@@ -7,69 +7,46 @@ on:
     branches: [main]
 
 jobs:
-  backend-lint:
-    name: Backend Lint (Ruff)
+  backend:
+    name: Backend (lint + test)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # 从 GitHub Secrets 注入，避免硬编码密钥进入仓库历史
+      ENCRYPTION_KEY: ${{ secrets.CI_ENCRYPTION_KEY }}
+      JWT_SECRET_KEY: ${{ secrets.CI_JWT_SECRET_KEY }}
+      DATABASE_URL: sqlite:///./test.db
+      LANGCHAIN_TRACING_V2: "false"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip install ruff
-      - run: ruff check backend/ --output-format=github
-
-  backend-syntax:
-    name: Backend Syntax Check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - run: python -m compileall backend/app/ -q
-
-  backend-test:
-    name: Backend Tests
-    runs-on: ubuntu-latest
-    needs: backend-lint
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
       - name: Install dependencies
-        run: pip install -r backend/requirements.txt pytest
+        run: pip install -r backend/requirements.txt ruff pytest
+      - name: Ruff check
+        run: ruff check backend/
       - name: Run tests
         run: python -m pytest backend/tests/ -v --tb=short
-        env:
-          ENCRYPTION_KEY: lK5o9r4iJmP2uV1xYw8nQaBcDeFgHiJkLmNoPqRsTuU=
-          JWT_SECRET_KEY: test-jwt-secret-key-for-ci-pipeline-only
-          DATABASE_URL: sqlite:///./test.db
-          LANGCHAIN_TRACING_V2: "false"
 
-  frontend-build:
-    name: Frontend Build
+  frontend:
+    name: Frontend (test + build) + CopilotRuntime
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Build frontend
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            copilot-runtime/package-lock.json
+      - name: Frontend test + build
         working-directory: frontend
-        run: npm ci && npm run build
-
-  copilot-runtime-check:
-    name: CopilotRuntime Syntax Check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - name: Install dependencies
+        run: npm ci && npm run test && npm run build
+      - name: CopilotRuntime build check
         working-directory: copilot-runtime
-        run: npm ci
-      - name: Syntax check
-        working-directory: copilot-runtime
-        run: node -c server.js
+        run: npm ci && node -c server.js && npm run build:bundle

@@ -1,0 +1,46 @@
+#!/bin/bash
+# pre-push: 推送前快速门禁（lint-all，约 10-20 秒）
+# 设计目标: 智能分级 — 只跑快速门禁，不跑完整测试
+#           完整测试请手动 `make precheck` 或交由 CI 兜底
+#
+# 紧急绕过: SKIP_PRECHECK=1 git push
+set -euo pipefail
+
+# 紧急绕过开关
+if [ "${SKIP_PRECHECK:-0}" = "1" ]; then
+  echo "⏭  SKIP_PRECHECK=1，跳过 pre-push 门禁" >&2
+  exit 0
+fi
+
+# 锚定仓库根目录
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+# pre-push 钩子从 stdin 读取待推送的 ref 信息，需消耗以免管道阻塞
+# （即使不用，也要读空 stdin）
+if [ -n "${1:-}" ] && [ "${1:-}" = "--" ]; then
+  : # 部分环境会传参
+fi
+
+echo "▶ pre-push 快速门禁: make lint-all"
+echo "  （完整测试请手动运行: make precheck）"
+echo ""
+
+# 直接调用 make；失败则阻断 push
+if ! make lint-all; then
+  cat >&2 <<'EOF'
+
+❌ pre-push 门禁失败
+   推送已阻断。请修复上述问题后重试。
+
+   提示:
+   - 完整本地检查:        make precheck
+   - 查看快速测试:        make test-quick
+   - 紧急绕过（不推荐）:  SKIP_PRECHECK=1 git push
+EOF
+  exit 1
+fi
+
+echo ""
+echo "✓ pre-push 门禁通过"
+exit 0
