@@ -1,14 +1,13 @@
 import { useEffect, useMemo } from 'react'
 import { CopilotKit } from '@copilotkit/react-core'
+import { useLocation } from 'react-router-dom'
 import useStore from '../../store'
 import ToolCallRenderer from './ToolCallRenderer'
 
-// Auto-detect CopilotRuntime URL based on current host
-// 局域网/外网访问时自动替换 hostname，保持端口 4100。
-// Keep the endpoint under /api so the backend's /api-scoped httpOnly auth
-// cookies are sent to the runtime proxy as well.
-const RUNTIME_URL = import.meta.env.VITE_COPILOT_RUNTIME_URL ||
-  `${window.location.protocol}//${window.location.hostname}:4100/api/copilotkit`
+// Keep development requests same-origin so the /api-scoped httpOnly auth
+// cookie reaches Vite, which proxies this endpoint to CopilotRuntime on :4100.
+// Packaged builds can still provide an explicit runtime URL through the env.
+const RUNTIME_URL = import.meta.env.VITE_COPILOT_RUNTIME_URL || '/api/copilotkit'
 
 /**
  * CopilotKit provider wrapper that passes dynamic properties to AG-UI agents.
@@ -16,6 +15,7 @@ const RUNTIME_URL = import.meta.env.VITE_COPILOT_RUNTIME_URL ||
  * model state even before the selector mounts.
  */
 export default function CopilotProvider({ children }) {
+  const { pathname } = useLocation()
   const activeTabId = useStore((state) => state.activeTabId)
   const selectedModelId = useStore((state) => state.selectedModelId)
   const selectedModelMeta = useStore((state) => state.selectedModelMeta)
@@ -84,10 +84,19 @@ export default function CopilotProvider({ children }) {
     pdfContextLength,
   ])
 
+  // The full-page assistant and the floating research assistant are two views
+  // of the same conversation history. Outside paper/workflow-specific views,
+  // keep the CopilotKit thread aligned with the selected assistant session.
+  const usesAssistantThread = pathname !== '/workflow' || Boolean(activeTabId)
+  const threadId = usesAssistantThread
+    ? assistantSessionId || 'assistant-default'
+    : 'default'
+
   return (
     <CopilotKit
       runtimeUrl={RUNTIME_URL}
       agent="assistantAgent"
+      threadId={threadId}
       showDevConsole={false}
       enableInspector={false}
       credentials="include"

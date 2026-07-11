@@ -178,6 +178,18 @@ PROVIDER_REGISTRY: dict[str, ProviderProfile] = {
         endpoint_hint="OpenAI-compatible vLLM server.",
         capabilities=ProviderCapabilities(supports_reasoning=True, supports_vision=True),
     ),
+    "lmstudio": ProviderProfile(
+        key="lmstudio",
+        label="LM Studio",
+        litellm_provider="openai",
+        api_format="openai_compatible",
+        default_base_url="http://127.0.0.1:1234/v1",
+        requires_api_key=False,
+        local_provider=True,
+        model_placeholder="qwen/qwen3.5-9b",
+        endpoint_hint="Local LM Studio OpenAI-compatible server.",
+        capabilities=ProviderCapabilities(supports_reasoning=True, supports_vision=True),
+    ),
     "llamacpp": ProviderProfile(
         key="llamacpp",
         label="llama.cpp",
@@ -306,6 +318,8 @@ def infer_provider_key(
     if host in {"localhost", "127.0.0.1", "::1"}:
         if port == 11434:
             return "ollama"
+        if port == 1234:
+            return "lmstudio"
         if port == 30000:
             return "llamacpp"
         if port == 8000 or parsed.path.startswith("/v1"):
@@ -314,6 +328,8 @@ def infer_provider_key(
     name_parts = " ".join(part for part in (display_name, model_name) if part).lower()
     if "ollama" in name_parts:
         return "ollama"
+    if "lm studio" in name_parts or "lmstudio" in name_parts:
+        return "lmstudio"
     if "vllm" in name_parts:
         return "vllm"
     if "moonshot" in name_parts or "kimi" in name_parts:
@@ -377,7 +393,7 @@ def normalize_base_url(provider_key: str, base_url: str | None) -> str | None:
         path = "/v1"
     elif provider_key == "zhipu" and path in {"", "/"}:
         path = "/api/paas/v4"
-    elif provider_key == "vllm" and path in {"", "/"} or provider_key == "llamacpp" and path in {"", "/"}:
+    elif provider_key in {"vllm", "lmstudio", "llamacpp"} and path in {"", "/"}:
         path = "/v1"
     elif provider_key == "ollama" and path == "/":
         path = ""
@@ -540,5 +556,6 @@ def resolve_api_key(provider_key: str, api_key: str | None) -> str | None:
     return {
         "ollama": "ollama",
         "vllm": "vllm",
+        "lmstudio": "lmstudio",
         "llamacpp": "none",
     }.get(provider_key, "local")

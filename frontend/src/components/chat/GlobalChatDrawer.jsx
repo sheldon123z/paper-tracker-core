@@ -1,9 +1,28 @@
-import { CopilotChat, CopilotSidebar } from '@copilotkit/react-ui'
+import { useCallback } from 'react'
+import { CopilotChat, CopilotSidebar, useChatContext } from '@copilotkit/react-ui'
 
 import useIsMobile from '../../hooks/useIsMobile'
 import useStore from '../../store'
+import AssistantSessionToolbar from '../copilot/AssistantSessionToolbar'
 import useChatConfig from '../copilot/useChatConfig'
+import useAssistantSessionHistory from '../copilot/useAssistantSessionHistory'
+import useAssistantSessions from '../copilot/useAssistantSessions'
 import { GLOBAL_LABELS } from '../copilot/chatLabels'
+
+function ResearchAssistantHeader(props) {
+  const { setOpen } = useChatContext()
+
+  return (
+    <div className="copilotKitHeader research-assistant-header">
+      <AssistantSessionToolbar
+        {...props}
+        surfaceId="global"
+        title="研究助手"
+        onClose={() => setOpen(false)}
+      />
+    </div>
+  )
+}
 
 /**
  * Global research chat.
@@ -17,7 +36,30 @@ export default function GlobalChatDrawer({ children, hidden = false }) {
   const isMobile = useIsMobile()
   const globalChatOpen = useStore((s) => s.globalChatOpen)
   const toggleGlobalChat = useStore((s) => s.toggleGlobalChat)
-  const chatConfig = useChatConfig({ sessionId: 'global-default', sessionType: 'global' })
+  const {
+    currentSessionId,
+    sessions,
+    newSession,
+    selectSession,
+  } = useAssistantSessions(!hidden)
+  const chatConfig = useChatConfig({
+    sessionId: currentSessionId || 'assistant-default',
+    sessionType: 'assistant',
+  })
+
+  useAssistantSessionHistory(currentSessionId, !hidden)
+
+  const DesktopHeader = useCallback(
+    () => (
+      <ResearchAssistantHeader
+        currentSessionId={currentSessionId}
+        sessions={sessions}
+        onNewSession={newSession}
+        onSelectSession={selectSession}
+      />
+    ),
+    [currentSessionId, newSession, selectSession, sessions],
+  )
 
   const labels = {
     ...chatConfig.labels,
@@ -73,46 +115,28 @@ export default function GlobalChatDrawer({ children, hidden = false }) {
           >
             {/* 顶部标题栏 */}
             <div
+              className="research-assistant-mobile-header"
               style={{
-                paddingTop: 'env(safe-area-inset-top, 0px)',
+                padding: 'calc(env(safe-area-inset-top, 0px) + 10px) 12px 10px',
                 display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '0 16px',
-                height: 'calc(44px + env(safe-area-inset-top, 0px))',
-                borderBottom: '1px solid var(--border)',
-                backgroundColor: 'var(--bg-primary)',
+                alignItems: 'stretch',
                 flexShrink: 0,
               }}
             >
-              <span style={{ fontWeight: 600, fontSize: 16, color: 'var(--text-primary)' }}>
-                研究助手
-              </span>
-              <button
-                onClick={toggleGlobalChat}
-                aria-label="关闭"
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  width: 32,
-                  height: 32,
-                  borderRadius: 8,
-                  border: 'none',
-                  background: 'transparent',
-                  color: 'var(--text-secondary)',
-                  fontSize: 18,
-                  cursor: 'pointer',
-                }}
-              >
-                ✕
-              </button>
+              <AssistantSessionToolbar
+                currentSessionId={currentSessionId}
+                sessions={sessions}
+                surfaceId="mobile-global"
+                title="研究助手"
+                onClose={toggleGlobalChat}
+                onNewSession={newSession}
+                onSelectSession={selectSession}
+              />
             </div>
 
             {/* 聊天内容区 */}
             <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
               <CopilotChat
-                agentId="globalAgent"
                 {...chatConfig}
                 labels={labels}
                 className="absolute inset-0"
@@ -131,9 +155,9 @@ export default function GlobalChatDrawer({ children, hidden = false }) {
 
   return (
     <CopilotSidebar
-      agentId="globalAgent"
       {...chatConfig}
       labels={labels}
+      Header={DesktopHeader}
       defaultOpen={false}
       clickOutsideToClose
       hitEscapeToClose

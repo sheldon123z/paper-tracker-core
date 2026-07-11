@@ -5,6 +5,7 @@ Tests cover listing, creating, updating, and deleting RSS feeds.
 import unittest
 from datetime import UTC, datetime
 from unittest.mock import patch
+from uuid import uuid4
 
 from backend.app.auth.dependencies import get_current_user, get_current_user_or_service
 from backend.app.database import Base
@@ -48,7 +49,7 @@ class TestFeeds(unittest.TestCase):
         """Helper to create a feed in the test database."""
         defaults = {
             "name": "Test Feed",
-            "url": f"https://example.com/feed-{datetime.now().timestamp()}.xml",
+            "url": f"https://example.com/feed-{uuid4().hex}.xml",
             "source": "rss",
             "is_active": True,
             "fetch_interval": 120,
@@ -125,6 +126,7 @@ class TestFeeds(unittest.TestCase):
             self.assertTrue(feed_data["is_active"])
             self.assertEqual(feed_data["fetch_interval"], 60)
             self.assertIsNotNone(feed_data["last_fetched"])
+            self.assertTrue(feed_data["last_fetched"].endswith("Z"))
             self.assertEqual(feed_data["last_error"], "Test error")
 
     # ==================== CREATE FEED TESTS ====================

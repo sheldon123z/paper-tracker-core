@@ -4,22 +4,28 @@ import { Button, Card, Input, Modal, useToast } from '../components/ui'
 
 const initialFeed = { name: '', url: '', source: 'rss', is_active: true, fetch_interval: 3600 }
 
-function formatRelativeTime(isoStr) {
+export function parseApiTimestamp(isoStr) {
   if (!isoStr) return null
-  try {
-    const diff = Date.now() - new Date(isoStr).getTime()
-    const mins = Math.floor(diff / 60000)
-    if (mins < 1) return '刚刚'
-    if (mins < 60) return `${mins} 分钟前`
-    const hrs = Math.floor(mins / 60)
-    if (hrs < 24) return `${hrs} 小时前`
-    return `${Math.floor(hrs / 24)} 天前`
-  } catch {
-    return isoStr
-  }
+  const hasTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(isoStr)
+  const normalized = hasTimezone ? isoStr : `${isoStr.replace(' ', 'T')}Z`
+  const timestamp = new Date(normalized).getTime()
+  return Number.isNaN(timestamp) ? null : timestamp
 }
 
-function FeedRow({ feed, onDelete, onUpdate }) {
+export function formatRelativeTime(isoStr, now = Date.now()) {
+  if (!isoStr) return null
+  const fetchedAt = parseApiTimestamp(isoStr)
+  if (fetchedAt == null) return isoStr
+  const diff = Math.max(0, now - fetchedAt)
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return '刚刚'
+  if (mins < 60) return `${mins} 分钟前`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs} 小时前`
+  return `${Math.floor(hrs / 24)} 天前`
+}
+
+export function FeedRow({ feed, onDelete, onUpdate, onFetched, now }) {
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState({
     name: feed.name,
@@ -41,6 +47,7 @@ function FeedRow({ feed, onDelete, onUpdate }) {
     setTriggerMsg(null)
     try {
       await api.post(`/api/scheduler/trigger/${feed.id}`)
+      await onFetched?.()
       setTriggerMsg({ text: '已触发', type: 'success' })
     } catch (err) {
       setTriggerMsg({ text: err.response?.data?.detail || '触发失败', type: 'error' })
@@ -143,7 +150,7 @@ function FeedRow({ feed, onDelete, onUpdate }) {
               )}
               {feed.last_fetched && (
                 <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                  上次抓取: {formatRelativeTime(feed.last_fetched)}
+                  上次抓取: {formatRelativeTime(feed.last_fetched, now)}
                 </span>
               )}
             </div>
@@ -189,18 +196,31 @@ export default function FeedsPage() {
   const [feeds, setFeeds] = useState([])
   const [form, setForm] = useState(initialFeed)
   const [deleteTargetId, setDeleteTargetId] = useState(null)
+  const [now, setNow] = useState(() => Date.now())
   const { addToast } = useToast()
 
-  const loadFeeds = () => {
-    api
-      .get('/api/feeds')
-      .then((res) => setFeeds(res.data))
-      .catch(() => {})
+  const loadFeeds = async () => {
+    try {
+      const res = await api.get('/api/feeds')
+      setFeeds(res.data)
+    } catch {
+      // Keep the existing list visible during a transient refresh failure.
+    }
   }
 
   useEffect(() => {
     loadFeeds()
+    const refreshTimer = window.setInterval(() => {
+      setNow(Date.now())
+      loadFeeds()
+    }, 60_000)
+    return () => window.clearInterval(refreshTimer)
   }, [])
+
+  const handleFetched = async () => {
+    await loadFeeds()
+    setNow(Date.now())
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -326,6 +346,8 @@ export default function FeedsPage() {
               feed={feed}
               onDelete={(id) => setDeleteTargetId(id)}
               onUpdate={handleUpdate}
+              onFetched={handleFetched}
+              now={now}
             />
           ))
         )}

@@ -1,10 +1,11 @@
 """Unified LangGraph graph factory for all agent types."""
 
 import copy
+import json
 from collections.abc import Callable
 from typing import Annotated, Any, TypedDict
 
-from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
+from langchain_core.messages import BaseMessage, ToolMessage
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 
@@ -47,38 +48,54 @@ _THINKING_NATIVE_PROVIDERS = frozenset({"claude", "vllm"})
 def _sanitize_messages(
     messages: list[BaseMessage], *, provider_key: str
 ) -> list[BaseMessage]:
-    """Sanitize message history for cross-provider compatibility.
+    """Normalize message content blocks for cross-provider compatibility.
 
-    Strips Anthropic-style ``{"type": "thinking"}`` and ``{"type": "reasoning"}``
-    content blocks from AIMessage.content arrays when the target provider does
-    not support them.  This prevents BadRequest errors like the one from
-    Volcengine: ``invalid value: thinking, supported values are: text, image_url,
-    video_url, and input_audio``.
+    OpenAI-compatible APIs require every item in a ``content`` array to be an
+    object with a ``type`` key. Some local models return mixed arrays containing
+    bare strings, which LangChain keeps in subsequent tool-loop requests. Those
+    arrays are rejected by LM Studio before the second model call.
 
-    Providers that natively accept these blocks (see _THINKING_NATIVE_PROVIDERS)
-    receive messages unmodified.
+    Bare values are converted to text blocks. Anthropic-style thinking blocks
+    are also removed when the target provider does not support them.
     """
-    if provider_key in _THINKING_NATIVE_PROVIDERS:
-        return messages
-
+    keep_reasoning = provider_key in _THINKING_NATIVE_PROVIDERS
     cleaned: list[BaseMessage] = []
     for msg in messages:
-        if not isinstance(msg, AIMessage) or not isinstance(msg.content, list):
+        if not isinstance(msg.content, list):
             cleaned.append(msg)
             continue
-        filtered = [
-            block for block in msg.content
-            if not (isinstance(block, dict) and block.get("type") in ("thinking", "reasoning"))
-        ]
-        if not filtered:
-            # All blocks were thinking — keep a single empty text so the
-            # message isn't dropped entirely (would break tool-call chains).
-            filtered = [{"type": "text", "text": ""}]
-        if len(filtered) == len(msg.content):
+
+        normalized = []
+        for block in msg.content:
+            if isinstance(block, str):
+                normalized.append({"type": "text", "text": block})
+                continue
+            if not isinstance(block, dict):
+                normalized.append({"type": "text", "text": str(block)})
+                continue
+            if not keep_reasoning and block.get("type") in ("thinking", "reasoning"):
+                continue
+            if block.get("type"):
+                normalized.append(block)
+                continue
+            if "text" in block:
+                normalized.append({"type": "text", "text": str(block["text"])})
+                continue
+            normalized.append({
+                "type": "text",
+                "text": json.dumps(block, ensure_ascii=False, default=str),
+            })
+
+        if not normalized:
+            # Keep the message present so assistant tool-call chains remain
+            # structurally valid after provider-specific blocks are removed.
+            normalized = [{"type": "text", "text": ""}]
+
+        if normalized == msg.content:
             cleaned.append(msg)
         else:
             new_msg = copy.copy(msg)
-            new_msg.content = filtered
+            new_msg.content = normalized
             cleaned.append(new_msg)
     return cleaned
 

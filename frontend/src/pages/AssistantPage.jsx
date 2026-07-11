@@ -3,10 +3,8 @@
  *
  * Session persistence:
  *   - Session ID persisted in URL search params (?session=xxx)
- *   - Switching session updates `threadId` on `<ThreadsProvider>` so CopilotChat
- *     starts a fresh conversation lane. On the first user turn the backend
- *     emits a MESSAGES_SNAPSHOT (AG-UI) event for the thread, which CopilotChat
- *     uses to repopulate the conversation — no separate history pane needed.
+ *   - Switching sessions updates the top-level CopilotKit thread and restores
+ *     persisted messages before the next user turn.
  *   - The legacy double-render path (custom `ChatHistory` for restored history
  *     + `<CopilotChat />` for live messages) has been removed; CopilotChat is
  *     now the single render path for both restored and live messages.
@@ -15,13 +13,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { CopilotChat } from '@copilotkit/react-ui'
-import { ThreadsProvider } from '@copilotkit/react-core'
 
 import api from '../api'
 import useStore from '../store'
 import useIsMobile from '../hooks/useIsMobile'
 import ModelSelector from '../components/copilot/ModelSelector'
 import useChatConfig from '../components/copilot/useChatConfig'
+import useAssistantSessionHistory from '../components/copilot/useAssistantSessionHistory'
 import { ASSISTANT_LABELS } from '../components/copilot/chatLabels'
 import { AppIcon, Badge } from '../components/ui'
 
@@ -61,6 +59,7 @@ export default function AssistantPage() {
   }, [setSearchParams, setAssistantSessionId])
 
   const chatConfig = useChatConfig({ sessionId: currentSessionId || 'default', sessionType: 'assistant' })
+  useAssistantSessionHistory(currentSessionId)
 
   // Load sessions list
   useEffect(() => {
@@ -215,23 +214,21 @@ export default function AssistantPage() {
 
       {/* Chat Area — 移动端占满宽度和高度 */}
       <div className={`assistant-chat-area${isMobile ? ' flex-1 w-full flex flex-col' : ''}`} style={isMobile ? { minHeight: 0 } : undefined}>
-        <ThreadsProvider key={`thread-${currentSessionId || 'default'}`} threadId={currentSessionId || 'default'}>
-          <div
-            className="assistant-live-chat is-fullscreen"
-            style={isMobile ? { flex: 1, position: 'relative', minHeight: 0 } : undefined}
-          >
-            <CopilotChat
-              agentId="assistantAgent"
-              {...chatConfig}
-              labels={{
-                ...chatConfig.labels,
-                ...ASSISTANT_LABELS,
-                initial: '你好！我是你的论文研究助手。可以帮你搜索论文、分析研究趋势、管理文献库。直接告诉我你需要什么！',
-              }}
-              className="h-full"
-            />
-          </div>
-        </ThreadsProvider>
+        <div
+          className="assistant-live-chat is-fullscreen"
+          style={isMobile ? { flex: 1, position: 'relative', minHeight: 0 } : undefined}
+        >
+          <CopilotChat
+            key={`assistant-chat-${currentSessionId || 'default'}`}
+            {...chatConfig}
+            labels={{
+              ...chatConfig.labels,
+              ...ASSISTANT_LABELS,
+              initial: '你好！我是你的论文研究助手。可以帮你搜索论文、分析研究趋势、管理文献库。直接告诉我你需要什么！',
+            }}
+            className="h-full"
+          />
+        </div>
       </div>
     </div>
   )

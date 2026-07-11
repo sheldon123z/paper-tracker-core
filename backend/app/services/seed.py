@@ -355,7 +355,7 @@ def migrate_llm_configs(db: Session) -> None:
         if getattr(config, "api_format", None) != profile.api_format:
             config.api_format = profile.api_format
             changed += 1
-        if provider in {"ollama", "vllm", "llamacpp"} and not getattr(config, "is_local", False):
+        if provider in {"ollama", "vllm", "lmstudio", "llamacpp"} and not getattr(config, "is_local", False):
             config.is_local = True
             changed += 1
         if provider != "openai_compatible" and getattr(config, "extra_headers", None):
@@ -368,10 +368,17 @@ def migrate_llm_configs(db: Session) -> None:
 
 
 def seed_llm_configs(db: Session) -> None:
-    """Auto-seed LLM configs from environment variables on startup.
+    """Optionally seed LLM configs from environment variables on startup.
 
-    Idempotent: inserts only configs that do not already exist.
+    Disabled by default so startup never adds model configurations behind the
+    user's back. Set ``AUTO_SEED_LLM_CONFIGS=true`` to opt in. When enabled,
+    the operation remains idempotent and inserts only missing configurations.
     """
+    auto_seed_enabled = os.getenv("AUTO_SEED_LLM_CONFIGS", "").strip().lower()
+    if auto_seed_enabled not in {"1", "true", "yes", "on"}:
+        logger.debug("Skipping LLM config auto-seeding; AUTO_SEED_LLM_CONFIGS is disabled.")
+        return
+
     existing = {
         (infer_provider_key(c.provider, c.base_url, model_name=c.model_name, display_name=c.display_name), c.model_name): c
         for c in db.query(LLMConfig).all()
@@ -394,7 +401,7 @@ def seed_llm_configs(db: Session) -> None:
         elif seed.get("env_base_url"):
             base_url = os.getenv(seed["env_base_url"])
         try:
-            base_url = validate_base_url(provider, base_url, is_local=provider in {"ollama", "vllm", "llamacpp"})
+            base_url = validate_base_url(provider, base_url, is_local=provider in {"ollama", "vllm", "lmstudio", "llamacpp"})
         except Exception as exc:
             logger.warning("Skipping seed for provider=%s: base_url error: %s", provider, exc)
             continue
@@ -411,7 +418,7 @@ def seed_llm_configs(db: Session) -> None:
                     current.base_url = base_url
                 if getattr(current, "api_format", None) != profile.api_format:
                     current.api_format = profile.api_format
-                if provider in {"ollama", "vllm", "llamacpp"} and not getattr(current, "is_local", False):
+                if provider in {"ollama", "vllm", "lmstudio", "llamacpp"} and not getattr(current, "is_local", False):
                     current.is_local = True
                 if provider != "openai_compatible" and getattr(current, "extra_headers", None):
                     current.extra_headers = None
@@ -427,7 +434,7 @@ def seed_llm_configs(db: Session) -> None:
                 api_format=profile.api_format,
                 extra_headers=None,
                 extra_body=json_dumps_or_none({}),
-                is_local=provider in {"ollama", "vllm", "llamacpp"},
+                is_local=provider in {"ollama", "vllm", "lmstudio", "llamacpp"},
                 is_enabled=True,
                 health_status="unknown",
                 is_default=seed.get("is_default", False) and not any(item.is_default for item in existing.values()),

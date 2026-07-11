@@ -3,6 +3,9 @@ import { CopilotChat } from '@copilotkit/react-ui'
 
 import api from '../../api'
 import useStore from '../../store'
+import AssistantSessionToolbar from '../copilot/AssistantSessionToolbar'
+import useAssistantSessionHistory from '../copilot/useAssistantSessionHistory'
+import useAssistantSessions from '../copilot/useAssistantSessions'
 import useChatConfig from '../copilot/useChatConfig'
 import { PAPER_LABELS } from '../copilot/chatLabels'
 
@@ -115,7 +118,19 @@ function ContextControlBar() {
 
 export default function AIChatPanel({ paper }) {
   const [suggestions, setSuggestions] = useState([])
-  const chatConfig = useChatConfig({ sessionId: String(paper?.id || ''), sessionType: 'paper' })
+  const sessionsEnabled = Boolean(paper?.id)
+  const {
+    currentSessionId,
+    sessions,
+    newSession,
+    selectSession,
+  } = useAssistantSessions(sessionsEnabled)
+  const chatConfig = useChatConfig({
+    sessionId: currentSessionId || 'assistant-default',
+    sessionType: 'assistant',
+  })
+
+  useAssistantSessionHistory(currentSessionId, sessionsEnabled)
 
   useEffect(() => {
     api
@@ -141,11 +156,20 @@ export default function AIChatPanel({ paper }) {
       className="flex flex-col h-full"
       style={{ backgroundColor: 'var(--bg-primary)' }}
     >
+      <div className="paper-assistant-session-header">
+        <AssistantSessionToolbar
+          currentSessionId={currentSessionId}
+          sessions={sessions}
+          surfaceId={`paper-${paper?.id || 'loading'}`}
+          title="AI 论文助手"
+          onNewSession={newSession}
+          onSelectSession={selectSession}
+        />
+      </div>
       <ContextControlBar />
 
       <div className="relative flex-1 min-h-0">
         <CopilotChat
-          agentId="paperAgent"
           {...chatConfig}
           labels={{
             ...chatConfig.labels,

@@ -39,6 +39,7 @@ PRICING_TABLE: dict[str, dict[str, float]] = {
     # Local
     "ollama/*": {"input": 0.0, "output": 0.0},
     "vllm/*": {"input": 0.0, "output": 0.0},
+    "lmstudio/*": {"input": 0.0, "output": 0.0},
     "llamacpp/*": {"input": 0.0, "output": 0.0},
 }
 

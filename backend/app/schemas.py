@@ -1,7 +1,7 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 
 
 class FeedBase(BaseModel):
@@ -28,6 +28,16 @@ class FeedOut(FeedBase):
     id: int
     last_fetched: datetime | None = None
     last_error: str | None = None
+
+    @field_serializer("last_fetched", when_used="json")
+    def serialize_last_fetched(self, value: datetime | None) -> str | None:
+        if value is None:
+            return None
+        # SQLite drops timezone metadata from DateTime columns. Values written by
+        # the ingester are UTC, so restore that metadata before sending JSON.
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=UTC)
+        return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
     class Config:
         from_attributes = True
