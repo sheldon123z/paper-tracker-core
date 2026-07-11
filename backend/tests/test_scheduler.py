@@ -1,20 +1,69 @@
 """Comprehensive tests for scheduler API routes.
 
-Tests cover: scheduler status and manual feed trigger functionality.
+Tests cover: interval scheduling, scheduler status, and manual feed trigger functionality.
 """
 
 from __future__ import annotations
 
 import unittest
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from unittest.mock import patch
 
+from apscheduler.schedulers.background import BackgroundScheduler
 from backend.app.auth.dependencies import get_current_user, get_current_user_or_service
 from backend.app.models import Feed
 from backend.app.routes import scheduler_routes as scheduler_module
+from backend.app.services import scheduler as scheduler_service
 from backend.tests.support import make_fake_user, make_test_session_factory
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
+
+class ScheduleFeedTests(unittest.TestCase):
+    """Verify the persisted feed interval uses the API's seconds contract."""
+
+    def test_schedule_feed_uses_seconds(self):
+        test_scheduler = BackgroundScheduler()
+        feed = SimpleNamespace(id=7, fetch_interval=3600)
+
+        with patch.object(scheduler_service, "_scheduler", test_scheduler):
+            scheduler_service.schedule_feed(feed)
+
+        job = test_scheduler.get_job("feed_7")
+        self.assertIsNotNone(job)
+        self.assertEqual(job.trigger.interval.total_seconds(), 3600)
+
+    def test_overdue_feed_is_scheduled_immediately(self):
+        test_scheduler = BackgroundScheduler(timezone=UTC)
+        test_scheduler.start(paused=True)
+        now = datetime.now(UTC)
+        feed = SimpleNamespace(id=8, fetch_interval=3600, last_fetched=now - timedelta(hours=5))
+
+        try:
+            with patch.object(scheduler_service, "_scheduler", test_scheduler):
+                scheduler_service.schedule_feed(feed)
+
+            job = test_scheduler.get_job("feed_8")
+            self.assertLessEqual(abs((job.next_run_time - now).total_seconds()), 1)
+        finally:
+            test_scheduler.shutdown(wait=False)
+
+    def test_recent_feed_waits_only_for_remaining_interval(self):
+        test_scheduler = BackgroundScheduler(timezone=UTC)
+        test_scheduler.start(paused=True)
+        now = datetime.now(UTC)
+        feed = SimpleNamespace(id=9, fetch_interval=3600, last_fetched=now - timedelta(minutes=45))
+
+        try:
+            with patch.object(scheduler_service, "_scheduler", test_scheduler):
+                scheduler_service.schedule_feed(feed)
+
+            job = test_scheduler.get_job("feed_9")
+            remaining = (job.next_run_time - now).total_seconds()
+            self.assertAlmostEqual(remaining, 15 * 60, delta=1)
+        finally:
+            test_scheduler.shutdown(wait=False)
 
 
 class SchedulerTestBase(unittest.TestCase):

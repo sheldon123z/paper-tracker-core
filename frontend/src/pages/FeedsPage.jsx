@@ -2,7 +2,45 @@ import { useEffect, useState } from 'react'
 import api from '../api'
 import { Button, Card, Input, Modal, useToast } from '../components/ui'
 
-const initialFeed = { name: '', url: '', source: 'rss', is_active: true, fetch_interval: 3600 }
+const SECONDS_PER_HOUR = 3600
+const DEFAULT_FETCH_INTERVAL_HOURS = 5
+const DEFAULT_FETCH_INTERVAL_SECONDS = DEFAULT_FETCH_INTERVAL_HOURS * SECONDS_PER_HOUR
+
+const initialFeed = {
+  name: '',
+  url: '',
+  source: 'rss',
+  is_active: true,
+  fetch_interval: DEFAULT_FETCH_INTERVAL_SECONDS,
+}
+
+function secondsToHours(seconds) {
+  return (seconds ?? DEFAULT_FETCH_INTERVAL_SECONDS) / SECONDS_PER_HOUR
+}
+
+function hoursToSeconds(hours) {
+  const parsed = Number.parseFloat(hours)
+  return Number.isFinite(parsed) && parsed > 0
+    ? Math.round(parsed * SECONDS_PER_HOUR)
+    : DEFAULT_FETCH_INTERVAL_SECONDS
+}
+
+function intervalInputValue(seconds) {
+  return seconds === '' ? '' : String(secondsToHours(seconds))
+}
+
+function updateIntervalFromInput(value) {
+  return value === '' ? '' : hoursToSeconds(value)
+}
+
+function normalizeFeedForm(form) {
+  return {
+    ...form,
+    fetch_interval: form.fetch_interval === ''
+      ? DEFAULT_FETCH_INTERVAL_SECONDS
+      : form.fetch_interval,
+  }
+}
 
 export function parseApiTimestamp(isoStr) {
   if (!isoStr) return null
@@ -32,13 +70,13 @@ export function FeedRow({ feed, onDelete, onUpdate, onFetched, now }) {
     url: feed.url,
     source: feed.source,
     is_active: feed.is_active,
-    fetch_interval: feed.fetch_interval ?? 3600,
+    fetch_interval: feed.fetch_interval ?? DEFAULT_FETCH_INTERVAL_SECONDS,
   })
   const [triggering, setTriggering] = useState(false)
   const [triggerMsg, setTriggerMsg] = useState(null)
 
   const handleSave = async () => {
-    await onUpdate(feed.id, form)
+    await onUpdate(feed.id, normalizeFeedForm(form))
     setEditing(false)
   }
 
@@ -83,11 +121,13 @@ export function FeedRow({ feed, onDelete, onUpdate, onFetched, now }) {
           />
           <div className="flex items-end gap-3">
             <Input
-              label="抓取间隔 (秒)"
+              label="自动抓取间隔 (小时)"
               type="number"
-              value={String(form.fetch_interval)}
+              min="1"
+              step="1"
+              value={intervalInputValue(form.fetch_interval)}
               onChange={(e) =>
-                setForm((f) => ({ ...f, fetch_interval: parseInt(e.target.value) || 3600 }))
+                setForm((f) => ({ ...f, fetch_interval: updateIntervalFromInput(e.target.value) }))
               }
               className="flex-1"
             />
@@ -225,7 +265,7 @@ export default function FeedsPage() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     try {
-      await api.post('/api/feeds', form)
+      await api.post('/api/feeds', normalizeFeedForm(form))
       setForm(initialFeed)
       loadFeeds()
       addToast({ type: 'success', message: '订阅已添加' })
@@ -300,11 +340,13 @@ export default function FeedsPage() {
           />
           <div className="flex items-end gap-3">
             <Input
-              label="抓取间隔 (秒)"
+              label="自动抓取间隔 (小时)"
               type="number"
-              value={String(form.fetch_interval)}
+              min="1"
+              step="1"
+              value={intervalInputValue(form.fetch_interval)}
               onChange={(e) =>
-                setForm((f) => ({ ...f, fetch_interval: parseInt(e.target.value) || 3600 }))
+                setForm((f) => ({ ...f, fetch_interval: updateIntervalFromInput(e.target.value) }))
               }
               className="flex-1"
             />

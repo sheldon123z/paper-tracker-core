@@ -58,4 +58,35 @@ describe('FeedsPage fetch status', () => {
     })
     expect(screen.getByText('已触发')).toBeInTheDocument()
   })
+
+  it('allows clearing the hour input before saving a new value in seconds', async () => {
+    const onUpdate = vi.fn().mockResolvedValue(undefined)
+    render(
+      <FeedRow
+        feed={{
+          id: 7,
+          name: 'IEEE TNNLS',
+          url: 'https://example.com/feed.xml',
+          source: 'rss',
+          is_active: true,
+          fetch_interval: 3600,
+        }}
+        onDelete={vi.fn()}
+        onUpdate={onUpdate}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }))
+    const intervalInput = screen.getByLabelText('自动抓取间隔 (小时)')
+    expect(intervalInput).toHaveValue(1)
+    fireEvent.change(intervalInput, { target: { value: '' } })
+    expect(intervalInput).toHaveValue(null)
+    fireEvent.change(intervalInput, { target: { value: '3' } })
+    expect(intervalInput).toHaveValue(3)
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+
+    await waitFor(() => {
+      expect(onUpdate).toHaveBeenCalledWith(7, expect.objectContaining({ fetch_interval: 10800 }))
+    })
+  })
 })

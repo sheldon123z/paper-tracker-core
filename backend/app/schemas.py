@@ -9,11 +9,11 @@ class FeedBase(BaseModel):
     url: str
     source: str = "rss"
     is_active: bool = True
-    fetch_interval: int = 120
+    fetch_interval: int = Field(default=18000, description="Automatic fetch interval in seconds")
 
 
 class FeedCreate(FeedBase):
-    pass
+    fetch_interval: int = Field(default=18000, ge=60, description="Automatic fetch interval in seconds")
 
 
 class FeedUpdate(BaseModel):
@@ -21,7 +21,7 @@ class FeedUpdate(BaseModel):
     url: str | None = None
     source: str | None = None
     is_active: bool | None = None
-    fetch_interval: int | None = None
+    fetch_interval: int | None = Field(default=None, ge=60, description="Automatic fetch interval in seconds")
 
 
 class FeedOut(FeedBase):

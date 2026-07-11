@@ -57,6 +57,7 @@ describe('AIChatPanel assistant sessions', () => {
       expect(screen.getByRole('combobox', { name: '切换聊天记录' })).toHaveTextContent('论文会话 A')
     })
     expect(screen.getByTestId('paper-copilot-chat')).toHaveAttribute('data-agent-id', 'assistantAgent')
+    expect(screen.getByTestId('paper-copilot-chat').closest('.paper-assistant-chat')).toBeInTheDocument()
 
     await user.click(screen.getByRole('combobox', { name: '切换聊天记录' }))
     await user.click(screen.getByRole('option', { name: '论文会话 B' }))

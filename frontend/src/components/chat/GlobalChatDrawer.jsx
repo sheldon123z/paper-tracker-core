@@ -4,6 +4,7 @@ import { CopilotChat } from '@copilotkit/react-core/v2'
 import useIsMobile from '../../hooks/useIsMobile'
 import useStore from '../../store'
 import AssistantSessionToolbar from '../copilot/AssistantSessionToolbar'
+import { SINGLE_COPY_MESSAGE_VIEW } from '../copilot/CustomAssistantMessage'
 import useAssistantSessionHistory from '../copilot/useAssistantSessionHistory'
 import useAssistantSessions from '../copilot/useAssistantSessions'
 import { GLOBAL_LABELS } from '../copilot/chatLabels'
@@ -104,6 +105,7 @@ export default function GlobalChatDrawer({ children, hidden = false }) {
               key={`global-chat-${currentSessionId || 'default'}`}
               agentId="assistantAgent"
               threadId={currentSessionId || 'assistant-default'}
+              messageView={SINGLE_COPY_MESSAGE_VIEW}
               labels={GLOBAL_LABELS}
               className="absolute inset-0"
             />

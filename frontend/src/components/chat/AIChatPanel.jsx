@@ -4,6 +4,7 @@ import { CopilotChat } from '@copilotkit/react-core/v2'
 import api from '../../api'
 import useStore from '../../store'
 import AssistantSessionToolbar from '../copilot/AssistantSessionToolbar'
+import { SINGLE_COPY_MESSAGE_VIEW } from '../copilot/CustomAssistantMessage'
 import useAssistantSessionHistory from '../copilot/useAssistantSessionHistory'
 import useAssistantSessions from '../copilot/useAssistantSessions'
 import { PAPER_LABELS } from '../copilot/chatLabels'
@@ -147,7 +148,7 @@ export default function AIChatPanel({ paper }) {
 
   return (
     <div
-      className="flex flex-col h-full"
+      className="paper-assistant-chat flex flex-col h-full"
       style={{ backgroundColor: 'var(--bg-primary)' }}
     >
       <div className="paper-assistant-session-header">
@@ -167,6 +168,7 @@ export default function AIChatPanel({ paper }) {
           key={`paper-chat-${paper?.id || 'loading'}-${currentSessionId || 'default'}`}
           agentId="assistantAgent"
           threadId={currentSessionId || 'assistant-default'}
+          messageView={SINGLE_COPY_MESSAGE_VIEW}
           labels={{
             ...PAPER_LABELS,
             welcomeMessageText: paper

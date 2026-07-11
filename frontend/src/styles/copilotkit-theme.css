@@ -426,6 +426,75 @@ div[class*="credits"] {
   box-shadow: 0 0 0 3px var(--ring, rgba(59, 130, 246, 0.15));
 }
 
+/* CopilotKit v2 suggestion pills are compiled with Tailwind v4 utilities.
+   This app still uses Tailwind v3, whose reset can win for padding, borders,
+   and typography. Reassert the public v2 data-slot contract locally so the
+   assistant shortcuts remain recognisable interactive controls. */
+:is(.paper-assistant-chat, .wf-chat-panel) [data-testid="copilot-suggestions"] {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  gap: 8px !important;
+  padding: 0 12px 4px !important;
+}
+
+:is(.paper-assistant-chat, .wf-chat-panel) [data-slot="suggestion-pill"] {
+  display: inline-flex !important;
+  min-height: 32px !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--glass-stroke)) !important;
+  border-radius: 999px !important;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.1), transparent),
+    color-mix(in srgb, var(--accent) 7%, var(--glass-card-medium)) !important;
+  color: var(--text-secondary-strong) !important;
+  padding: 0 12px !important;
+  box-shadow: var(--glass-shadow-edge);
+  font-size: 12px !important;
+  font-weight: 650 !important;
+  line-height: 1 !important;
+  white-space: nowrap !important;
+  cursor: pointer !important;
+  transition: border-color 180ms ease, background-color 180ms ease, color 180ms ease, box-shadow 180ms ease;
+}
+
+:is(.paper-assistant-chat, .wf-chat-panel) [data-slot="suggestion-pill"]:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 46%, var(--glass-stroke)) !important;
+  background: color-mix(in srgb, var(--accent) 13%, var(--glass-card-medium)) !important;
+  color: var(--accent) !important;
+  box-shadow: 0 8px 20px rgba(var(--accent-rgb), 0.1), var(--glass-shadow-edge);
+}
+
+:is(.paper-assistant-chat, .wf-chat-panel) [data-slot="suggestion-pill"]:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 62%, transparent) !important;
+  outline-offset: 2px !important;
+}
+
+:is(.paper-assistant-chat, .wf-chat-panel) [data-slot="suggestion-pill"]:disabled {
+  cursor: not-allowed !important;
+  opacity: 0.58;
+}
+
+@media (max-width: 640px) {
+  :is(.paper-assistant-chat, .wf-chat-panel) [data-testid="copilot-suggestions"] {
+    gap: 6px !important;
+    padding-inline: 10px !important;
+  }
+
+  :is(.paper-assistant-chat, .wf-chat-panel) [data-slot="suggestion-pill"] {
+    min-height: 30px !important;
+    padding-inline: 10px !important;
+    font-size: 11.5px !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :is(.paper-assistant-chat, .wf-chat-panel) [data-slot="suggestion-pill"] {
+    transition: none;
+  }
+}
+
 /* ── Buttons ── */
 
 .copilotKitButton {
@@ -497,6 +566,14 @@ div[class*="credits"] {
 }
 
 /* ── Feedback toolbar ── */
+
+.copilot-conversation-copy-toolbar {
+  display: flex;
+  align-items: center;
+  width: calc(100% - 24px);
+  margin: 6px 12px 0;
+  background: transparent;
+}
 
 .copilot-msg-toolbar {
   display: flex;

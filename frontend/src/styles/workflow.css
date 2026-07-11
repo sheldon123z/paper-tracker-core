@@ -713,6 +713,35 @@
   backdrop-filter: blur(var(--glass-blur-medium)) saturate(150%);
   -webkit-backdrop-filter: blur(var(--glass-blur-medium)) saturate(150%);
 }
+
+.wf-chat-layout {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.wf-chat-layout__messages {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.wf-chat-layout__composer {
+  position: relative;
+  z-index: 20;
+  flex: 0 0 auto;
+  background:
+    linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--bg-primary) 94%, transparent) 18%);
+  padding-top: 8px;
+}
+
+.wf-chat-layout__composer [data-testid="copilot-suggestions"] {
+  margin: 0 !important;
+  padding-bottom: 8px !important;
+}
 .wf-chat-header {
   padding: 16px 18px 14px;
   border-bottom: 1px solid var(--glass-stroke);

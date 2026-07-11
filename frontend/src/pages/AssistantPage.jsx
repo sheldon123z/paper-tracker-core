@@ -18,6 +18,7 @@ import api from '../api'
 import useStore from '../store'
 import useIsMobile from '../hooks/useIsMobile'
 import ModelSelector from '../components/copilot/ModelSelector'
+import { SINGLE_COPY_MESSAGE_VIEW } from '../components/copilot/CustomAssistantMessage'
 import useAssistantSessionHistory from '../components/copilot/useAssistantSessionHistory'
 import { ASSISTANT_LABELS } from '../components/copilot/chatLabels'
 import { AppIcon, Badge } from '../components/ui'
@@ -220,6 +221,7 @@ export default function AssistantPage() {
             key={`assistant-chat-${currentSessionId || 'default'}`}
             agentId="assistantAgent"
             threadId={currentSessionId || 'assistant-default'}
+            messageView={SINGLE_COPY_MESSAGE_VIEW}
             labels={{
               ...ASSISTANT_LABELS,
               welcomeMessageText: '你好！我是你的论文研究助手，可以搜索论文、分析研究趋势和管理文献。',

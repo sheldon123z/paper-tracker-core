@@ -1,7 +1,12 @@
 import { useState } from 'react'
-import { CopilotChat } from '@copilotkit/react-core/v2'
+import {
+  CopilotChat,
+  CopilotChatSuggestionView,
+  CopilotChatView,
+} from '@copilotkit/react-core/v2'
 import { getWorkflowTemplate } from './templates'
 import { WORKFLOW_LABELS } from '../copilot/chatLabels'
+import { SINGLE_COPY_MESSAGE_VIEW } from '../copilot/CustomAssistantMessage'
 import AppIcon from '../ui/AppIcon'
 
 function statusColor(status) {
@@ -35,6 +40,46 @@ const STAGE_SUGGESTIONS = {
     { title: '生成摘要', message: '请生成一段 200 字以内的研究综述摘要' },
     { title: '推荐阅读', message: '基于分析结果，推荐最值得深读的 3 篇论文' },
   ],
+}
+
+/**
+ * CopilotKit v2 normally appends suggestions to the message transcript. The
+ * workflow surface needs them to behave as composer actions, so keep the
+ * transcript scrollable and place suggestions directly above the input.
+ */
+export function WorkflowChatView({
+  suggestions = [],
+  suggestionLoadingIndexes,
+  onSelectSuggestion,
+  className = '',
+  ...chatViewProps
+}) {
+  return (
+    <div
+      data-copilotkit
+      data-testid="workflow-chat-layout"
+      className={`wf-chat-layout ${className}`.trim()}
+    >
+      <CopilotChatView {...chatViewProps} suggestions={[]}>
+        {({ scrollView, input }) => (
+          <>
+            <div className="wf-chat-layout__messages">{scrollView}</div>
+            <div className="wf-chat-layout__composer" data-testid="workflow-chat-composer">
+              {suggestions.length > 0 && (
+                <CopilotChatSuggestionView
+                  suggestions={suggestions}
+                  loadingIndexes={suggestionLoadingIndexes}
+                  onSelectSuggestion={onSelectSuggestion}
+                  className="wf-chat-layout__suggestions"
+                />
+              )}
+              {input}
+            </div>
+          </>
+        )}
+      </CopilotChatView>
+    </div>
+  )
 }
 
 export default function WorkflowChatPanel({
@@ -117,6 +162,8 @@ export default function WorkflowChatPanel({
         <CopilotChat
           agentId="workflowAgent"
           threadId={threadId}
+          chatView={WorkflowChatView}
+          messageView={SINGLE_COPY_MESSAGE_VIEW}
           onError={({ error }) => setChatError(error?.message || '未知错误')}
           labels={{
             ...WORKFLOW_LABELS,

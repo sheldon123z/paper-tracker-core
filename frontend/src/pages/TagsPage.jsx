@@ -65,7 +65,7 @@ export default function TagsPage() {
   const handleUpdate = async (id) => {
     if (!editName.trim()) return
     try {
-      await api.put(`/api/tags/${id}`, { name: editName.trim(), color: editColor })
+      await api.patch(`/api/tags/${id}`, { name: editName.trim(), color: editColor })
       setEditingId(null)
       loadTags()
       showMessage('标签已更新')
