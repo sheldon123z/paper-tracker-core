@@ -27,6 +27,7 @@ class LLMSeedTests(unittest.TestCase):
     def test_auto_seed_is_disabled_by_default(self):
         with patched_env(
             AUTO_SEED_LLM_CONFIGS=None,
+            ALLOW_LOCAL_LLM_BASE_URLS=None,
             ENCRYPTION_KEY=TEST_ENCRYPTION_KEY,
             OLLAMA_MODELS=r"D:\Ollama\models",
         ):
@@ -46,6 +47,7 @@ class LLMSeedTests(unittest.TestCase):
         with patch.object(seed_module, "_LLM_PROVIDER_SEEDS", [ollama_seed]):
             with patched_env(
                 AUTO_SEED_LLM_CONFIGS="true",
+                ALLOW_LOCAL_LLM_BASE_URLS="true",
                 ENCRYPTION_KEY=TEST_ENCRYPTION_KEY,
                 OLLAMA_API_KEY=None,
                 OLLAMA_API_BASE=None,
