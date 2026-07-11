@@ -1,8 +1,8 @@
 import { useEffect, useMemo } from 'react'
-import { CopilotKit } from '@copilotkit/react-core'
+import { CopilotKit } from '@copilotkit/react-core/v2'
 import { useLocation } from 'react-router-dom'
 import useStore from '../../store'
-import ToolCallRenderer from './ToolCallRenderer'
+import { TOOL_CALL_RENDERERS } from './ToolCallRenderer'
 
 // Keep development requests same-origin so the /api-scoped httpOnly auth
 // cookie reaches Vite, which proxies this endpoint to CopilotRuntime on :4100.
@@ -27,6 +27,7 @@ export default function CopilotProvider({ children }) {
   const workflowTemplateId = useStore((state) => state.workflowTemplateId)
   const workflowTemplateParams = useStore((state) => state.workflowTemplateParams)
   const workflowStateSnapshot = useStore((state) => state.workflowStateSnapshot)
+  const workflowConfigId = useStore((state) => state.workflowConfigId)
   const pdfSelectedText = useStore((state) => state.pdfSelectedText)
   const pdfSelectedPage = useStore((state) => state.pdfSelectedPage)
   const pdfActiveFileId = useStore((state) => state.pdfActiveFileId)
@@ -48,7 +49,7 @@ export default function CopilotProvider({ children }) {
   // Without this, CopilotKit sees a new `properties` ref each render and
   // triggers downstream re-renders for all subscribed components (Issue #21).
   const properties = useMemo(() => ({
-    configId: selectedModelId,
+    configId: pathname === '/workflow' && workflowConfigId ? workflowConfigId : selectedModelId,
     paperId: activeTabId,
     assistantSessionId,
     catalogSessionId,
@@ -56,6 +57,7 @@ export default function CopilotProvider({ children }) {
     templateId: workflowTemplateId,
     templateParams: workflowTemplateParams,
     workflowStateSnapshot,
+    workflowConfigId,
     llmProviderKey: selectedModelMeta?.provider || null,
     llmProviderLabel: selectedModelMeta?.provider_label || null,
     llmHealthStatus: selectedModelMeta?.health_status || null,
@@ -76,6 +78,8 @@ export default function CopilotProvider({ children }) {
     workflowTemplateId,
     workflowTemplateParams,
     workflowStateSnapshot,
+    workflowConfigId,
+    pathname,
     selectedModelMeta,
     pdfSelectedText,
     pdfSelectedPage,
@@ -84,26 +88,16 @@ export default function CopilotProvider({ children }) {
     pdfContextLength,
   ])
 
-  // The full-page assistant and the floating research assistant are two views
-  // of the same conversation history. Outside paper/workflow-specific views,
-  // keep the CopilotKit thread aligned with the selected assistant session.
-  const usesAssistantThread = pathname !== '/workflow' || Boolean(activeTabId)
-  const threadId = usesAssistantThread
-    ? assistantSessionId || 'assistant-default'
-    : 'default'
-
   return (
     <CopilotKit
       runtimeUrl={RUNTIME_URL}
-      agent="assistantAgent"
-      threadId={threadId}
       showDevConsole={false}
       enableInspector={false}
       credentials="include"
       headers={copilotHeaders}
       properties={properties}
+      renderToolCalls={TOOL_CALL_RENDERERS}
     >
-      <ToolCallRenderer />
       {children}
     </CopilotKit>
   )

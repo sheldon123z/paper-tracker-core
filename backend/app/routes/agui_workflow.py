@@ -9,6 +9,7 @@ Endpoints:
 - DELETE /api/agui/workflow/{session_id}          — delete workflow session
 """
 
+import asyncio
 import contextlib
 import copy
 import html
@@ -90,6 +91,7 @@ NODE_TO_STAGE = {
 WORKFLOW_SNAPSHOT_KEYS = (
     "template_id",
     "template_params",
+    "llm_config_id",
     "workflow_status",
     "active_agent",
     "current_stage",
@@ -212,6 +214,35 @@ def _compute_state_delta(old: dict, new: dict) -> list[dict] | None:
     return ops if ops else None
 
 
+async def _with_workflow_heartbeat(events, interval_seconds: float = 5.0):
+    """Yield graph events while keeping the AG-UI connection active.
+
+    Reasoning models can spend a long time producing hidden reasoning tokens.
+    The graph is still running during that period, but no visible text event is
+    available. A lightweight activity event prevents proxies and the browser
+    from treating the healthy run as a stalled request.
+    """
+    iterator = events.__aiter__()
+    pending = asyncio.create_task(iterator.__anext__())
+    try:
+        while True:
+            done, _ = await asyncio.wait({pending}, timeout=interval_seconds)
+            if not done:
+                yield {"event": "workflow_heartbeat"}
+                continue
+            try:
+                event = pending.result()
+            except StopAsyncIteration:
+                break
+            pending = asyncio.create_task(iterator.__anext__())
+            yield event
+    finally:
+        if not pending.done():
+            pending.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await pending
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -317,6 +348,7 @@ async def workflow_agent(request: Request, db: Session = Depends(get_db), user: 
             "research_topic": research_topic,
             "template_id": template_id,
             "template_params": merged_template_params,
+            "llm_config_id": resolved.config_id,
         }
 
         config = {"configurable": {"thread_id": session_id}}
@@ -355,8 +387,21 @@ async def workflow_agent(request: Request, db: Session = Depends(get_db), user: 
         prev_snapshot = copy.deepcopy(workflow_snapshot) if use_state_delta else None
 
         try:
-            async for event in graph.astream_events(initial_state, config=config or {}, version="v2"):
+            graph_events = graph.astream_events(initial_state, config=config or {}, version="v2")
+            async for event in _with_workflow_heartbeat(graph_events):
                 kind = event["event"]
+
+                if kind == "workflow_heartbeat":
+                    yield encoder.encode(ActivitySnapshotEvent(
+                        type=EventType.ACTIVITY_SNAPSHOT,
+                        message_id=f"activity-heartbeat-{run_id}",
+                        activity_type="workflow_heartbeat",
+                        content={
+                            "stage": workflow_snapshot.get("current_stage", ""),
+                            "status": "running",
+                        },
+                    ))
+                    continue
 
                 # ── 实时进度（自定义事件）───────────────────────────────
                 if kind == "on_custom_event" and event.get("name") == "workflow_progress":

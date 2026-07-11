@@ -19,26 +19,18 @@ vi.mock('../hooks/useIsMobile', () => ({
   default: () => false,
 }))
 
-vi.mock('../components/copilot/useChatConfig', () => ({
-  default: () => ({ labels: {} }),
-}))
-
 vi.mock('../components/copilot/useAssistantSessionHistory', () => ({
   default: (...args) => mocks.history(...args),
 }))
 
-vi.mock('@copilotkit/react-ui', () => ({
-  CopilotChat: () => <div data-testid="copilot-chat" />,
-  CopilotSidebar: ({ Header, children }) => (
-    <div data-testid="copilot-sidebar">
-      <Header />
-      {children}
-    </div>
+vi.mock('@copilotkit/react-core/v2', () => ({
+  CopilotChat: (props) => (
+    <div
+      data-testid="copilot-chat"
+      data-agent-id={props.agentId}
+      data-thread-id={props.threadId}
+    />
   ),
-  useChatContext: () => ({
-    setOpen: vi.fn(),
-    icons: { headerCloseIcon: <span aria-hidden="true">close</span> },
-  }),
 }))
 
 import GlobalChatDrawer from '../components/chat/GlobalChatDrawer'
@@ -63,6 +55,7 @@ describe('GlobalChatDrawer session switching', () => {
       </GlobalChatDrawer>,
     )
 
+    await user.click(screen.getByRole('button', { name: '打开研究助手' }))
     await screen.findByRole('combobox', { name: '切换聊天记录' })
     await waitFor(() => {
       expect(screen.getByRole('combobox', { name: '切换聊天记录' })).toHaveTextContent('Session A')
@@ -82,6 +75,7 @@ describe('GlobalChatDrawer session switching', () => {
     const user = userEvent.setup()
     render(<GlobalChatDrawer><main>论文库</main></GlobalChatDrawer>)
 
+    await user.click(screen.getByRole('button', { name: '打开研究助手' }))
     await waitFor(() => {
       expect(screen.getByRole('combobox', { name: '切换聊天记录' })).toHaveTextContent('Session A')
     })

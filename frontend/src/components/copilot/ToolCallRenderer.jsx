@@ -1,4 +1,4 @@
-import { useRenderToolCall } from '@copilotkit/react-core'
+import { defineToolCallRenderer } from '@copilotkit/react-core/v2'
 import TOOL_MAP, { DefaultRenderer, Suspense, ErrorBoundary } from './toolMap'
 
 /**
@@ -29,8 +29,8 @@ function ToolCardFallback() {
   )
 }
 
-export default function ToolCallRenderer() {
-  useRenderToolCall({
+export const TOOL_CALL_RENDERERS = [
+  defineToolCallRenderer({
     name: '*',
     render: ({ name, args, status, result }) => {
       const entry = TOOL_MAP[name]
@@ -44,7 +44,5 @@ export default function ToolCallRenderer() {
         </ErrorBoundary>
       )
     },
-  })
-
-  return null
-}
+  }),
+]

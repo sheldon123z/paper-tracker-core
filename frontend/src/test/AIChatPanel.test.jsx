@@ -19,16 +19,12 @@ vi.mock('../components/copilot/useAssistantSessionHistory', () => ({
   default: (...args) => mocks.history(...args),
 }))
 
-vi.mock('../components/copilot/useChatConfig', () => ({
-  default: ({ sessionId, sessionType }) => ({ labels: {}, sessionId, sessionType }),
-}))
-
-vi.mock('@copilotkit/react-ui', () => ({
+vi.mock('@copilotkit/react-core/v2', () => ({
   CopilotChat: (props) => (
     <div
       data-testid="paper-copilot-chat"
-      data-session-id={props.sessionId}
-      data-session-type={props.sessionType}
+      data-session-id={props.threadId}
+      data-agent-id={props.agentId}
     />
   ),
 }))
@@ -60,7 +56,7 @@ describe('AIChatPanel assistant sessions', () => {
     await waitFor(() => {
       expect(screen.getByRole('combobox', { name: '切换聊天记录' })).toHaveTextContent('论文会话 A')
     })
-    expect(screen.getByTestId('paper-copilot-chat')).toHaveAttribute('data-session-type', 'assistant')
+    expect(screen.getByTestId('paper-copilot-chat')).toHaveAttribute('data-agent-id', 'assistantAgent')
 
     await user.click(screen.getByRole('combobox', { name: '切换聊天记录' }))
     await user.click(screen.getByRole('option', { name: '论文会话 B' }))

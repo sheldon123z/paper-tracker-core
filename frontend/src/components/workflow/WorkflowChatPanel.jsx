@@ -1,6 +1,6 @@
-import { CopilotChat } from '@copilotkit/react-ui'
+import { useState } from 'react'
+import { CopilotChat } from '@copilotkit/react-core/v2'
 import { getWorkflowTemplate } from './templates'
-import useChatConfig from '../copilot/useChatConfig'
 import { WORKFLOW_LABELS } from '../copilot/chatLabels'
 import AppIcon from '../ui/AppIcon'
 
@@ -45,10 +45,10 @@ export default function WorkflowChatPanel({
   workflowStatus,
   disabled,
 }) {
+  const [chatError, setChatError] = useState(null)
   const template = getWorkflowTemplate(templateId)
   const badge = statusColor(workflowStatus)
   const stageLabel = template?.stageLabels?.[currentStage] || currentStage
-  const chatConfig = useChatConfig({ sessionId: threadId || '', sessionType: 'workflow' })
   const threadPreview = threadId ? `${threadId.slice(0, 12)}...` : ''
 
   const dynamicPlaceholder = stageLabel
@@ -109,13 +109,18 @@ export default function WorkflowChatPanel({
       </div>
 
       <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+        {chatError && (
+          <div className="wf-chat-error" role="alert">
+            对话连接已中断：{chatError}。工作流状态仍会从服务端恢复。
+          </div>
+        )}
         <CopilotChat
           agentId="workflowAgent"
-          {...chatConfig}
+          threadId={threadId}
+          onError={({ error }) => setChatError(error?.message || '未知错误')}
           labels={{
-            ...chatConfig.labels,
             ...WORKFLOW_LABELS,
-            placeholder: dynamicPlaceholder,
+            chatInputPlaceholder: dynamicPlaceholder,
           }}
           suggestions={STAGE_SUGGESTIONS[currentStage] || []}
           className="absolute inset-0"

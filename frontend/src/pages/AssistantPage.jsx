@@ -12,13 +12,12 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { CopilotChat } from '@copilotkit/react-ui'
+import { CopilotChat } from '@copilotkit/react-core/v2'
 
 import api from '../api'
 import useStore from '../store'
 import useIsMobile from '../hooks/useIsMobile'
 import ModelSelector from '../components/copilot/ModelSelector'
-import useChatConfig from '../components/copilot/useChatConfig'
 import useAssistantSessionHistory from '../components/copilot/useAssistantSessionHistory'
 import { ASSISTANT_LABELS } from '../components/copilot/chatLabels'
 import { AppIcon, Badge } from '../components/ui'
@@ -58,7 +57,6 @@ export default function AssistantPage() {
     setAssistantSessionId(id)
   }, [setSearchParams, setAssistantSessionId])
 
-  const chatConfig = useChatConfig({ sessionId: currentSessionId || 'default', sessionType: 'assistant' })
   useAssistantSessionHistory(currentSessionId)
 
   // Load sessions list
@@ -220,11 +218,11 @@ export default function AssistantPage() {
         >
           <CopilotChat
             key={`assistant-chat-${currentSessionId || 'default'}`}
-            {...chatConfig}
+            agentId="assistantAgent"
+            threadId={currentSessionId || 'assistant-default'}
             labels={{
-              ...chatConfig.labels,
               ...ASSISTANT_LABELS,
-              initial: '你好！我是你的论文研究助手。可以帮你搜索论文、分析研究趋势、管理文献库。直接告诉我你需要什么！',
+              welcomeMessageText: '你好！我是你的论文研究助手，可以搜索论文、分析研究趋势和管理文献。',
             }}
             className="h-full"
           />

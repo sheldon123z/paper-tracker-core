@@ -1,4 +1,4 @@
-import { AssistantMessage } from '@copilotkit/react-ui'
+import { CopilotChatAssistantMessage } from '@copilotkit/react-core/v2'
 import useStore from '../../store'
 
 /**
@@ -41,7 +41,7 @@ export default function CustomAssistantMessage(props) {
 
       {/* Default CopilotKit rendering (markdown + tool cards + generative UI)
           Pass undefined for all callbacks to suppress the built-in toolbar */}
-      <AssistantMessage
+      <CopilotChatAssistantMessage
         {...props}
         onCopy={undefined}
         onThumbsUp={undefined}

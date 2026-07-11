@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react'
-import { CopilotChat } from '@copilotkit/react-ui'
+import { CopilotChat } from '@copilotkit/react-core/v2'
 
 import api from '../../api'
 import useStore from '../../store'
 import AssistantSessionToolbar from '../copilot/AssistantSessionToolbar'
 import useAssistantSessionHistory from '../copilot/useAssistantSessionHistory'
 import useAssistantSessions from '../copilot/useAssistantSessions'
-import useChatConfig from '../copilot/useChatConfig'
 import { PAPER_LABELS } from '../copilot/chatLabels'
 
 function fillTemplate(text, paper) {
@@ -125,11 +124,6 @@ export default function AIChatPanel({ paper }) {
     newSession,
     selectSession,
   } = useAssistantSessions(sessionsEnabled)
-  const chatConfig = useChatConfig({
-    sessionId: currentSessionId || 'assistant-default',
-    sessionType: 'assistant',
-  })
-
   useAssistantSessionHistory(currentSessionId, sessionsEnabled)
 
   useEffect(() => {
@@ -170,15 +164,16 @@ export default function AIChatPanel({ paper }) {
 
       <div className="relative flex-1 min-h-0">
         <CopilotChat
-          {...chatConfig}
+          key={`paper-chat-${paper?.id || 'loading'}-${currentSessionId || 'default'}`}
+          agentId="assistantAgent"
+          threadId={currentSessionId || 'assistant-default'}
           labels={{
-            ...chatConfig.labels,
             ...PAPER_LABELS,
-            initial: paper
-              ? `正在分析: ${paper.title}\n\n可以点击下方快捷按钮或直接输入问题。`
-              : '点击快捷操作或输入问题开始分析这篇论文',
+            welcomeMessageText: paper
+              ? `正在分析：${paper.title}。可以点击快捷按钮或直接输入问题。`
+              : '点击快捷操作或输入问题开始分析这篇论文。',
           }}
-          suggestions={filledSuggestions.length > 0 ? filledSuggestions : 'auto'}
+          suggestions={filledSuggestions}
           className="absolute inset-0"
         />
       </div>

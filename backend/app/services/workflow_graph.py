@@ -142,6 +142,7 @@ class ResearchWorkflowState(TypedDict):
 
     template_id: str
     template_params: dict[str, Any]
+    llm_config_id: int | None
     workflow_status: str
     active_agent: str
     current_stage: str
@@ -177,6 +178,7 @@ class ResearchWorkflowState(TypedDict):
 WORKFLOW_INITIAL_STATE: dict[str, Any] = {
     "template_id": "",
     "template_params": {},
+    "llm_config_id": None,
     "workflow_status": "idle",
     "active_agent": "supervisor",
     "current_stage": "",
