@@ -112,8 +112,8 @@ def _load_parsed_markdown(db: Session, paper_id: int, file_id) -> str | None:
     return None
 
 
-def _build_paper_prompt(db: Session, paper, props: dict | None = None) -> str:
-    system_prompt = get_system_prompt(db, "paper")
+def _build_paper_context(db: Session, paper, props: dict | None = None) -> str:
+    """Build reusable paper metadata/PDF context without an agent prompt."""
     mini_context = (
         f"当前论文: [ID:{paper.id}] {paper.title}\n"
         f"作者: {paper.authors or '未知'}\n"
@@ -165,7 +165,12 @@ def _build_paper_prompt(db: Session, paper, props: dict | None = None) -> str:
                         truncated += f"\n\n[... 文档内容已截断，完整内容共 {len(parsed_content)} 字 ...]"
                     mini_context += f"\n\n## 论文全文内容 (Markdown)\n{truncated}\n"
 
-    return f"{system_prompt}\n\n{mini_context}"
+    return mini_context
+
+
+def _build_paper_prompt(db: Session, paper, props: dict | None = None) -> str:
+    system_prompt = get_system_prompt(db, "paper")
+    return f"{system_prompt}\n\n{_build_paper_context(db, paper, props)}"
 
 
 def _ensure_global_session(db: Session, session_id: str, messages: list[dict]) -> None:
@@ -334,6 +339,18 @@ async def assistant_agent(request: Request, db: Session = Depends(get_db)):
             else:
                 system_prompt = f"{system_prompt}\n\n{tool_descriptions}"
 
+            # The paper detail panel shares the assistant session system with
+            # the floating/full-page assistant. Preserve its active paper and
+            # optional PDF context on every turn in that surface.
+            paper_id = props.get("paperId")
+            if paper_id:
+                paper = db.query(Paper).filter(Paper.id == paper_id).first()
+                if paper:
+                    system_prompt += (
+                        "\n\n## 当前论文上下文\n"
+                        f"{_build_paper_context(db, paper, props)}"
+                    )
+
             agent_config = ChatAgentConfig(
                 agent_type="assistant",
                 session_type="assistant",
@@ -394,7 +411,7 @@ def get_session_messages(session_id: str, db: Session = Depends(get_db)):
     )
     result = []
     for m in messages:
-        entry = {"role": m.role, "content": m.content, "created_at": str(m.created_at)}
+        entry = {"id": m.id, "role": m.role, "content": m.content, "created_at": str(m.created_at)}
         if m.role == "tool":
             try:
                 entry["tool_data"] = json.loads(m.content)

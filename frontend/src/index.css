@@ -336,6 +336,102 @@ textarea {
   scrollbar-gutter: stable;
 }
 
+/* Primary sidebar switch — adapted from the supplied hamburger/X reference. */
+.sidebar-switch {
+  position: relative;
+  display: inline-flex;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 16px;
+  background: linear-gradient(145deg, var(--bg-elevated), var(--glass-card-subtle));
+  box-shadow: var(--glass-shadow-edge), var(--shadow-sm);
+  color: var(--accent);
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    color 200ms ease,
+    border-color 200ms ease,
+    background-color 200ms ease,
+    box-shadow 200ms ease;
+}
+
+.sidebar-switch:hover {
+  border-color: var(--accent);
+  color: var(--accent-hover);
+  box-shadow: var(--glass-shadow-edge), 0 10px 24px rgba(var(--accent-rgb), 0.18);
+}
+
+.sidebar-switch:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--ring), var(--glass-shadow-edge), var(--shadow-sm);
+}
+
+.sidebar-switch__icon {
+  position: relative;
+  display: block;
+  width: 24px;
+  height: 21px;
+  transition: transform 420ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sidebar-switch__bar {
+  position: absolute;
+  left: 50%;
+  display: block;
+  height: 3px;
+  border-radius: 999px;
+  background: currentColor;
+  transform: translateX(-50%);
+  transform-origin: center;
+  transition:
+    top 320ms ease,
+    width 320ms ease,
+    transform 320ms cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 180ms ease;
+}
+
+.sidebar-switch__bar--top {
+  top: 1px;
+  width: 70%;
+}
+
+.sidebar-switch__bar--middle {
+  top: 9px;
+  width: 100%;
+}
+
+.sidebar-switch__bar--bottom {
+  top: 17px;
+  width: 70%;
+}
+
+.sidebar-switch.is-open .sidebar-switch__icon {
+  transform: rotate(180deg);
+}
+
+.sidebar-switch.is-open .sidebar-switch__bar {
+  top: 9px;
+  width: 100%;
+}
+
+.sidebar-switch.is-open .sidebar-switch__bar--top {
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.sidebar-switch.is-open .sidebar-switch__bar--middle {
+  opacity: 0;
+  transform: translateX(-50%) scaleX(0);
+}
+
+.sidebar-switch.is-open .sidebar-switch__bar--bottom {
+  transform: translateX(-50%) rotate(-45deg);
+}
+
 /* Mobile adaptation */
 @media (max-width: 767px) {
   /* iOS Safari 100vh fix */

@@ -60,6 +60,7 @@ describe('Zustand Store', () => {
       expect(state.workflowTemplateId).toBeNull()
       expect(state.workflowTemplateParams).toBeNull()
       expect(state.workflowStateSnapshot).toBeNull()
+      expect(state.workflowConfigId).toBeNull()
     })
 
     it('should have correct initial PDF context state', () => {
@@ -373,6 +374,7 @@ describe('Zustand Store', () => {
         templateId: 'template-1',
         templateParams: { query: 'test' },
         stateSnapshot: { step: 1 },
+        configId: 42,
       }
 
       setWorkflowContext(context)
@@ -382,6 +384,7 @@ describe('Zustand Store', () => {
       expect(state.workflowTemplateId).toBe('template-1')
       expect(state.workflowTemplateParams).toEqual({ query: 'test' })
       expect(state.workflowStateSnapshot).toEqual({ step: 1 })
+      expect(state.workflowConfigId).toBe(42)
     })
 
     it('clearWorkflowContext should reset all workflow fields', () => {
@@ -392,6 +395,7 @@ describe('Zustand Store', () => {
         templateId: 'template-1',
         templateParams: { query: 'test' },
         stateSnapshot: { step: 1 },
+        configId: 42,
       })
       clearWorkflowContext()
 
@@ -400,6 +404,7 @@ describe('Zustand Store', () => {
       expect(state.workflowTemplateId).toBeNull()
       expect(state.workflowTemplateParams).toBeNull()
       expect(state.workflowStateSnapshot).toBeNull()
+      expect(state.workflowConfigId).toBeNull()
     })
   })
 

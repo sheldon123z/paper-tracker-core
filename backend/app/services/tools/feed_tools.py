@@ -19,9 +19,10 @@ def _execute_get_feed_status(db: Session, arguments: dict) -> str:
     for feed in feeds:
         last_fetch = feed.last_fetched.strftime("%Y-%m-%d %H:%M") if feed.last_fetched else "Never"
         status = "Active" if feed.is_active else "Inactive"
+        interval_hours = feed.fetch_interval / 3600
         lines.append(f"  [{feed.id}] {feed.name}")
         lines.append(f"    URL: {feed.url}")
-        lines.append(f"    Status: {status} | Interval: {feed.fetch_interval}min")
+        lines.append(f"    Status: {status} | Interval: {interval_hours:g}h")
         lines.append(f"    Last fetched: {last_fetch}")
         if feed.last_error:
             lines.append(f"    Last error: {feed.last_error}")

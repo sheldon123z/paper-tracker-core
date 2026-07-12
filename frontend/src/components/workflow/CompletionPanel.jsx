@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import rehypeHighlight from 'rehype-highlight'
+import remarkGfm from 'remark-gfm'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { getWorkflowTemplate } from './templates'
 import AppIcon from '../ui/AppIcon'
@@ -45,7 +46,9 @@ function downloadBlob(blob, filename) {
 }
 
 function reportToHtml(markdown) {
-  return renderToStaticMarkup(<ReactMarkdown>{markdown}</ReactMarkdown>)
+  return renderToStaticMarkup(
+    <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdown}</ReactMarkdown>,
+  )
 }
 
 export default function CompletionPanel({ agentState, templateId, onNewWorkflow }) {
@@ -246,8 +249,13 @@ export default function CompletionPanel({ agentState, templateId, onNewWorkflow 
 
           {/* Report content */}
           {renderMode ? (
-            <div className="wf-rich-text markdown-viewer" style={{ maxHeight: 480 }}>
-              <ReactMarkdown rehypePlugins={[rehypeHighlight]}>{primaryReport}</ReactMarkdown>
+            <div className="wf-rich-text markdown-viewer wf-report-markdown" style={{ maxHeight: 480 }}>
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                rehypePlugins={[rehypeHighlight]}
+              >
+                {primaryReport}
+              </ReactMarkdown>
             </div>
           ) : (
             <div className="wf-rich-text" style={{ maxHeight: 480, wordBreak: 'break-word' }}>

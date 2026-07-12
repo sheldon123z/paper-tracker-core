@@ -78,6 +78,7 @@ class TestIngestFeedsBackfill(unittest.TestCase):
                 {
                     "link": link,
                     "title": "Existing Paper",
+                    "author": "Some Author",
                     "summary": "whatever",
                 }
             ],
@@ -107,7 +108,7 @@ class TestIngestFeedsBackfill(unittest.TestCase):
         with patch.object(
             rss_parser,
             "fetch_feed_entries",
-            return_value=[{"link": link, "title": "Owned By A"}],
+            return_value=[{"link": link, "title": "Owned By A", "author": "Some Author"}],
         ):
             stats = rss_parser.ingest_feeds(self.db, [feed_b])
 
@@ -137,6 +138,7 @@ class TestIngestFeedsBackfill(unittest.TestCase):
                 {
                     "link": "https://arxiv.org/pdf/2301.12345",
                     "title": "ArXiv Paper Different Title",
+                    "author": "Some Author",
                 }
             ],
         ):
@@ -147,6 +149,40 @@ class TestIngestFeedsBackfill(unittest.TestCase):
 
         self.db.refresh(paper)
         self.assertEqual(paper.source_feed_id, feed.id)
+
+    def test_ingest_skips_entries_with_unknown_or_missing_authors(self):
+        """Unknown 作者和缺少作者的 feed 条目不应进入论文库。"""
+        feed = self._create_feed()
+        entries = [
+            {
+                "link": "https://example.com/publication-information",
+                "title": "IEEE Transactions on Neural Networks and Learning Systems Publication Information",
+                "author": " Unknown ",
+            },
+            {
+                "link": "https://example.com/missing-author",
+                "title": "Issue Metadata Without Authors",
+            },
+            {
+                "link": "https://example.com/real-paper",
+                "title": "A Real Research Paper",
+                "authors": [{"name": "Alice Example"}, {"name": "Bob Example"}],
+                "summary": "A real abstract.",
+            },
+        ]
+
+        with patch.object(rss_parser, "fetch_feed_entries", return_value=entries):
+            stats = rss_parser.ingest_feeds(self.db, [feed])
+
+        self.assertEqual(stats["skipped_unknown_authors"], 2)
+        self.assertEqual(stats["new_papers"], 1)
+        papers = self.db.query(Paper).all()
+        self.assertEqual(len(papers), 1)
+        self.assertEqual(papers[0].title, "A Real Research Paper")
+        self.assertEqual(papers[0].authors, "Alice Example, Bob Example")
+
+        self.db.refresh(feed)
+        self.assertIsNotNone(feed.last_fetched)
 
 
 if __name__ == "__main__":

@@ -41,6 +41,8 @@ function _persistTabs(tabs, activeTabId) {
   } catch { /* ignore */ }
 }
 
+let _llmCatalogRequest = null
+
 const useStore = create((set, get) => ({
   // ---- Auth state ----
   // Tokens are now in httpOnly cookies — only user info is kept in state/localStorage.
@@ -179,9 +181,19 @@ const useStore = create((set, get) => ({
     }),
 
   refreshLlmCatalog: async () => {
-    const response = await api.get('/api/llm-configs/brief')
-    get().setLlmCatalog(response.data || [])
-    return response.data || []
+    if (_llmCatalogRequest) return _llmCatalogRequest
+
+    _llmCatalogRequest = api.get('/api/llm-configs/brief').then((response) => {
+      const catalog = response.data || []
+      get().setLlmCatalog(catalog)
+      return catalog
+    })
+
+    try {
+      return await _llmCatalogRequest
+    } finally {
+      _llmCatalogRequest = null
+    }
   },
 
   // Assistant session ID (forwarded to backend via CopilotKit properties)
@@ -199,16 +211,21 @@ const useStore = create((set, get) => ({
   workflowTemplateId: null,
   workflowTemplateParams: null,
   workflowStateSnapshot: null,
+  workflowConfigId: null,
   setWorkflowSessionId: (id) => set({ workflowSessionId: id || null }),
   setWorkflowTemplateId: (id) => set({ workflowTemplateId: id || null }),
   setWorkflowTemplateParams: (params) => set({ workflowTemplateParams: params ?? null }),
   setWorkflowStateSnapshot: (snapshot) => set({ workflowStateSnapshot: snapshot ?? null }),
-  setWorkflowContext: ({ sessionId, templateId, templateParams, stateSnapshot } = {}) =>
+  setWorkflowContext: ({ sessionId, templateId, templateParams, stateSnapshot, configId } = {}) =>
     set({
       workflowSessionId: sessionId || null,
       workflowTemplateId: templateId || null,
       workflowTemplateParams: templateParams ?? null,
       workflowStateSnapshot: stateSnapshot ?? null,
+      workflowConfigId:
+        configId !== null && configId !== undefined && configId !== '' && Number.isFinite(Number(configId))
+          ? Number(configId)
+          : null,
     }),
   clearWorkflowContext: () =>
     set({
@@ -216,6 +233,7 @@ const useStore = create((set, get) => ({
       workflowTemplateId: null,
       workflowTemplateParams: null,
       workflowStateSnapshot: null,
+      workflowConfigId: null,
     }),
 
   // PDF reader context (forwarded to backend via CopilotKit properties)

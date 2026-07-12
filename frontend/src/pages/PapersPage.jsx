@@ -9,7 +9,7 @@ import api from '../api'
 import ExpandedPaperFiles from '../components/paper/ExpandedPaperFiles'
 import FilterPanel from '../components/paper/FilterPanel'
 import SearchBar from '../components/paper/SearchBar'
-import { Badge, Button, Modal } from '../components/ui'
+import { Badge, Button, Modal, useToast } from '../components/ui'
 import useIsMobile from '../hooks/useIsMobile'
 import useStore from '../store'
 
@@ -68,10 +68,11 @@ export default function PapersPage() {
   const [sortBy, setSortBy] = useState('published_date')
   const [sortDir, setSortDir] = useState('desc')
   const [deleteConfirm, setDeleteConfirm] = useState(false)
-  const [pendingBatchAction, setPendingBatchAction] = useState(null)
+  const [batchDeleting, setBatchDeleting] = useState(false)
   const [expandedRows, setExpandedRows] = useState({})
   const [expandedData, setExpandedData] = useState({})
   const { openTab } = useStore()
+  const { addToast } = useToast()
   const isMobile = useIsMobile()
 
   // ── Data fetching ────────────────────────────────────────────
@@ -169,9 +170,25 @@ export default function PapersPage() {
     try {
       await api.post('/api/papers/batch', { paper_ids: [...selected], action })
       setSelected(new Set())
-      loadPapers(page)
+      await loadPapers(page)
+      return true
     } catch (err) {
       console.error('Batch action failed', err)
+      return false
+    }
+  }
+
+  const handleBatchDelete = async () => {
+    const count = selected.size
+    setBatchDeleting(true)
+    const deleted = await batchAction('delete')
+    setBatchDeleting(false)
+
+    if (deleted) {
+      setDeleteConfirm(false)
+      addToast({ type: 'success', message: `已删除 ${count} 篇论文` })
+    } else {
+      addToast({ type: 'error', message: '删除失败，请稍后重试' })
     }
   }
 
@@ -393,6 +410,7 @@ export default function PapersPage() {
           <Button variant="secondary" size="sm" onClick={() => batchAction('mark_read')}>标记已读</Button>
           <Button variant="secondary" size="sm" onClick={() => batchAction('favorite')}>收藏</Button>
           <Button variant="secondary" size="sm" onClick={handleExport}>导出 BibTeX</Button>
+          <Button variant="danger" size="sm" onClick={() => setDeleteConfirm(true)}>删除</Button>
           <Button variant="ghost" size="sm" className="ml-auto" onClick={() => setSelected(new Set())}>取消选择</Button>
         </div>
       )}
@@ -580,13 +598,13 @@ export default function PapersPage() {
         </div>
       </div>
 
-      <Modal isOpen={deleteConfirm} onClose={() => setDeleteConfirm(false)} title="确认操作"
+      <Modal isOpen={deleteConfirm} onClose={() => !batchDeleting && setDeleteConfirm(false)} title="删除论文"
         actions={<>
-          <Button variant="ghost" onClick={() => setDeleteConfirm(false)}>取消</Button>
-          <Button variant="danger" onClick={() => { if (pendingBatchAction) pendingBatchAction(); setDeleteConfirm(false); setPendingBatchAction(null) }}>确认</Button>
+          <Button variant="ghost" disabled={batchDeleting} onClick={() => setDeleteConfirm(false)}>取消</Button>
+          <Button variant="danger" loading={batchDeleting} onClick={handleBatchDelete}>确认删除</Button>
         </>}
       >
-        <p>确认执行此批量操作？</p>
+        <p>确定删除已选择的 {selected.size} 篇论文？相关附件也会一并删除，此操作不可撤销。</p>
       </Modal>
     </div>
   )

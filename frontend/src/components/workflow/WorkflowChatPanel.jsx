@@ -1,7 +1,12 @@
-import { CopilotChat } from '@copilotkit/react-ui'
+import { useState } from 'react'
+import {
+  CopilotChat,
+  CopilotChatSuggestionView,
+  CopilotChatView,
+} from '@copilotkit/react-core/v2'
 import { getWorkflowTemplate } from './templates'
-import useChatConfig from '../copilot/useChatConfig'
 import { WORKFLOW_LABELS } from '../copilot/chatLabels'
+import { SINGLE_COPY_MESSAGE_VIEW } from '../copilot/CustomAssistantMessage'
 import AppIcon from '../ui/AppIcon'
 
 function statusColor(status) {
@@ -37,6 +42,46 @@ const STAGE_SUGGESTIONS = {
   ],
 }
 
+/**
+ * CopilotKit v2 normally appends suggestions to the message transcript. The
+ * workflow surface needs them to behave as composer actions, so keep the
+ * transcript scrollable and place suggestions directly above the input.
+ */
+export function WorkflowChatView({
+  suggestions = [],
+  suggestionLoadingIndexes,
+  onSelectSuggestion,
+  className = '',
+  ...chatViewProps
+}) {
+  return (
+    <div
+      data-copilotkit
+      data-testid="workflow-chat-layout"
+      className={`wf-chat-layout ${className}`.trim()}
+    >
+      <CopilotChatView {...chatViewProps} suggestions={[]}>
+        {({ scrollView, input }) => (
+          <>
+            <div className="wf-chat-layout__messages">{scrollView}</div>
+            <div className="wf-chat-layout__composer" data-testid="workflow-chat-composer">
+              {suggestions.length > 0 && (
+                <CopilotChatSuggestionView
+                  suggestions={suggestions}
+                  loadingIndexes={suggestionLoadingIndexes}
+                  onSelectSuggestion={onSelectSuggestion}
+                  className="wf-chat-layout__suggestions"
+                />
+              )}
+              {input}
+            </div>
+          </>
+        )}
+      </CopilotChatView>
+    </div>
+  )
+}
+
 export default function WorkflowChatPanel({
   threadId,
   templateId,
@@ -45,10 +90,10 @@ export default function WorkflowChatPanel({
   workflowStatus,
   disabled,
 }) {
+  const [chatError, setChatError] = useState(null)
   const template = getWorkflowTemplate(templateId)
   const badge = statusColor(workflowStatus)
   const stageLabel = template?.stageLabels?.[currentStage] || currentStage
-  const chatConfig = useChatConfig({ sessionId: threadId || '', sessionType: 'workflow' })
   const threadPreview = threadId ? `${threadId.slice(0, 12)}...` : ''
 
   const dynamicPlaceholder = stageLabel
@@ -109,13 +154,20 @@ export default function WorkflowChatPanel({
       </div>
 
       <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+        {chatError && (
+          <div className="wf-chat-error" role="alert">
+            对话连接已中断：{chatError}。工作流状态仍会从服务端恢复。
+          </div>
+        )}
         <CopilotChat
           agentId="workflowAgent"
-          {...chatConfig}
+          threadId={threadId}
+          chatView={WorkflowChatView}
+          messageView={SINGLE_COPY_MESSAGE_VIEW}
+          onError={({ error }) => setChatError(error?.message || '未知错误')}
           labels={{
-            ...chatConfig.labels,
             ...WORKFLOW_LABELS,
-            placeholder: dynamicPlaceholder,
+            chatInputPlaceholder: dynamicPlaceholder,
           }}
           suggestions={STAGE_SUGGESTIONS[currentStage] || []}
           className="absolute inset-0"

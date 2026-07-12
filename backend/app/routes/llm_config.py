@@ -196,8 +196,8 @@ def update_llm_config(config_id: int, payload: LLMConfigUpdate, db: Session = De
         display_name=config.display_name,
     )
     existing_api_key = decrypt_value(config.api_key_encrypted) if config.api_key_encrypted else ""
-    has_real_existing_key = bool(existing_api_key and existing_api_key not in {"ollama", "vllm", "local"})
-    if target_profile.requires_api_key and not provided_api_key and (current_provider_key in {"ollama", "vllm"} or not has_real_existing_key):
+    has_real_existing_key = bool(existing_api_key and existing_api_key not in {"ollama", "vllm", "lmstudio", "local"})
+    if target_profile.requires_api_key and not provided_api_key and (current_provider_key in {"ollama", "vllm", "lmstudio"} or not has_real_existing_key):
         raise HTTPException(status_code=400, detail="切换到需要 API Key 的 Provider 时必须提供新的 API Key。")
 
     # Serialize user_tags list to JSON string for DB storage

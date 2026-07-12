@@ -9,8 +9,8 @@
     "build:pkg": "pkg dist/server.cjs --target node18-macos-arm64,node18-macos-x64,node18-win-x64 --out-path dist/bin"
   },
   "dependencies": {
-    "@ag-ui/client": "^0.0.47",
-    "@copilotkit/runtime": "^1.54.0",
+    "@ag-ui/client": "^0.0.57",
+    "@copilotkit/runtime": "^1.62.3",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "express": "^4.21.0"

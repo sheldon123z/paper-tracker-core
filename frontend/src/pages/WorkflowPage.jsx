@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ThreadsProvider } from '@copilotkit/react-core'
-import { useAgent, UseAgentUpdate } from '@copilotkit/react-core/v2'
+import { useAgent, UseAgentUpdate, useCopilotKit } from '@copilotkit/react-core/v2'
 
 import api from '../api'
 import useStore from '../store'
@@ -8,14 +7,16 @@ import WorkflowTabBar from '../components/workflow/WorkflowTabBar'
 import WorkflowStatePanel from '../components/workflow/WorkflowStatePanel'
 import WorkflowChatPanel from '../components/workflow/WorkflowChatPanel'
 import { getWorkflowTemplate } from '../components/workflow/templates'
+import { waitForPersistedWorkflow } from '../components/workflow/workflowRecovery'
 
 function createSessionId() {
   return `wf-${crypto.randomUUID()}`
 }
 
-function buildInitialWorkflowState(templateId, params) {
+function buildInitialWorkflowState(templateId, params, llmConfigId = null) {
   return {
     template_id: templateId,
+    llm_config_id: llmConfigId,
     workflow_status: 'running',
     current_stage: 'queued',
     active_agent: 'supervisor',
@@ -96,9 +97,16 @@ function buildTabFromSession(session, messages = []) {
     templateIcon: template?.icon || 'workflow',
     topic: session.research_topic || params.topic || session.title || '未命名工作流',
     params,
+    llmConfigId:
+      agentState.llm_config_id !== null &&
+      agentState.llm_config_id !== undefined &&
+      Number.isFinite(Number(agentState.llm_config_id))
+        ? Number(agentState.llm_config_id)
+        : null,
     phase: agentState.workflow_status === 'completed' ? 'COMPLETED' : 'EXECUTING',
     messages: mapStoredMessages(messages),
     agentState,
+    agentStateSource: 'persisted',
     shouldAutoRun: false,
   }
 }
@@ -130,6 +138,7 @@ export default function WorkflowPage() {
         templateId: activeTab.templateId,
         templateParams: activeTab.params,
         stateSnapshot: activeTab.agentState,
+        configId: activeTab.llmConfigId,
       })
       return
     }
@@ -140,6 +149,7 @@ export default function WorkflowPage() {
         templateId: draftTemplate.id,
         templateParams: null,
         stateSnapshot: null,
+        configId: null,
       })
       return
     }
@@ -216,12 +226,12 @@ export default function WorkflowPage() {
     setDraftTemplateId(null)
   }, [])
 
-  const handleStartWorkflow = useCallback((params) => {
+  const handleStartWorkflow = useCallback((params, llmConfigId) => {
     const template = getWorkflowTemplate(draftTemplateId)
-    if (!template) return
+    if (!template || !Number.isFinite(Number(llmConfigId))) return
 
     const sessionId = createSessionId()
-    const initialState = buildInitialWorkflowState(template.id, params)
+    const initialState = buildInitialWorkflowState(template.id, params, Number(llmConfigId))
     const initialMessages = buildInitialMessages(template, params)
     const nextTab = {
       id: sessionId,
@@ -231,9 +241,11 @@ export default function WorkflowPage() {
       templateIcon: template.icon,
       topic: params?.topic || '未命名工作流',
       params,
+      llmConfigId: Number(llmConfigId),
       phase: 'EXECUTING',
       messages: initialMessages,
       agentState: initialState,
+      agentStateSource: 'live',
       shouldAutoRun: true,
     }
 
@@ -255,26 +267,24 @@ export default function WorkflowPage() {
   }, [draftTemplateId])
 
   const handleOpenSession = useCallback(async (sessionId) => {
-    const existing = tabs.find((tab) => tab.sessionId === sessionId)
-    if (existing) {
-      setActiveTabId(existing.id)
-      setDraftTemplateId(null)
-      return
-    }
-
     try {
       const [sessionResponse, messagesResponse] = await Promise.all([
         api.get(`/api/agui/workflow/${sessionId}`),
         api.get(`/api/agui/workflow/${sessionId}/messages`),
       ])
       const nextTab = buildTabFromSession(sessionResponse.data, messagesResponse.data)
-      setTabs((prevTabs) => [...prevTabs, nextTab])
+      setTabs((prevTabs) => {
+        const alreadyOpen = prevTabs.some((tab) => tab.sessionId === sessionId)
+        return alreadyOpen
+          ? prevTabs.map((tab) => (tab.sessionId === sessionId ? nextTab : tab))
+          : [...prevTabs, nextTab]
+      })
       setActiveTabId(nextTab.id)
       setDraftTemplateId(null)
     } catch (error) {
       setHistoryError(error instanceof Error ? error.message : '恢复 workflow 会话失败')
     }
-  }, [tabs])
+  }, [])
 
   const handleCloseTab = useCallback((tabId) => {
     setTabs((prevTabs) => {
@@ -319,7 +329,7 @@ export default function WorkflowPage() {
         }}
       >
         {activeTab ? (
-          <ThreadsProvider key={`workflow-thread-${activeTab.sessionId}`} threadId={activeTab.sessionId}>
+          <>
             <div
               style={{
                 flex: 1,
@@ -328,19 +338,21 @@ export default function WorkflowPage() {
               }}
             >
               <WorkflowRuntimePane
+                key={`workflow-runtime-${activeTab.sessionId}`}
                 tab={activeTab}
                 onPatchTab={patchTab}
                 onNewWorkflow={handleNewWorkflow}
               />
             </div>
             <WorkflowChatPanel
+              key={`workflow-console-${activeTab.sessionId}`}
               threadId={activeTab.sessionId}
               templateId={activeTab.templateId}
               topic={activeTab.topic}
               currentStage={activeTab.agentState?.current_stage || activeTab.agentState?.active_agent}
               workflowStatus={activeTab.agentState?.workflow_status}
             />
-          </ThreadsProvider>
+          </>
         ) : (
           <>
             <div
@@ -375,6 +387,7 @@ export default function WorkflowPage() {
 }
 
 function WorkflowRuntimePane({ tab, onPatchTab, onNewWorkflow }) {
+  const { copilotkit } = useCopilotKit()
   const { agent } = useAgent({
     agentId: 'workflowAgent',
     updates: [
@@ -385,10 +398,16 @@ function WorkflowRuntimePane({ tab, onPatchTab, onNewWorkflow }) {
   })
 
   const hydratedRef = useRef(false)
+  const skipInitialAgentSyncRef = useRef(false)
 
   useEffect(() => {
     if (!agent || !tab) return
     hydratedRef.current = false
+    // The useAgent hook still exposes the previous thread's state during this
+    // effect pass. Do not let the sync effect below overwrite a restored tab
+    // with that stale state before setState/setMessages trigger their update.
+    skipInitialAgentSyncRef.current = true
+    agent.threadId = tab.sessionId
     agent.setMessages(tab.messages || [])
     agent.setState(tab.agentState || {})
     hydratedRef.current = true
@@ -396,15 +415,27 @@ function WorkflowRuntimePane({ tab, onPatchTab, onNewWorkflow }) {
 
   useEffect(() => {
     if (!agent || !tab || !hydratedRef.current) return
+    if (skipInitialAgentSyncRef.current) {
+      skipInitialAgentSyncRef.current = false
+      return
+    }
+    // Restored sessions already have an authoritative database snapshot.
+    // CopilotChat shares the same registry agent and may reset it while
+    // switching threads; those transient values must never replace history.
+    if (tab.agentStateSource !== 'live') return
 
     const nextMessages = agent.messages || []
     const nextState = agent.state || {}
     const nextPhase = agent.isRunning || nextState.workflow_status !== 'completed' ? 'EXECUTING' : 'COMPLETED'
+    const nextStateSource = ['completed', 'failed', 'error'].includes(nextState.workflow_status)
+      ? 'persisted'
+      : 'live'
 
     onPatchTab(tab.id, (currentTab) => {
       const messagesChanged = currentTab.messages !== nextMessages
       const stateChanged = currentTab.agentState !== nextState
-      if (!messagesChanged && !stateChanged && currentTab.phase === nextPhase) {
+      const sourceChanged = currentTab.agentStateSource !== nextStateSource
+      if (!messagesChanged && !stateChanged && !sourceChanged && currentTab.phase === nextPhase) {
         return null
       }
 
@@ -412,46 +443,94 @@ function WorkflowRuntimePane({ tab, onPatchTab, onNewWorkflow }) {
         messages: nextMessages,
         agentState: nextState,
         phase: nextPhase,
+        agentStateSource: nextStateSource,
       }
     })
-  }, [agent, agent?.isRunning, agent?.messages, agent?.state, onPatchTab, tab.id])
+  }, [agent, agent?.isRunning, agent?.messages, agent?.state, onPatchTab, tab.agentStateSource, tab.id])
 
   useEffect(() => {
     if (!agent || !tab?.shouldAutoRun || !hydratedRef.current) return
 
-    let cancelled = false
+    const initialState = tab.agentState
     onPatchTab(tab.id, { shouldAutoRun: false, phase: 'EXECUTING' })
 
     const runWorkflow = async () => {
       try {
-        await agent.runAgent({
+        agent.threadId = tab.sessionId
+        await copilotkit.runAgent({
+          agent,
           forwardedProps: {
+            configId: tab.llmConfigId,
             workflowSessionId: tab.sessionId,
             templateId: tab.templateId,
             templateParams: tab.params,
-            workflowStateSnapshot: tab.agentState,
+            workflowStateSnapshot: initialState,
           },
         })
       } catch (error) {
-        if (!cancelled) {
+        const connectionError = error instanceof Error ? error.message : '工作流连接中断'
+        onPatchTab(tab.id, (currentTab) => ({
+          phase: 'EXECUTING',
+          agentState: {
+            ...(currentTab.agentState || {}),
+            workflow_status: 'recovering',
+            error: `${connectionError}，正在从服务端恢复进度…`,
+          },
+        }))
+
+        try {
+          const recovered = await waitForPersistedWorkflow({
+            sessionId: tab.sessionId,
+            onSnapshot: (snapshot) => {
+              agent.setState(snapshot)
+              onPatchTab(tab.id, {
+                phase: snapshot.workflow_status === 'completed' ? 'COMPLETED' : 'EXECUTING',
+                agentState: snapshot,
+                agentStateSource: snapshot.workflow_status === 'completed' ? 'persisted' : 'live',
+              })
+            },
+          })
+
+          if (recovered.status === 'completed') {
+            const messagesResponse = await api.get(`/api/agui/workflow/${tab.sessionId}/messages`)
+            const restoredMessages = mapStoredMessages(messagesResponse.data)
+            agent.setMessages(restoredMessages)
+            agent.setState(recovered.snapshot || {})
+            onPatchTab(tab.id, {
+              phase: 'COMPLETED',
+              messages: restoredMessages,
+              agentState: recovered.snapshot || {},
+              agentStateSource: 'persisted',
+            })
+            return
+          }
+
+          const terminalError = recovered.snapshot?.error || connectionError
           onPatchTab(tab.id, (currentTab) => ({
             phase: 'EXECUTING',
+            agentStateSource: 'persisted',
+            agentState: {
+              ...(currentTab.agentState || {}),
+              workflow_status: recovered.status === 'timeout' ? 'failed' : recovered.status,
+              error: terminalError,
+            },
+          }))
+        } catch (recoveryError) {
+          onPatchTab(tab.id, (currentTab) => ({
+            phase: 'EXECUTING',
+            agentStateSource: 'persisted',
             agentState: {
               ...(currentTab.agentState || {}),
               workflow_status: 'failed',
-              error: error instanceof Error ? error.message : '工作流启动失败',
+              error: recoveryError instanceof Error ? recoveryError.message : connectionError,
             },
           }))
         }
       }
     }
 
-    runWorkflow()
-
-    return () => {
-      cancelled = true
-    }
-  }, [agent, onPatchTab, tab.id, tab.agentState, tab.params, tab.sessionId, tab.shouldAutoRun, tab.templateId])
+    void runWorkflow()
+  }, [agent, copilotkit, onPatchTab, tab.id, tab.llmConfigId, tab.params, tab.sessionId, tab.shouldAutoRun, tab.templateId])
 
   const template = getWorkflowTemplate(tab.templateId)
 

@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react'
-import { CopilotChat } from '@copilotkit/react-ui'
+import { CopilotChat } from '@copilotkit/react-core/v2'
 
 import api from '../../api'
 import useStore from '../../store'
-import useChatConfig from '../copilot/useChatConfig'
+import AssistantSessionToolbar from '../copilot/AssistantSessionToolbar'
+import { SINGLE_COPY_MESSAGE_VIEW } from '../copilot/CustomAssistantMessage'
+import useAssistantSessionHistory from '../copilot/useAssistantSessionHistory'
+import useAssistantSessions from '../copilot/useAssistantSessions'
 import { PAPER_LABELS } from '../copilot/chatLabels'
 
 function fillTemplate(text, paper) {
@@ -115,7 +118,14 @@ function ContextControlBar() {
 
 export default function AIChatPanel({ paper }) {
   const [suggestions, setSuggestions] = useState([])
-  const chatConfig = useChatConfig({ sessionId: String(paper?.id || ''), sessionType: 'paper' })
+  const sessionsEnabled = Boolean(paper?.id)
+  const {
+    currentSessionId,
+    sessions,
+    newSession,
+    selectSession,
+  } = useAssistantSessions(sessionsEnabled)
+  useAssistantSessionHistory(currentSessionId, sessionsEnabled)
 
   useEffect(() => {
     api
@@ -138,23 +148,34 @@ export default function AIChatPanel({ paper }) {
 
   return (
     <div
-      className="flex flex-col h-full"
+      className="paper-assistant-chat flex flex-col h-full"
       style={{ backgroundColor: 'var(--bg-primary)' }}
     >
+      <div className="paper-assistant-session-header">
+        <AssistantSessionToolbar
+          currentSessionId={currentSessionId}
+          sessions={sessions}
+          surfaceId={`paper-${paper?.id || 'loading'}`}
+          title="AI 论文助手"
+          onNewSession={newSession}
+          onSelectSession={selectSession}
+        />
+      </div>
       <ContextControlBar />
 
       <div className="relative flex-1 min-h-0">
         <CopilotChat
-          agentId="paperAgent"
-          {...chatConfig}
+          key={`paper-chat-${paper?.id || 'loading'}-${currentSessionId || 'default'}`}
+          agentId="assistantAgent"
+          threadId={currentSessionId || 'assistant-default'}
+          messageView={SINGLE_COPY_MESSAGE_VIEW}
           labels={{
-            ...chatConfig.labels,
             ...PAPER_LABELS,
-            initial: paper
-              ? `正在分析: ${paper.title}\n\n可以点击下方快捷按钮或直接输入问题。`
-              : '点击快捷操作或输入问题开始分析这篇论文',
+            welcomeMessageText: paper
+              ? `正在分析：${paper.title}。可以点击快捷按钮或直接输入问题。`
+              : '点击快捷操作或输入问题开始分析这篇论文。',
           }}
-          suggestions={filledSuggestions.length > 0 ? filledSuggestions : 'auto'}
+          suggestions={filledSuggestions}
           className="absolute inset-0"
         />
       </div>

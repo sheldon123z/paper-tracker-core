@@ -7,7 +7,7 @@
  * Security:
  * - CORS restricted to explicit origin whitelist (env: COPILOT_ALLOWED_ORIGINS)
  * - Optional shared-secret auth on proxy routes (env: COPILOT_RUNTIME_SECRET)
- * - Request timeout (30s) to prevent hung connections
+ * - Configurable request timeout for long-running research workflows
  * - Connection limit (max 100 concurrent) to prevent resource exhaustion
  */
 
@@ -22,7 +22,13 @@ import {
 import { HttpAgent } from "@ag-ui/client";
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:5002";
-const REQUEST_TIMEOUT_MS = 30_000;  // 30 seconds
+const configuredRequestTimeoutMs = Number.parseInt(
+  process.env.COPILOT_REQUEST_TIMEOUT_MS || "300000",
+  10,
+);
+const REQUEST_TIMEOUT_MS = Number.isFinite(configuredRequestTimeoutMs)
+  ? configuredRequestTimeoutMs
+  : 300_000; // 5 minutes by default; workflow streams also emit keep-alive activities.
 const MAX_CONNECTIONS = 100;
 
 // ---------------------------------------------------------------------------

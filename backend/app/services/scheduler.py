@@ -1,4 +1,5 @@
 import logging
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from apscheduler.jobstores.memory import MemoryJobStore
@@ -14,6 +15,20 @@ _scheduler = BackgroundScheduler(
     jobstores={"default": MemoryJobStore()},
     job_defaults={"coalesce": True, "max_instances": 1},
 )
+
+
+def _next_feed_run_time(feed: Feed, interval_seconds: int) -> datetime:
+    """Return the next due time without resetting the interval on restart."""
+    now = datetime.now(UTC)
+    last_fetched = getattr(feed, "last_fetched", None)
+    if last_fetched is None:
+        return now
+    last_fetched = (
+        last_fetched.replace(tzinfo=UTC)
+        if last_fetched.tzinfo is None
+        else last_fetched.astimezone(UTC)
+    )
+    return max(last_fetched + timedelta(seconds=interval_seconds), now)
 
 
 def _run_feed_job(feed_id: int) -> None:
@@ -35,7 +50,8 @@ def _run_feed_job(feed_id: int) -> None:
 def schedule_feed(feed: Feed) -> None:
     """Add or replace the interval job for a feed."""
     job_id = f"feed_{feed.id}"
-    interval_minutes = max(feed.fetch_interval or 120, 5)  # floor at 5 minutes
+    interval_seconds = max(feed.fetch_interval or 18000, 60)
+    next_run_time = _next_feed_run_time(feed, interval_seconds)
 
     if _scheduler.get_job(job_id):
         _scheduler.remove_job(job_id)
@@ -43,12 +59,18 @@ def schedule_feed(feed: Feed) -> None:
     _scheduler.add_job(
         _run_feed_job,
         trigger="interval",
-        minutes=interval_minutes,
+        seconds=interval_seconds,
         id=job_id,
         args=[feed.id],
         replace_existing=True,
+        next_run_time=next_run_time,
     )
-    logger.info("Scheduled feed %d every %d minutes.", feed.id, interval_minutes)
+    logger.info(
+        "Scheduled feed %d every %d seconds; next run at %s.",
+        feed.id,
+        interval_seconds,
+        next_run_time.isoformat(),
+    )
 
 
 def unschedule_feed(feed_id: int) -> None:

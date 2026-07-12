@@ -5,6 +5,7 @@ Tests cover listing, creating, updating, and deleting RSS feeds.
 import unittest
 from datetime import UTC, datetime
 from unittest.mock import patch
+from uuid import uuid4
 
 from backend.app.auth.dependencies import get_current_user, get_current_user_or_service
 from backend.app.database import Base
@@ -48,7 +49,7 @@ class TestFeeds(unittest.TestCase):
         """Helper to create a feed in the test database."""
         defaults = {
             "name": "Test Feed",
-            "url": f"https://example.com/feed-{datetime.now().timestamp()}.xml",
+            "url": f"https://example.com/feed-{uuid4().hex}.xml",
             "source": "rss",
             "is_active": True,
             "fetch_interval": 120,
@@ -125,6 +126,7 @@ class TestFeeds(unittest.TestCase):
             self.assertTrue(feed_data["is_active"])
             self.assertEqual(feed_data["fetch_interval"], 60)
             self.assertIsNotNone(feed_data["last_fetched"])
+            self.assertTrue(feed_data["last_fetched"].endswith("Z"))
             self.assertEqual(feed_data["last_error"], "Test error")
 
     # ==================== CREATE FEED TESTS ====================
@@ -290,7 +292,7 @@ class TestFeeds(unittest.TestCase):
                 # Check defaults
                 self.assertEqual(data["source"], "rss")  # Default source
                 self.assertTrue(data["is_active"])  # Default is_active
-                self.assertEqual(data["fetch_interval"], 120)  # Default interval
+                self.assertEqual(data["fetch_interval"], 18000)  # Default: five hours in seconds
 
     # ==================== UPDATE FEED TESTS ====================
 
@@ -654,17 +656,17 @@ class TestFeeds(unittest.TestCase):
             client = self._create_app()
 
             with patch("backend.app.routes.feeds.schedule_feed"):
-                # Short interval
+                # Short interval: one minute
                 response = client.post(
                     "/api/feeds",
                     json={
                         "name": "Frequent Feed",
                         "url": "https://frequent.com/feed.xml",
-                        "fetch_interval": 30,
+                        "fetch_interval": 60,
                     },
                 )
                 self.assertEqual(response.status_code, 200)
-                self.assertEqual(response.json()["fetch_interval"], 30)
+                self.assertEqual(response.json()["fetch_interval"], 60)
 
                 # Long interval
                 response = client.post(
@@ -672,11 +674,11 @@ class TestFeeds(unittest.TestCase):
                     json={
                         "name": "Rare Feed",
                         "url": "https://rare.com/feed.xml",
-                        "fetch_interval": 1440,  # 24 hours
+                        "fetch_interval": 86400,  # 24 hours in seconds
                     },
                 )
                 self.assertEqual(response.status_code, 200)
-                self.assertEqual(response.json()["fetch_interval"], 1440)
+                self.assertEqual(response.json()["fetch_interval"], 86400)
 
 
 if __name__ == "__main__":

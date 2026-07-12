@@ -5,7 +5,7 @@ import { useMemo } from 'react'
  * Purely decorative — conveys "Research Grid Nexus" atmosphere.
  */
 export default function LoginAmbientScene() {
-  const nodes = useMemo(() => generateNodes(14), [])
+  const nodes = useMemo(() => generateNodes(18), [])
   const edges = useMemo(() => generateEdges(nodes, 18), [nodes])
 
   return (
@@ -25,18 +25,7 @@ export default function LoginAmbientScene() {
               style={{ animationDelay: `${-(i * 0.7)}s` }}
             />
           ))}
-          {/* Node glows */}
-          {nodes.map((n, i) => (
-            <circle
-              key={`glow-${i}`}
-              cx={n.x}
-              cy={n.y}
-              r={n.r * 3}
-              className="topo-node-glow"
-              style={{ animationDelay: `${-(i * 1.2)}s` }}
-            />
-          ))}
-          {/* Nodes */}
+          {/* Single-layer nodes */}
           {nodes.map((n, i) => (
             <circle
               key={`node-${i}`}
@@ -157,7 +146,7 @@ function generateNodes(count) {
     nodes.push({
       x: 40 + rand() * 520,
       y: 40 + rand() * 620,
-      r: 2 + rand() * 3,
+      r: 5.8 + Math.pow(rand(), 1.4) * 9.5,
     })
   }
   return nodes

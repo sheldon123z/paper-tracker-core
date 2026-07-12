@@ -213,6 +213,7 @@ def migrate_llm_config_rows(db: Session) -> None:
                 "moonshot",
                 "zhipu",
                 "vllm",
+                "lmstudio",
                 "openai_compatible",
             } else "native"
             changed = True
@@ -228,7 +229,7 @@ def migrate_llm_config_rows(db: Session) -> None:
         if getattr(config, "health_status", None) is None:
             config.health_status = "unknown"
             changed = True
-        if inferred_provider in {"ollama", "vllm"} and not getattr(config, "is_local", False):
+        if inferred_provider in {"ollama", "vllm", "lmstudio"} and not getattr(config, "is_local", False):
             config.is_local = True
             changed = True
         stored_key_version = getattr(config, "key_version", None) or 1

@@ -240,12 +240,6 @@
   animation-duration: 8s;
 }
 
-.topo-node-glow {
-  fill: var(--login-grid-cyan);
-  opacity: 0.06;
-  animation: nodeBreathing 6s ease-in-out infinite;
-}
-
 /* ---- Right Login Zone: Glass Card ---- */
 .login-card-zone {
   display: flex;
@@ -662,7 +656,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .topo-node,
-  .topo-node-glow,
   .topo-line,
   .topo-line-alt,
   .login-fog,

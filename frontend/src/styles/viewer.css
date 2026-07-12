@@ -151,6 +151,31 @@
   margin: 0.25em 0;
 }
 
+/* Keep rendered workflow reports compact without changing attachment previews. */
+.wf-report-markdown {
+  line-height: 1.5;
+  white-space: normal;
+}
+
+.wf-report-markdown h1,
+.wf-report-markdown h2,
+.wf-report-markdown h3,
+.wf-report-markdown h4 {
+  margin-top: 1em;
+  margin-bottom: 0.35em;
+}
+
+.wf-report-markdown p,
+.wf-report-markdown ul,
+.wf-report-markdown ol {
+  margin-top: 0.45em;
+  margin-bottom: 0.45em;
+}
+
+.wf-report-markdown li {
+  margin: 0.1em 0;
+}
+
 /* Panel transition for three-panel layout */
 .panel-transition { transition: width 0.3s ease, flex 0.3s ease; }
 

@@ -141,6 +141,27 @@ def _extract_abstract(entry: dict[str, Any]) -> str:
     return best
 
 
+def _extract_authors(entry: dict[str, Any]) -> str:
+    """Return a normalized author string, using ``Unknown`` when absent."""
+    raw_authors = entry.get("authors", [])
+    names: list[str] = []
+
+    if isinstance(raw_authors, list):
+        for author in raw_authors:
+            name = author.get("name", "") if isinstance(author, dict) else str(author)
+            if name and name.strip():
+                names.append(name.strip())
+    elif isinstance(raw_authors, str):
+        names.extend(part.strip() for part in raw_authors.replace(";", ",").split(",") if part.strip())
+
+    if not names:
+        fallback = entry.get("author")
+        if isinstance(fallback, str):
+            names.extend(part.strip() for part in fallback.replace(";", ",").split(",") if part.strip())
+
+    return ", ".join(names) or "Unknown"
+
+
 def fetch_feed_entries(feed_url: str) -> list[dict[str, Any]]:
     parsed = feedparser.parse(feed_url)
     return parsed.entries or []
@@ -150,6 +171,7 @@ def ingest_feeds(db: Session, feeds: list[Feed]) -> dict[str, int]:
     stats = {
         "new_papers": 0,
         "skipped_duplicates": 0,
+        "skipped_unknown_authors": 0,
         "backfilled_feed_id": 0,
         "feeds_processed": 0,
         "feed_errors": 0,
@@ -165,6 +187,14 @@ def ingest_feeds(db: Session, feeds: list[Feed]) -> dict[str, int]:
                 arxiv_id = _extract_arxiv_id(link)
                 title = entry.get("title", "Untitled")
                 content_hash = _compute_content_hash(title)
+                authors = _extract_authors(entry)
+
+                # RSS feeds sometimes include issue metadata or publication notices
+                # as entries. Missing authors are normalized to Unknown; keep these
+                # non-paper rows out of the paper library before dedup/backfill runs.
+                if authors.strip().casefold() == "unknown":
+                    stats["skipped_unknown_authors"] += 1
+                    continue
 
                 # Triple dedup: link → arxiv_id → content_hash (fallback chain).
                 # 命中已有 paper 时机会主义补齐 source_feed_id：PR #119 后新增字段，
@@ -186,19 +216,6 @@ def ingest_feeds(db: Session, feeds: list[Feed]) -> dict[str, int]:
                     continue
 
                 abstract = _extract_abstract(entry)
-
-                # Handle authors: can be list[dict], str (semicolon/comma separated), or missing
-                raw_authors = entry.get("authors", [])
-                if isinstance(raw_authors, list) and raw_authors:
-                    if isinstance(raw_authors[0], dict):
-                        authors = ", ".join(a.get("name", "") for a in raw_authors)
-                    else:
-                        authors = ", ".join(str(a) for a in raw_authors)
-                elif isinstance(raw_authors, str) and raw_authors:
-                    # IEEE uses semicolons: "Author1;Author2;"
-                    authors = ", ".join(a.strip() for a in raw_authors.replace(";", ",").split(",") if a.strip())
-                else:
-                    authors = entry.get("author", "Unknown")
 
                 pdf_url = _extract_pdf_url(entry)
                 doi = _extract_doi(entry)

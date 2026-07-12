@@ -28,6 +28,25 @@ class _FakeLLM:
         )
 
 
+class WorkflowHeartbeatTests(unittest.IsolatedAsyncioTestCase):
+    async def test_heartbeat_keeps_silent_graph_run_active(self):
+        async def delayed_events():
+            import asyncio
+
+            await asyncio.sleep(0.02)
+            yield {"event": "on_chain_end", "name": "synthesis_agent", "data": {}}
+
+        events = []
+        async for event in agui_workflow_module._with_workflow_heartbeat(
+            delayed_events(),
+            interval_seconds=0.005,
+        ):
+            events.append(event)
+
+        self.assertIn({"event": "workflow_heartbeat"}, events)
+        self.assertEqual(events[-1]["event"], "on_chain_end")
+
+
 class WorkflowRouteTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -102,6 +121,7 @@ class WorkflowRouteTests(unittest.TestCase):
             supports_tool_calling=True,
             supports_reasoning=True,
             supports_vision=True,
+            config_id=1,
         )
 
         with patch.object(agui_workflow_module, "resolve_llm_config", return_value=resolved), \
@@ -161,6 +181,7 @@ class WorkflowRouteTests(unittest.TestCase):
             supports_tool_calling=True,
             supports_reasoning=True,
             supports_vision=True,
+            config_id=1,
         )
 
         with patch.object(agui_workflow_module, "resolve_llm_config", return_value=resolved), \
@@ -194,6 +215,7 @@ class WorkflowRouteTests(unittest.TestCase):
         self.assertEqual(detail.status_code, 200)
         self.assertEqual(detail.json()["template_id"], "trend_radar")
         self.assertEqual(detail.json()["state_snapshot"]["workflow_status"], "completed")
+        self.assertEqual(detail.json()["state_snapshot"]["llm_config_id"], 1)
 
         messages = self.client.get("/api/agui/workflow/wf-restore/messages")
         self.assertEqual(messages.status_code, 200)

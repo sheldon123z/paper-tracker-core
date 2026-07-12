@@ -1,14 +1,13 @@
 import { useEffect, useMemo } from 'react'
-import { CopilotKit } from '@copilotkit/react-core'
+import { CopilotKit } from '@copilotkit/react-core/v2'
+import { useLocation } from 'react-router-dom'
 import useStore from '../../store'
-import ToolCallRenderer from './ToolCallRenderer'
+import { TOOL_CALL_RENDERERS } from './ToolCallRenderer'
 
-// Auto-detect CopilotRuntime URL based on current host
-// 局域网/外网访问时自动替换 hostname，保持端口 4100。
-// Keep the endpoint under /api so the backend's /api-scoped httpOnly auth
-// cookies are sent to the runtime proxy as well.
-const RUNTIME_URL = import.meta.env.VITE_COPILOT_RUNTIME_URL ||
-  `${window.location.protocol}//${window.location.hostname}:4100/api/copilotkit`
+// Keep development requests same-origin so the /api-scoped httpOnly auth
+// cookie reaches Vite, which proxies this endpoint to CopilotRuntime on :4100.
+// Packaged builds can still provide an explicit runtime URL through the env.
+const RUNTIME_URL = import.meta.env.VITE_COPILOT_RUNTIME_URL || '/api/copilotkit'
 
 /**
  * CopilotKit provider wrapper that passes dynamic properties to AG-UI agents.
@@ -16,6 +15,7 @@ const RUNTIME_URL = import.meta.env.VITE_COPILOT_RUNTIME_URL ||
  * model state even before the selector mounts.
  */
 export default function CopilotProvider({ children }) {
+  const { pathname } = useLocation()
   const activeTabId = useStore((state) => state.activeTabId)
   const selectedModelId = useStore((state) => state.selectedModelId)
   const selectedModelMeta = useStore((state) => state.selectedModelMeta)
@@ -27,6 +27,7 @@ export default function CopilotProvider({ children }) {
   const workflowTemplateId = useStore((state) => state.workflowTemplateId)
   const workflowTemplateParams = useStore((state) => state.workflowTemplateParams)
   const workflowStateSnapshot = useStore((state) => state.workflowStateSnapshot)
+  const workflowConfigId = useStore((state) => state.workflowConfigId)
   const pdfSelectedText = useStore((state) => state.pdfSelectedText)
   const pdfSelectedPage = useStore((state) => state.pdfSelectedPage)
   const pdfActiveFileId = useStore((state) => state.pdfActiveFileId)
@@ -48,7 +49,7 @@ export default function CopilotProvider({ children }) {
   // Without this, CopilotKit sees a new `properties` ref each render and
   // triggers downstream re-renders for all subscribed components (Issue #21).
   const properties = useMemo(() => ({
-    configId: selectedModelId,
+    configId: pathname === '/workflow' && workflowConfigId ? workflowConfigId : selectedModelId,
     paperId: activeTabId,
     assistantSessionId,
     catalogSessionId,
@@ -56,6 +57,7 @@ export default function CopilotProvider({ children }) {
     templateId: workflowTemplateId,
     templateParams: workflowTemplateParams,
     workflowStateSnapshot,
+    workflowConfigId,
     llmProviderKey: selectedModelMeta?.provider || null,
     llmProviderLabel: selectedModelMeta?.provider_label || null,
     llmHealthStatus: selectedModelMeta?.health_status || null,
@@ -76,6 +78,8 @@ export default function CopilotProvider({ children }) {
     workflowTemplateId,
     workflowTemplateParams,
     workflowStateSnapshot,
+    workflowConfigId,
+    pathname,
     selectedModelMeta,
     pdfSelectedText,
     pdfSelectedPage,
@@ -87,14 +91,13 @@ export default function CopilotProvider({ children }) {
   return (
     <CopilotKit
       runtimeUrl={RUNTIME_URL}
-      agent="assistantAgent"
       showDevConsole={false}
       enableInspector={false}
       credentials="include"
       headers={copilotHeaders}
       properties={properties}
+      renderToolCalls={TOOL_CALL_RENDERERS}
     >
-      <ToolCallRenderer />
       {children}
     </CopilotKit>
   )

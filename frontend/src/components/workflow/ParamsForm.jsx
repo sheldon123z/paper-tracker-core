@@ -3,6 +3,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
+import useStore from '../../store'
 
 function initFormValues(steps) {
   const values = {}
@@ -20,12 +21,52 @@ function initFormValues(steps) {
 
 export default function ParamsForm({ template, onStart, onBack }) {
   const [values, setValues] = useState(() => initFormValues(template?.steps ?? []))
+  const [selectedConfigId, setSelectedConfigId] = useState('')
+  const [catalogLoading, setCatalogLoading] = useState(false)
+  const [catalogError, setCatalogError] = useState('')
+  const llmCatalog = useStore((state) => state.llmCatalog)
+  const llmCatalogLoaded = useStore((state) => state.llmCatalogLoaded)
+  const globalSelectedModelId = useStore((state) => state.selectedModelId)
+  const setSelectedModelId = useStore((state) => state.setSelectedModelId)
+  const refreshLlmCatalog = useStore((state) => state.refreshLlmCatalog)
 
   useEffect(() => {
     setValues(initFormValues(template?.steps ?? []))
   }, [template])
 
-  const isValid = useMemo(() => {
+  useEffect(() => {
+    if (llmCatalogLoaded) return
+
+    let cancelled = false
+    setCatalogLoading(true)
+    setCatalogError('')
+    refreshLlmCatalog()
+      .catch((error) => {
+        if (!cancelled) {
+          setCatalogError(error instanceof Error ? error.message : 'LLM 配置加载失败')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setCatalogLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [llmCatalogLoaded, refreshLlmCatalog])
+
+  useEffect(() => {
+    const currentId = Number(selectedConfigId)
+    if (llmCatalog.some((config) => config.id === currentId)) return
+
+    const preferredId = llmCatalog.some((config) => config.id === globalSelectedModelId)
+      ? globalSelectedModelId
+      : llmCatalog.find((config) => config.is_default)?.id ?? llmCatalog[0]?.id
+
+    setSelectedConfigId(preferredId == null ? '' : String(preferredId))
+  }, [globalSelectedModelId, llmCatalog, selectedConfigId])
+
+  const paramsValid = useMemo(() => {
     if (!template?.steps) return false
     return template.steps
       .filter((s) => s.required)
@@ -35,6 +76,12 @@ export default function ParamsForm({ template, onStart, onBack }) {
         return typeof v === 'string' && v.trim().length > 0
       })
   }, [template, values])
+
+  const selectedConfig = useMemo(
+    () => llmCatalog.find((config) => config.id === Number(selectedConfigId)) || null,
+    [llmCatalog, selectedConfigId],
+  )
+  const isValid = paramsValid && Boolean(selectedConfig) && !catalogLoading
 
   function handleTextChange(stepId, val) {
     setValues((prev) => ({ ...prev, [stepId]: val }))
@@ -53,7 +100,17 @@ export default function ParamsForm({ template, onStart, onBack }) {
   }
   function handleSubmit() {
     if (!isValid) return
-    onStart?.(values)
+    setSelectedModelId(selectedConfig.id)
+    onStart?.(values, selectedConfig.id)
+  }
+  function handleRetryCatalog() {
+    setCatalogLoading(true)
+    setCatalogError('')
+    refreshLlmCatalog()
+      .catch((error) => {
+        setCatalogError(error instanceof Error ? error.message : 'LLM 配置加载失败')
+      })
+      .finally(() => setCatalogLoading(false))
   }
 
   if (!template) return null
@@ -142,6 +199,65 @@ export default function ParamsForm({ template, onStart, onBack }) {
             )}
           </div>
         ))}
+
+        <div className="wf-fade-up" style={{ animationDelay: `${template.steps.length * 60}ms` }}>
+          <label htmlFor="workflow-llm-config" className="wf-step-label">
+            <span className="wf-step-num">{template.steps.length + 1}</span>
+            LLM 配置
+            <span style={{ color: '#ef4444', marginLeft: 4 }}>*</span>
+          </label>
+
+          <div className={`wf-model-config ${catalogError ? 'wf-model-config--error' : ''}`}>
+            <select
+              id="workflow-llm-config"
+              className="wf-model-select"
+              value={selectedConfigId}
+              onChange={(event) => setSelectedConfigId(event.target.value)}
+              disabled={catalogLoading || llmCatalog.length === 0}
+              aria-describedby="workflow-llm-help"
+              required
+            >
+              <option value="">
+                {catalogLoading ? '正在加载 LLM 配置…' : '请选择 LLM 配置'}
+              </option>
+              {llmCatalog.map((config) => (
+                <option key={config.id} value={config.id}>
+                  {config.label || config.display_name || config.model_name || config.provider}
+                  {config.is_local ? ' · 本地' : ''}
+                  {config.is_default ? ' · 默认' : ''}
+                </option>
+              ))}
+            </select>
+
+            {selectedConfig && !catalogError && (
+              <div className="wf-model-meta" id="workflow-llm-help">
+                <span
+                  className={`wf-model-health wf-model-health--${selectedConfig.health_status || 'unknown'}`}
+                  aria-hidden="true"
+                />
+                <span>{selectedConfig.provider_label || selectedConfig.provider}</span>
+                <span>·</span>
+                <span>{selectedConfig.model_name || selectedConfig.label}</span>
+                {selectedConfig.is_local && <span className="wf-model-badge">本地</span>}
+              </div>
+            )}
+
+            {!catalogLoading && llmCatalog.length === 0 && !catalogError && (
+              <p className="wf-model-message" id="workflow-llm-help">
+                暂无可用 LLM 配置，请先到“设置 → LLM 配置”添加并启用模型。
+              </p>
+            )}
+
+            {catalogError && (
+              <div className="wf-model-message wf-model-message--error" id="workflow-llm-help" role="alert">
+                <span>LLM 配置加载失败：{catalogError}</span>
+                <button type="button" className="wf-model-retry" onClick={handleRetryCatalog}>
+                  重试
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       <button

@@ -1,6 +1,6 @@
 import React, { Suspense, useEffect } from 'react'
 import { Route, Routes, Navigate, useLocation } from 'react-router-dom'
-import '@copilotkit/react-ui/styles.css'
+import copilotKitV2Styles from '@copilotkit/react-core/v2/styles.css?raw'
 
 import CopilotProvider from './components/copilot/CopilotProvider'
 import GlobalChatDrawer from './components/chat/GlobalChatDrawer'
@@ -13,6 +13,45 @@ import { ToastContainer } from './components/ui'
 import LoginPage from './pages/LoginPage'
 import useStore from './store'
 import useIsMobile from './hooks/useIsMobile'
+
+if (typeof document !== 'undefined' && !document.querySelector('style[data-copilotkit-v2-styles]')) {
+  const stylesheet = document.createElement('style')
+  stylesheet.textContent = `${copilotKitV2Styles}
+    :root {
+      --copilot-app-bg-primary: var(--bg-primary);
+      --copilot-app-bg-secondary: var(--bg-secondary);
+      --copilot-app-bg-tertiary: var(--bg-tertiary);
+      --copilot-app-bg-elevated: var(--bg-elevated);
+      --copilot-app-text-primary: var(--text-primary);
+      --copilot-app-text-secondary: var(--text-secondary);
+      --copilot-app-accent: var(--accent);
+      --copilot-app-accent-light: var(--accent-light);
+      --copilot-app-border: var(--border);
+      --copilot-app-border-strong: var(--border-strong);
+    }
+    [data-copilotkit] {
+      --background: var(--copilot-app-bg-primary);
+      --foreground: var(--copilot-app-text-primary);
+      --card: var(--copilot-app-bg-elevated);
+      --card-foreground: var(--copilot-app-text-primary);
+      --popover: var(--copilot-app-bg-elevated);
+      --popover-foreground: var(--copilot-app-text-primary);
+      --primary: var(--copilot-app-accent);
+      --primary-foreground: #fff;
+      --secondary: var(--copilot-app-bg-secondary);
+      --secondary-foreground: var(--copilot-app-text-primary);
+      --muted: var(--copilot-app-bg-tertiary);
+      --muted-foreground: var(--copilot-app-text-secondary);
+      --accent: var(--copilot-app-accent-light);
+      --accent-foreground: var(--copilot-app-text-primary);
+      --border: var(--copilot-app-border);
+      --input: var(--copilot-app-border-strong);
+      --ring: var(--copilot-app-accent);
+    }
+  `
+  stylesheet.dataset.copilotkitV2Styles = 'true'
+  document.head.appendChild(stylesheet)
+}
 
 const Dashboard = React.lazy(() => import('./pages/Dashboard'))
 const PapersPage = React.lazy(() => import('./pages/PapersPage'))

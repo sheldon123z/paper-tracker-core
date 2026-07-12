@@ -61,7 +61,7 @@ class Feed(Base):
     is_active = Column(Boolean, default=True)
     updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
     # New fields for Phase 1
-    fetch_interval = Column(Integer, default=120)
+    fetch_interval = Column(Integer, default=18000)
     last_error = Column(Text, nullable=True)
 
     papers = relationship("Paper", back_populates="source_feed", passive_deletes=True)
