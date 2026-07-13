@@ -12,6 +12,7 @@ const navItems = [
   { path: '/workflow', label: '科研工作流', icon: 'workflow', description: '自动编排' },
   { path: '/tags', label: '标签', icon: 'tags', description: '知识标注' },
   { path: '/duplicates', label: '重复检测', icon: 'duplicates', description: '质量校验' },
+  { path: '/access-control', label: '权限管理', icon: 'access-control', description: '部门、账号与审计', managerOnly: true },
   { path: '/settings', label: '设置', icon: 'settings', description: '系统配置' },
 ]
 
@@ -90,7 +91,7 @@ export default function Sidebar() {
             </div>
 
             <nav className="min-h-0 flex-1 space-y-2 overflow-y-auto px-1">
-              {navItems.map((item) => (
+              {navItems.filter((item) => !item.managerOnly || user?.role === 'manager').map((item) => (
                 <NavLink
                   key={item.path}
                   to={item.path}

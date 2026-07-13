@@ -1,5 +1,6 @@
 import hmac
 import os
+from datetime import UTC, datetime
 
 from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
@@ -7,12 +8,13 @@ from jwt import InvalidTokenError
 from sqlalchemy.orm import Session
 
 from ..control_plane.database import get_control_db
-from ..control_plane.models import User
+from ..control_plane.models import User, UserSession
+from ..services.access_control import is_manager
 from .tokens import decode_access_token
 
 # OAuth2 scheme still used as fallback for Authorization header (API/MCP callers)
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
-oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token", auto_error=False)
+oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="/api/auth/token", auto_error=False)
 
 
 def _resolve_token(request: Request, header_token: str | None) -> str | None:
@@ -51,6 +53,25 @@ def get_current_user(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
     if user.status != "active":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is disabled")
+    session_key = payload.get("sid")
+    if not session_key:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session identity is missing")
+    session = db.query(UserSession).filter(
+        UserSession.user_id == user.id,
+        UserSession.session_key == session_key,
+        UserSession.revoked_at.is_(None),
+        UserSession.expires_at > datetime.now(UTC),
+    ).first()
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session has been revoked")
+    if hasattr(request, "state"):
+        request.state.session_key = session_key
+    if hasattr(request, "state"):
+        request.state.user = user
+    if user.must_change_password and request.url.path not in {
+        "/api/auth/me", "/api/auth/change-password", "/api/auth/logout"
+    }:
+        raise HTTPException(status_code=403, detail="Password change required")
     return user
 
 
@@ -72,58 +93,32 @@ def get_optional_user(
     user = db.query(User).filter(User.id == int(user_id)).first()
     if not user or user.status != "active":
         return None
+    session_key = payload.get("sid")
+    if not session_key or db.query(UserSession).filter(
+        UserSession.user_id == user.id,
+        UserSession.session_key == session_key,
+        UserSession.revoked_at.is_(None),
+        UserSession.expires_at > datetime.now(UTC),
+    ).first() is None:
+        return None
     return user
 
 
-def _is_loopback(request: Request) -> bool:
-    """Strictly check whether the direct TCP peer is a loopback client.
-
-    Only the exact strings ``127.0.0.1`` / ``::1`` / ``localhost`` are accepted.
-    We deliberately do **not** use ``ipaddress.ip_address().is_loopback`` (which
-    would match the whole ``127.0.0.0/8`` block) nor any startswith heuristic,
-    so reverse proxies / Docker bridges that forward a real client IP cannot be
-    spoofed into looking like loopback.
-    """
-    host = request.client.host if request.client else None
-    return host in ("127.0.0.1", "::1", "localhost")
+def require_manager(user: User = Depends(get_current_user)) -> User:
+    if not is_manager(user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Manager access required")
+    return user
 
 
-def get_current_user_or_service(
+def get_current_user_or_ingestion_service(
     request: Request,
     token: str | None = Depends(oauth2_scheme),
     x_service_token: str | None = Header(default=None, alias="X-Service-Token"),
     db: Session = Depends(get_control_db),
 ) -> User | None:
-    """Allow either a regular JWT user or a service / loopback caller.
-
-    Resolution order:
-
-    1. **Service token bypass** — gated by ``PAPER_TRACKER_SERVICE_TOKEN`` env
-       var. Used by remote integrations / public deployments where the caller
-       cannot be on loopback. If the env var is unset or empty, the bypass is
-       disabled.
-    2. **Loopback bypass** — when the request comes directly from this host
-       (``127.0.0.1`` / ``::1`` / ``localhost``) authentication is skipped to
-       keep local development and the bundled ``mcp_server`` ergonomic. Set
-       ``PAPER_TRACKER_DISABLE_LOOPBACK_BYPASS=1`` (production / public
-       deployments) to turn this off.
-    3. **JWT** — falls back to the regular cookie / Authorization header flow.
-
-    In bypass modes ``request.state.is_service_call`` is set to ``True`` and
-    ``None`` is returned (no user context).
-    """
-    # 1. Service token bypass (remote / public deployments)
+    """Allow a JWT user or the explicit scheduler token; never trust loopback alone."""
     expected = os.getenv("PAPER_TRACKER_SERVICE_TOKEN", "").strip()
     if expected and x_service_token and hmac.compare_digest(x_service_token.strip(), expected):
         request.state.is_service_call = True
         return None
-
-    # 2. Loopback bypass (local-only — mcp_server / dev convenience).
-    #    Disable explicitly via PAPER_TRACKER_DISABLE_LOOPBACK_BYPASS=1.
-    disable_loopback = os.getenv("PAPER_TRACKER_DISABLE_LOOPBACK_BYPASS", "").strip().lower()
-    if disable_loopback not in {"1", "true", "yes"} and _is_loopback(request):
-        request.state.is_service_call = True
-        return None
-
-    # 3. Regular JWT path
     return get_current_user(request, token, db)
