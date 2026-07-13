@@ -6,44 +6,24 @@
 //   onChange={setSortBy}
 // />
 
-import { useId } from 'react'
 import { Listbox, ListboxButton, ListboxOption, ListboxOptions } from '@headlessui/react'
 import AppIcon from './AppIcon'
 
-export default function Select({
-  label,
-  options = [],
-  value,
-  onChange,
-  className = '',
-  id,
-  error,
-  required = false,
-  disabled = false,
-}) {
-  const generatedId = useId()
-  const selectId = id || generatedId
+export default function Select({ label, options = [], value, onChange, className = '' }) {
   const selected = options.find((o) => o.value === value) ?? options[0] ?? null
 
   return (
     <div className={['flex flex-col gap-1', className].join(' ')}>
       {label && (
-        <label htmlFor={selectId} className="text-xs font-medium text-[var(--text-secondary)]">
-          {label}
-        </label>
+        <span className="text-xs font-medium text-[var(--text-secondary)]">{label}</span>
       )}
-      <Listbox value={value} onChange={onChange} disabled={disabled}>
+      <Listbox value={value} onChange={onChange}>
         <div className="relative">
           <ListboxButton
-            id={selectId}
-            aria-required={required || undefined}
-            aria-invalid={!!error}
-            aria-describedby={error ? `${selectId}-error` : undefined}
             className={[
               'input-surface w-full flex items-center justify-between rounded-2xl border px-4 py-2.5 text-sm',
               'text-[var(--text-primary)] hover:border-strong outline-none transition-colors duration-150',
               'focus:border-accent focus:ring-2 focus:ring-[var(--ring)]',
-              error ? 'border-danger focus:border-danger focus:ring-danger/30' : '',
             ].join(' ')}
           >
             <span>{selected?.label ?? 'Select...'}</span>
@@ -82,11 +62,6 @@ export default function Select({
           </ListboxOptions>
         </div>
       </Listbox>
-      {error && (
-        <p id={`${selectId}-error`} className="text-xs font-medium text-danger" role="alert">
-          {error}
-        </p>
-      )}
     </div>
   )
 }

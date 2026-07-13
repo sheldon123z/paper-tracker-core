@@ -33,7 +33,7 @@ class DepartmentPatch(BaseModel):
 
 class UserCreate(BaseModel):
     email: str
-    username: str = Field(max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    username: str = Field(min_length=3, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
     display_name: str | None = Field(default=None, max_length=128)
     temporary_password: str
     role: str = Field(default="user", pattern=r"^(manager|user)$")
@@ -45,22 +45,6 @@ class UserCreate(BaseModel):
         value = value.lower().strip()
         if not re.match(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", value):
             raise ValueError("Invalid email format")
-        return value
-
-    @field_validator("username")
-    @classmethod
-    def validate_username_length(cls, value: str) -> str:
-        if len(value) < 3:
-            raise ValueError("至少包含三个字符")
-        return value
-
-    @field_validator("display_name")
-    @classmethod
-    def validate_display_name_length(cls, value: str | None) -> str | None:
-        if value in (None, ""):
-            return None
-        if len(value) < 3:
-            raise ValueError("至少包含三个字符")
         return value
 
 
@@ -98,13 +82,13 @@ def _user_dict(u: User) -> dict:
 def _validate_department(db: Session, department_id: int | None, *, required: bool) -> Department | None:
     if department_id is None:
         if required:
-            raise HTTPException(status_code=400, detail="创建部门账号时必须选择一个具体部门")
+            raise HTTPException(status_code=400, detail="department_id is required for user accounts")
         return None
     department = db.query(Department).filter(Department.id == department_id).first()
     if department is None:
-        raise HTTPException(status_code=400, detail="所选部门不存在")
+        raise HTTPException(status_code=400, detail="Department not found")
     if department.status != "active":
-        raise HTTPException(status_code=400, detail="所选部门已停用")
+        raise HTTPException(status_code=400, detail="Department is disabled")
     return department
 
 
@@ -207,33 +191,6 @@ def update_user(user_id: int, body: UserPatch, request: Request, manager: User =
     return _user_dict(user)
 
 
-@router.delete("/users/{user_id}")
-def delete_user(user_id: int, request: Request, manager: User = Depends(require_manager),
-                db: Session = Depends(get_control_db)):
-    user = db.query(User).filter(User.id == user_id).first()
-    if user is None:
-        raise HTTPException(status_code=404, detail="User not found")
-    if user.id == manager.id:
-        raise HTTPException(status_code=400, detail="不能注销当前登录的管理员账号")
-
-    deleted_user_id = user.id
-    db.query(AuditEvent).filter(AuditEvent.actor_user_id == deleted_user_id).update(
-        {"actor_user_id": None}, synchronize_session=False,
-    )
-    db.delete(user)
-    db.commit()
-    write_audit_event(
-        db,
-        event_type="admin.user.deleted",
-        request=request,
-        actor=manager,
-        subject_user_id=deleted_user_id,
-        resource_type="user",
-        resource_id=deleted_user_id,
-    )
-    return {"message": "Account deleted", "user_id": deleted_user_id}
-
-
 @router.post("/users/{user_id}/reset-password")
 def reset_password(user_id: int, body: PasswordReset, request: Request, manager: User = Depends(require_manager),
                    db: Session = Depends(get_control_db)):
@@ -248,6 +205,30 @@ def reset_password(user_id: int, body: PasswordReset, request: Request, manager:
     write_audit_event(db, event_type="admin.user.password_reset", request=request, actor=manager,
                       subject_user_id=user.id, resource_type="user", resource_id=user.id)
     return {"message": "Password reset; all sessions revoked"}
+
+
+@router.post("/users/{user_id}/revoke-sessions")
+def revoke_user_sessions(user_id: int, request: Request, manager: User = Depends(require_manager),
+                         db: Session = Depends(get_control_db)):
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    revoked = db.query(UserSession).filter(
+        UserSession.user_id == user.id,
+        UserSession.revoked_at.is_(None),
+    ).update({"revoked_at": datetime.now(UTC)}, synchronize_session=False)
+    db.commit()
+    write_audit_event(
+        db,
+        event_type="admin.user.sessions_revoked",
+        request=request,
+        actor=manager,
+        subject_user_id=user.id,
+        resource_type="user",
+        resource_id=user.id,
+        metadata={"revoked_count": revoked},
+    )
+    return {"message": "All sessions revoked", "revoked": revoked}
 
 
 @router.get("/sessions")

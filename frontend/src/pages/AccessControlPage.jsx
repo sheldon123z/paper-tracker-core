@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import api from '../api'
 import { Badge, Button, Card, Input, Modal, Select, useToast } from '../components/ui'
-import { passwordValidationMessage } from '../utils/passwordValidation'
 
 const tabs = [
   ['departments', '部门'],
@@ -17,55 +16,8 @@ const emptyUser = {
   role: 'user', department_id: '',
 }
 
-function minimumThreeCharacterMessage(value, { optional = false } = {}) {
-  if (optional && !value) return ''
-  return [...value].length < 3 ? '至少包含三个字符' : ''
-}
-
 function formatTime(value) {
   return value ? new Date(value).toLocaleString('zh-CN') : '—'
-}
-
-function formatSessionTime(value) {
-  if (!value) return null
-
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return null
-
-  const parts = Object.fromEntries(
-    new Intl.DateTimeFormat('zh-CN', {
-      year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
-    }).formatToParts(date).map(({ type, value: partValue }) => [type, partValue]),
-  )
-
-  return {
-    date: `${parts.year}-${parts.month}-${parts.day}`,
-    time: `${parts.hour}:${parts.minute}:${parts.second}`,
-  }
-}
-
-function SessionTime({ value }) {
-  const formatted = formatSessionTime(value)
-  if (!formatted) return '—'
-
-  return (
-    <div className="whitespace-nowrap font-mono text-xs leading-5 tabular-nums">
-      <div>{formatted.date}</div>
-      <div>{formatted.time}</div>
-    </div>
-  )
-}
-
-function SelectableOverflowText({ children, className = '', title }) {
-  return (
-    <div
-      className={`cursor-text select-text overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${className}`}
-      title={title}
-    >
-      {children}
-    </div>
-  )
 }
 
 function errorMessage(error, fallback = '操作失败') {
@@ -140,42 +92,20 @@ function DepartmentsView({ departments, reload }) {
 
 function UsersView({ departments, users, meta, reload }) {
   const [form, setForm] = useState(emptyUser)
-  const [createAttempted, setCreateAttempted] = useState(false)
   const [resetUser, setResetUser] = useState(null)
-  const [deleteUser, setDeleteUser] = useState(null)
   const [temporaryPassword, setTemporaryPassword] = useState('')
   const [saving, setSaving] = useState(false)
-  const [deleting, setDeleting] = useState(false)
   const { addToast } = useToast()
   const departmentOptions = [{ value: '', label: '请选择部门' }, ...departments.filter((d) => d.status === 'active').map((d) => ({ value: String(d.id), label: d.name }))]
-  const usernameError = form.username || createAttempted
-    ? minimumThreeCharacterMessage(form.username)
-    : ''
-  const displayNameError = minimumThreeCharacterMessage(form.display_name, { optional: true })
-  const passwordError = form.temporary_password || createAttempted
-    ? passwordValidationMessage(form.temporary_password, { emptyMessage: '请输入临时密码' })
-    : ''
-  const departmentError = createAttempted && form.role === 'user' && !form.department_id
-    ? '创建部门账号时必须选择一个具体部门'
-    : ''
 
   const create = async (event) => {
-    event.preventDefault()
-    setCreateAttempted(true)
-    if (
-      minimumThreeCharacterMessage(form.username)
-      || minimumThreeCharacterMessage(form.display_name, { optional: true })
-      || passwordValidationMessage(form.temporary_password, { emptyMessage: '请输入临时密码' })
-      || (form.role === 'user' && !form.department_id)
-    ) return
-    setSaving(true)
+    event.preventDefault(); setSaving(true)
     try {
       await api.post('/api/admin/users', {
         ...form,
-        display_name: form.display_name || null,
         department_id: form.role === 'user' ? Number(form.department_id) : null,
       })
-      setForm(emptyUser); setCreateAttempted(false); await reload()
+      setForm(emptyUser); await reload()
       addToast({ type: 'success', message: '账号已创建，首次登录将强制改密' })
     } catch (error) { addToast({ type: 'error', message: errorMessage(error) }) }
     finally { setSaving(false) }
@@ -186,15 +116,11 @@ function UsersView({ departments, users, meta, reload }) {
     catch (error) { addToast({ type: 'error', message: errorMessage(error) }) }
   }
 
-  const deleteAccount = async () => {
-    if (!deleteUser) return
-    setDeleting(true)
+  const revokeAllSessions = async (user) => {
     try {
-      await api.delete(`/api/admin/users/${deleteUser.id}`)
-      setDeleteUser(null); await reload()
-      addToast({ type: 'success', message: '账号已注销' })
+      const { data } = await api.post(`/api/admin/users/${user.id}/revoke-sessions`)
+      addToast({ type: 'success', message: `已撤销 ${data.revoked} 个会话` })
     } catch (error) { addToast({ type: 'error', message: errorMessage(error) }) }
-    finally { setDeleting(false) }
   }
 
   const resetPassword = async () => {
@@ -213,11 +139,11 @@ function UsersView({ departments, users, meta, reload }) {
       <Card title="创建账号">
         <form className="grid gap-3 md:grid-cols-2 xl:grid-cols-4" onSubmit={create}>
           <Input label="邮箱" type="email" value={form.email} onChange={(e) => setForm((v) => ({ ...v, email: e.target.value }))} required />
-          <Input label="用户名" value={form.username} onChange={(e) => setForm((v) => ({ ...v, username: e.target.value }))} error={usernameError} required />
-          <Input label="显示名称" value={form.display_name} onChange={(e) => setForm((v) => ({ ...v, display_name: e.target.value }))} error={displayNameError} />
-          <Input label="临时密码" type="password" value={form.temporary_password} onChange={(e) => setForm((v) => ({ ...v, temporary_password: e.target.value }))} error={passwordError} required />
-          <Select label="账号类型" value={form.role} onChange={(role) => setForm((v) => ({ ...v, role, department_id: '' }))} options={[{ value: 'user', label: '部门账号' }, { value: 'manager', label: '管理员账号' }]} />
-          {form.role === 'user' && <Select label="所属部门（必选）" value={form.department_id} onChange={(department_id) => setForm((v) => ({ ...v, department_id }))} options={departmentOptions} error={departmentError} required />}
+          <Input label="用户名" value={form.username} onChange={(e) => setForm((v) => ({ ...v, username: e.target.value }))} required />
+          <Input label="显示名称" value={form.display_name} onChange={(e) => setForm((v) => ({ ...v, display_name: e.target.value }))} />
+          <Input label="临时密码" type="password" minLength={12} value={form.temporary_password} onChange={(e) => setForm((v) => ({ ...v, temporary_password: e.target.value }))} required />
+          <Select label="账号类型" value={form.role} onChange={(role) => setForm((v) => ({ ...v, role }))} options={[{ value: 'user', label: '部门账号' }, { value: 'manager', label: '管理员账号' }]} />
+          {form.role === 'user' && <Select label="部门" value={form.department_id} onChange={(department_id) => setForm((v) => ({ ...v, department_id }))} options={departmentOptions} />}
           <div className="flex items-end"><Button className="w-full" type="submit" loading={saving}>创建账号</Button></div>
         </form>
       </Card>
@@ -230,7 +156,7 @@ function UsersView({ departments, users, meta, reload }) {
               <td className="px-4 py-3">{user.department_name || '全部部门'}</td>
               <td className="px-4 py-3"><Badge variant={user.status === 'active' ? 'success' : 'danger'}>{user.status === 'active' ? '启用' : '禁用'}</Badge></td>
               <td className="px-4 py-3">{formatTime(user.last_login_at)}</td>
-              <td className="px-4 py-3"><div className="flex flex-wrap gap-2"><Button size="sm" variant="secondary" onClick={() => patchUser(user, { status: user.status === 'active' ? 'disabled' : 'active' })}>{user.status === 'active' ? '禁用' : '启用'}</Button><Button size="sm" variant="secondary" onClick={() => setResetUser(user)}>重置密码</Button><Button size="sm" variant="danger" onClick={() => setDeleteUser(user)}>注销账号</Button></div></td>
+              <td className="px-4 py-3"><div className="flex flex-wrap gap-2"><Button size="sm" variant="secondary" onClick={() => patchUser(user, { status: user.status === 'active' ? 'disabled' : 'active' })}>{user.status === 'active' ? '禁用' : '启用'}</Button><Button size="sm" variant="secondary" onClick={() => revokeAllSessions(user)}>全部下线</Button><Button size="sm" variant="secondary" onClick={() => setResetUser(user)}>重置密码</Button></div></td>
             </tr>
           ))}
         </TableShell>
@@ -244,10 +170,6 @@ function UsersView({ departments, users, meta, reload }) {
         <Input label="新临时密码" type="password" minLength={12} value={temporaryPassword} onChange={(e) => setTemporaryPassword(e.target.value)} />
         <p className="mt-3 text-xs leading-5 text-tertiary">重置后该账号的全部现有会话会立即失效，下一次登录必须修改密码。</p>
       </Modal>
-      <Modal isOpen={!!deleteUser} onClose={() => { if (!deleting) setDeleteUser(null) }} title={`注销 ${deleteUser?.email || ''}`} actions={<><Button variant="secondary" disabled={deleting} onClick={() => setDeleteUser(null)}>取消</Button><Button variant="danger" loading={deleting} onClick={deleteAccount}>确认注销</Button></>}>
-        <p className="leading-6">账号注销后将无法登录，全部在线会话也会立即失效。</p>
-        <p className="mt-3 rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-xs leading-5 text-danger">此操作不可撤销。历史审计和业务记录会保留，但不再关联可登录账号。</p>
-      </Modal>
     </div>
   )
 }
@@ -258,7 +180,7 @@ function SessionsView({ sessions, reload }) {
     try { await api.post(`/api/admin/sessions/${session.id}/revoke`); await reload() }
     catch (error) { addToast({ type: 'error', message: errorMessage(error) }) }
   }
-  return <Card title={`会话列表（${sessions.filter((item) => item.active).length} 个有效）`}><TableShell columns={['账号', 'IP', '设备', '创建时间', '到期时间', '状态', '操作']} empty={!sessions.length}>{sessions.map((session) => <tr key={session.id} className="text-secondary"><td className="px-4 py-3 text-primary">{session.email}</td><td className="px-4 py-3 font-mono text-xs">{session.ip_address || '—'}</td><td className="w-72 max-w-xs px-4 py-3 text-xs"><SelectableOverflowText title={session.user_agent}>{session.user_agent || '—'}</SelectableOverflowText></td><td className="px-4 py-3"><SessionTime value={session.created_at} /></td><td className="px-4 py-3"><SessionTime value={session.expires_at} /></td><td className="px-4 py-3"><Badge variant={session.active ? 'success' : 'neutral'}>{session.active ? '有效' : '已结束'}</Badge></td><td className="px-4 py-3"><Button className="whitespace-nowrap" size="sm" variant="danger" disabled={!session.active} onClick={() => revoke(session)}>强制下线</Button></td></tr>)}</TableShell></Card>
+  return <Card title={`会话列表（${sessions.filter((item) => item.active).length} 个有效）`}><TableShell columns={['账号', 'IP', '设备', '创建时间', '到期时间', '状态', '操作']} empty={!sessions.length}>{sessions.map((session) => <tr key={session.id} className="text-secondary"><td className="px-4 py-3 text-primary">{session.email}</td><td className="px-4 py-3 font-mono text-xs">{session.ip_address || '—'}</td><td className="max-w-xs truncate px-4 py-3 text-xs" title={session.user_agent}>{session.user_agent || '—'}</td><td className="px-4 py-3">{formatTime(session.created_at)}</td><td className="px-4 py-3">{formatTime(session.expires_at)}</td><td className="px-4 py-3"><Badge variant={session.active ? 'success' : 'neutral'}>{session.active ? '有效' : '已结束'}</Badge></td><td className="px-4 py-3"><Button size="sm" variant="danger" disabled={!session.active} onClick={() => revoke(session)}>踢下线</Button></td></tr>)}</TableShell></Card>
 }
 
 function AuditView({ departments, users, audit, reload }) {
@@ -266,7 +188,7 @@ function AuditView({ departments, users, audit, reload }) {
   const params = useMemo(() => Object.fromEntries(Object.entries(filters).filter(([, value]) => value !== '')), [filters])
   const page = audit.meta?.page || 1
   const size = audit.meta?.size || 100
-  return <div className="space-y-4"><Card title="审计筛选"><div className="grid gap-3 md:grid-cols-3 xl:grid-cols-4"><Select label="账号" value={filters.user_id} onChange={(user_id) => setFilters((v) => ({ ...v, user_id }))} options={[{ value: '', label: '全部账号' }, ...users.map((u) => ({ value: String(u.id), label: u.email }))]} /><Select label="部门" value={filters.department_id} onChange={(department_id) => setFilters((v) => ({ ...v, department_id }))} options={[{ value: '', label: '全部部门' }, ...departments.map((d) => ({ value: String(d.id), label: d.name }))]} /><Input label="事件前缀" value={filters.event_type} onChange={(e) => setFilters((v) => ({ ...v, event_type: e.target.value }))} placeholder="auth. / api. / activity." /><Select label="结果" value={filters.outcome} onChange={(outcome) => setFilters((v) => ({ ...v, outcome }))} options={[{ value: '', label: '全部结果' }, { value: 'success', label: '成功' }, { value: 'failure', label: '失败' }]} /><Input label="IP 地址" value={filters.ip_address} onChange={(e) => setFilters((v) => ({ ...v, ip_address: e.target.value }))} /><Input label="开始时间" type="datetime-local" value={filters.from_time} onChange={(e) => setFilters((v) => ({ ...v, from_time: e.target.value }))} /><Input label="结束时间" type="datetime-local" value={filters.to_time} onChange={(e) => setFilters((v) => ({ ...v, to_time: e.target.value }))} /><div className="flex items-end"><Button className="w-full" onClick={() => reload({ ...params, page: 1 })}>查询</Button></div></div></Card><Card title={`审计记录（${audit.meta?.total || 0}）`}><TableShell columns={['时间', '账号 ID', '部门 ID', '事件', '结果', 'IP / 设备', '页面 / API']} empty={!audit.items?.length}>{(audit.items || []).map((event) => <tr key={event.id} className="text-secondary"><td className="whitespace-nowrap px-4 py-3">{formatTime(event.created_at)}</td><td className="px-4 py-3">{event.actor_user_id || '匿名'}</td><td className="px-4 py-3">{event.department_id || '—'}</td><td className="px-4 py-3 font-mono text-xs text-primary">{event.event_type}</td><td className="px-4 py-3"><Badge variant={event.outcome === 'success' ? 'success' : 'danger'}>{event.outcome}</Badge></td><td className="w-[220px] max-w-[220px] px-4 py-3"><div className="font-mono text-xs">{event.ip_address || '—'}</div><SelectableOverflowText className="text-xs text-tertiary" title={event.user_agent}>{event.user_agent || '—'}</SelectableOverflowText></td><td className="w-80 max-w-xs px-4 py-3"><SelectableOverflowText className="font-mono text-xs" title={`${event.method || ''} ${event.path || ''}`.trim()}>{event.method} {event.path}</SelectableOverflowText></td></tr>)}</TableShell><div className="mt-3 flex items-center justify-end gap-2 text-xs text-tertiary"><span>第 {page} 页</span><Button size="sm" variant="secondary" disabled={page <= 1} onClick={() => reload({ ...params, page: page - 1 })}>上一页</Button><Button size="sm" variant="secondary" disabled={page * size >= (audit.meta?.total || 0)} onClick={() => reload({ ...params, page: page + 1 })}>下一页</Button></div></Card></div>
+  return <div className="space-y-4"><Card title="审计筛选"><div className="grid gap-3 md:grid-cols-3 xl:grid-cols-4"><Select label="账号" value={filters.user_id} onChange={(user_id) => setFilters((v) => ({ ...v, user_id }))} options={[{ value: '', label: '全部账号' }, ...users.map((u) => ({ value: String(u.id), label: u.email }))]} /><Select label="部门" value={filters.department_id} onChange={(department_id) => setFilters((v) => ({ ...v, department_id }))} options={[{ value: '', label: '全部部门' }, ...departments.map((d) => ({ value: String(d.id), label: d.name }))]} /><Input label="事件前缀" value={filters.event_type} onChange={(e) => setFilters((v) => ({ ...v, event_type: e.target.value }))} placeholder="auth. / api. / activity." /><Select label="结果" value={filters.outcome} onChange={(outcome) => setFilters((v) => ({ ...v, outcome }))} options={[{ value: '', label: '全部结果' }, { value: 'success', label: '成功' }, { value: 'failure', label: '失败' }]} /><Input label="IP 地址" value={filters.ip_address} onChange={(e) => setFilters((v) => ({ ...v, ip_address: e.target.value }))} /><Input label="开始时间" type="datetime-local" value={filters.from_time} onChange={(e) => setFilters((v) => ({ ...v, from_time: e.target.value }))} /><Input label="结束时间" type="datetime-local" value={filters.to_time} onChange={(e) => setFilters((v) => ({ ...v, to_time: e.target.value }))} /><div className="flex items-end"><Button className="w-full" onClick={() => reload({ ...params, page: 1 })}>查询</Button></div></div></Card><Card title={`审计记录（${audit.meta?.total || 0}）`}><TableShell columns={['时间', '账号 ID', '部门 ID', '事件', '结果', 'IP / 设备', '页面 / API']} empty={!audit.items?.length}>{(audit.items || []).map((event) => <tr key={event.id} className="text-secondary"><td className="whitespace-nowrap px-4 py-3">{formatTime(event.created_at)}</td><td className="px-4 py-3">{event.actor_user_id || '匿名'}</td><td className="px-4 py-3">{event.department_id || '—'}</td><td className="px-4 py-3 font-mono text-xs text-primary">{event.event_type}</td><td className="px-4 py-3"><Badge variant={event.outcome === 'success' ? 'success' : 'danger'}>{event.outcome}</Badge></td><td className="max-w-[220px] px-4 py-3"><div className="font-mono text-xs">{event.ip_address || '—'}</div><div className="truncate text-xs text-tertiary" title={event.user_agent}>{event.user_agent || '—'}</div></td><td className="max-w-xs truncate px-4 py-3 font-mono text-xs" title={event.path}>{event.method} {event.path}</td></tr>)}</TableShell><div className="mt-3 flex items-center justify-end gap-2 text-xs text-tertiary"><span>第 {page} 页</span><Button size="sm" variant="secondary" disabled={page <= 1} onClick={() => reload({ ...params, page: page - 1 })}>上一页</Button><Button size="sm" variant="secondary" disabled={page * size >= (audit.meta?.total || 0)} onClick={() => reload({ ...params, page: page + 1 })}>下一页</Button></div></Card></div>
 }
 
 function UsageView({ usage, reload }) {

@@ -4,24 +4,17 @@ import { useNavigate } from 'react-router-dom'
 import api from '../api'
 import { Button, Card, Input } from '../components/ui'
 import useStore from '../store'
-import { passwordValidationMessage } from '../utils/passwordValidation'
 
 export default function ChangePasswordPage() {
   const [form, setForm] = useState({ current_password: '', new_password: '', confirm: '' })
-  const [submitAttempted, setSubmitAttempted] = useState(false)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const { user, setUser, clearAuth } = useStore()
   const navigate = useNavigate()
-  const newPasswordError = form.new_password || submitAttempted
-    ? passwordValidationMessage(form.new_password, { emptyMessage: '请输入新密码' })
-    : ''
 
   const submit = async (event) => {
     event.preventDefault()
     setError('')
-    setSubmitAttempted(true)
-    if (passwordValidationMessage(form.new_password, { emptyMessage: '请输入新密码' })) return
     if (form.new_password !== form.confirm) {
       setError('两次输入的新密码不一致')
       return
@@ -75,19 +68,21 @@ export default function ChangePasswordPage() {
             label="新密码"
             type="password"
             autoComplete="new-password"
+            minLength={12}
             value={form.new_password}
             onChange={(event) => setForm((value) => ({ ...value, new_password: event.target.value }))}
-            error={newPasswordError}
             required
           />
           <Input
             label="确认新密码"
             type="password"
             autoComplete="new-password"
+            minLength={12}
             value={form.confirm}
             onChange={(event) => setForm((value) => ({ ...value, confirm: event.target.value }))}
             required
           />
+          <p className="text-xs leading-5 text-tertiary">至少 12 个字符，并满足系统的字符复杂度要求。</p>
           <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-end">
             <Button type="button" variant="secondary" onClick={logout}>退出登录</Button>
             <Button type="submit" loading={saving}>保存新密码</Button>
