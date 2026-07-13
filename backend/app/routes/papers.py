@@ -9,18 +9,29 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from ..auth.dependencies import get_current_user_or_service
+from ..auth.dependencies import get_current_user
+from ..control_plane.models import User
 from ..database import get_db
-from ..models import Feed, Paper, PaperTag, Tag
+from ..models import Feed, Paper, PaperTag, PaperUserState, Tag
 from ..schemas import (
     BatchActionRequest,
     DuplicateMergeRequest,
     PaginationMeta,
+    PaperCreate,
     PaperListResponse,
     PaperOut,
     PaperPatch,
     TagAssignRequest,
     TagOut,
+)
+from ..services.access_control import (
+    filter_visible,
+    get_user_state,
+    get_visible_or_404,
+    is_manager,
+    normalize_new_scope,
+    paper_response,
+    require_writable,
 )
 from ..services.cache import cache
 from ..services.dedup_service import find_duplicates, merge_duplicates
@@ -30,7 +41,7 @@ from . import limiter  # shared rate limiter instance
 
 logger = logging.getLogger("paper-tracker.papers")
 
-router = APIRouter(prefix="/api/papers", tags=["papers"], dependencies=[Depends(get_current_user_or_service)])
+router = APIRouter(prefix="/api/papers", tags=["papers"], dependencies=[Depends(get_current_user)])
 
 
 @router.get("", response_model=PaperListResponse)
@@ -49,6 +60,9 @@ def list_papers(
     date_to: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     size: int = Query(default=20, ge=1, le=100),
+    library_scope: str | None = Query(default=None, pattern="^(public|department)$"),
+    department_id: int | None = Query(default=None),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     # Generate cache key from query parameters
@@ -65,6 +79,10 @@ def list_papers(
         "date_to": date_to,
         "page": page,
         "size": size,
+        "library_scope": library_scope,
+        "department_id": department_id,
+        "user_id": user.id,
+        "user_department_id": getattr(user, "department_id", None),
     }
     cache_key = "papers:list:" + hashlib.md5(json_lib.dumps(cache_params, sort_keys=True).encode()).hexdigest()
 
@@ -73,7 +91,17 @@ def list_papers(
     if cached_result is not None:
         return cached_result
 
-    query = db.query(Paper)
+    query = db.query(Paper).outerjoin(
+        PaperUserState,
+        (PaperUserState.paper_id == Paper.id) & (PaperUserState.user_id == user.id),
+    )
+    query = filter_visible(query, Paper, user)
+    if library_scope:
+        query = query.filter(Paper.visibility == library_scope)
+    if department_id is not None:
+        if not is_manager(user) and department_id != getattr(user, "department_id", None):
+            raise HTTPException(status_code=403, detail="Cannot query another department")
+        query = query.filter(Paper.visibility == "department", Paper.department_id == department_id)
 
     if search:
         # Sanitize LIKE wildcards and limit length to prevent DoS
@@ -84,7 +112,7 @@ def list_papers(
             (Paper.title.ilike(like, escape="\\"))
             | (Paper.authors.ilike(like, escape="\\"))
             | (Paper.abstract.ilike(like, escape="\\"))
-            | (Paper.notes.ilike(like, escape="\\"))
+            | (PaperUserState.notes.ilike(like, escape="\\"))
         )
     if source:
         query = query.filter(Paper.source == source)
@@ -100,9 +128,11 @@ def list_papers(
     if min_relevance is not None:
         query = query.filter(Paper.relevance >= min_relevance)
     if is_read is not None:
-        query = query.filter(Paper.is_read == is_read)
+        fallback = Paper.is_read if is_manager(user) else False
+        query = query.filter(func.coalesce(PaperUserState.is_read, fallback) == is_read)
     if is_favorited is not None:
-        query = query.filter(Paper.is_favorited == is_favorited)
+        fallback = Paper.is_favorited if is_manager(user) else False
+        query = query.filter(func.coalesce(PaperUserState.is_favorited, fallback) == is_favorited)
     if date_from:
         try:
             dt_from = datetime.fromisoformat(date_from)
@@ -121,7 +151,10 @@ def list_papers(
         query.order_by(Paper.published_date.desc(), Paper.created_at.desc()).offset((page - 1) * size).limit(size).all()
     )
 
-    result = PaperListResponse(items=items, meta=PaginationMeta(total=total, page=page, size=size))
+    result = PaperListResponse(
+        items=[paper_response(db, item, user) for item in items],
+        meta=PaginationMeta(total=total, page=page, size=size),
+    )
 
     # Cache the result for 60 seconds
     cache.set(cache_key, result, ttl=60)
@@ -132,20 +165,35 @@ def list_papers(
 @router.get("/duplicates")
 def list_duplicates(
     threshold: float = Query(default=0.90, ge=0.5, le=1.0),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     groups = find_duplicates(db, threshold=threshold)
+    visible_papers = filter_visible(db.query(Paper), Paper, user).all()
+    visible_ids = {paper.id for paper in visible_papers}
+    scopes = {paper.id: (paper.visibility, paper.department_id) for paper in visible_papers}
     return [
         {
             "papers": [{"id": p.id, "title": p.title, "authors": p.authors} for p in g["papers"]],
             "similarity": g["similarity"],
         }
         for g in groups
+        if all(p.id in visible_ids for p in g["papers"])
+        and len({scopes[p.id] for p in g["papers"]}) == 1
     ]
 
 
 @router.post("/duplicates/merge")
-def merge_duplicate_papers(payload: DuplicateMergeRequest, db: Session = Depends(get_db)):
+def merge_duplicate_papers(
+    payload: DuplicateMergeRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    papers = [get_visible_or_404(db, Paper, paper_id, user) for paper_id in [payload.keep_id, *payload.merge_ids]]
+    if len({(p.visibility, p.department_id) for p in papers}) != 1:
+        raise HTTPException(status_code=400, detail="Cross-scope duplicate merges are not allowed")
+    for paper in papers:
+        require_writable(paper, user)
     try:
         merge_duplicates(db, keep_id=payload.keep_id, remove_ids=payload.merge_ids)
     except ValueError as exc:
@@ -158,11 +206,15 @@ def merge_duplicate_papers(payload: DuplicateMergeRequest, db: Session = Depends
 
 
 @router.post("/batch")
-def batch_action(payload: BatchActionRequest, db: Session = Depends(get_db)):
+def batch_action(
+    payload: BatchActionRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     if not payload.paper_ids:
         raise HTTPException(status_code=400, detail="No paper IDs provided")
 
-    papers = db.query(Paper).filter(Paper.id.in_(payload.paper_ids)).all()
+    papers = filter_visible(db.query(Paper).filter(Paper.id.in_(payload.paper_ids)), Paper, user).all()
     if not papers:
         raise HTTPException(status_code=404, detail="No matching papers found")
 
@@ -171,14 +223,15 @@ def batch_action(payload: BatchActionRequest, db: Session = Depends(get_db)):
     try:
         for paper in papers:
             if action == "mark_read":
-                paper.is_read = True
+                get_user_state(db, paper.id, user.id, create=True, legacy_for_manager=is_manager(user)).is_read = True
             elif action == "mark_unread":
-                paper.is_read = False
+                get_user_state(db, paper.id, user.id, create=True, legacy_for_manager=is_manager(user)).is_read = False
             elif action == "favorite":
-                paper.is_favorited = True
+                get_user_state(db, paper.id, user.id, create=True, legacy_for_manager=is_manager(user)).is_favorited = True
             elif action == "unfavorite":
-                paper.is_favorited = False
+                get_user_state(db, paper.id, user.id, create=True, legacy_for_manager=is_manager(user)).is_favorited = False
             elif action == "delete":
+                require_writable(paper, user)
                 for paper_file in paper.files:
                     try:
                         delete_file(paper_file.storage_path)
@@ -204,8 +257,8 @@ def batch_action(payload: BatchActionRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/run")
-def run_feed_ingestion(db: Session = Depends(get_db)):
-    feeds = db.query(Feed).filter(Feed.is_active.is_(True)).all()
+def run_feed_ingestion(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    feeds = filter_visible(db.query(Feed).filter(Feed.is_active.is_(True)), Feed, user).all()
     if not feeds:
         return {"message": "No active feeds configured", "stats": {}}
 
@@ -219,7 +272,7 @@ def run_feed_ingestion(db: Session = Depends(get_db)):
 
 
 @router.get("/export/bibtex")
-def export_bibtex(db: Session = Depends(get_db)):
+def export_bibtex(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     # Derive a sessionmaker from the request-scoped session's bind so the
     # streaming generator gets its own session bound to the same database.
     # This keeps the cross-thread session safety from #23 while honoring
@@ -243,7 +296,7 @@ def export_bibtex(db: Session = Depends(get_db)):
         # Create export session inside generator to avoid cross-thread session sharing
         db_gen = ExportSessionLocal()
         try:
-            query = db_gen.query(Paper).order_by(
+            query = filter_visible(db_gen.query(Paper), Paper, user).order_by(
                 Paper.published_date.desc(), Paper.id.desc()
             ).yield_per(500)
             for paper in query:
@@ -270,22 +323,79 @@ def export_bibtex(db: Session = Depends(get_db)):
     )
 
 
+@router.post("", response_model=PaperOut, status_code=201)
+def create_paper(
+    payload: PaperCreate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    visibility, department_id = normalize_new_scope(user, payload.visibility, payload.department_id)
+    if payload.link and db.query(Paper).filter(
+        Paper.link == payload.link,
+        Paper.visibility == visibility,
+        Paper.department_id.is_(None) if department_id is None else Paper.department_id == department_id,
+    ).first():
+        raise HTTPException(status_code=409, detail="Paper link already exists in this library")
+    paper = Paper(
+        **payload.model_dump(exclude={"visibility", "department_id"}),
+        visibility=visibility,
+        department_id=department_id,
+        created_by_user_id=user.id,
+    )
+    db.add(paper)
+    db.commit()
+    db.refresh(paper)
+    cache.delete_by_prefix("papers:list:")
+    return paper_response(db, paper, user)
+
+
 @router.get("/{paper_id}", response_model=PaperOut)
-def get_paper(paper_id: int, db: Session = Depends(get_db)):
-    paper = db.query(Paper).filter(Paper.id == paper_id).first()
-    if not paper:
-        raise HTTPException(status_code=404, detail="Paper not found")
-    return paper
+def get_paper(
+    paper_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    paper = get_visible_or_404(db, Paper, paper_id, user)
+    return paper_response(db, paper, user)
 
 
 @router.patch("/{paper_id}", response_model=PaperOut)
-def update_paper(paper_id: int, payload: PaperPatch, db: Session = Depends(get_db)):
-    paper = db.query(Paper).filter(Paper.id == paper_id).first()
-    if not paper:
-        raise HTTPException(status_code=404, detail="Paper not found")
-
-    for field, value in payload.model_dump(exclude_none=True).items():
-        setattr(paper, field, value)
+def update_paper(
+    paper_id: int,
+    payload: PaperPatch,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    paper = get_visible_or_404(db, Paper, paper_id, user)
+    values = payload.model_dump(exclude_unset=True)
+    state_values = {key: values.pop(key) for key in list(values) if key in {"is_read", "is_favorited", "notes"}}
+    if state_values:
+        state = get_user_state(db, paper.id, user.id, create=True, legacy_for_manager=is_manager(user))
+        for field, value in state_values.items():
+            setattr(state, field, value)
+    if values:
+        require_writable(paper, user)
+        target_visibility = values.get("visibility", paper.visibility)
+        target_department = values.get("department_id", paper.department_id)
+        if "visibility" in values or "department_id" in values:
+            visibility, department_id = normalize_new_scope(
+                user,
+                values.pop("visibility", paper.visibility),
+                values.pop("department_id", paper.department_id),
+            )
+            paper.visibility = visibility
+            paper.department_id = department_id
+            target_visibility, target_department = visibility, department_id
+        target_link = values.get("link", paper.link)
+        if target_link and db.query(Paper).filter(
+            Paper.id != paper.id,
+            Paper.link == target_link,
+            Paper.visibility == target_visibility,
+            Paper.department_id.is_(None) if target_department is None else Paper.department_id == target_department,
+        ).first():
+            raise HTTPException(status_code=409, detail="Paper link already exists in this library")
+        for field, value in values.items():
+            setattr(paper, field, value)
 
     db.commit()
     db.refresh(paper)
@@ -293,23 +403,37 @@ def update_paper(paper_id: int, payload: PaperPatch, db: Session = Depends(get_d
     # Invalidate paper list cache
     cache.delete_by_prefix("papers:list:")
 
-    return paper
+    return paper_response(db, paper, user)
 
 
 @router.post("/{paper_id}/tags", response_model=list[TagOut])
-def assign_tags(paper_id: int, payload: TagAssignRequest, db: Session = Depends(get_db)):
-    paper = db.query(Paper).filter(Paper.id == paper_id).first()
-    if not paper:
-        raise HTTPException(status_code=404, detail="Paper not found")
+def assign_tags(
+    paper_id: int,
+    payload: TagAssignRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    paper = get_visible_or_404(db, Paper, paper_id, user)
+    require_writable(paper, user)
 
     db.query(PaperTag).filter(PaperTag.paper_id == paper_id).delete()
 
     tag_records: list[Tag] = []
     clean_tags = [tag.strip() for tag in payload.tags if tag.strip()]
     for name in dict.fromkeys(clean_tags):
-        tag = db.query(Tag).filter(func.lower(Tag.name) == name.lower()).first()
+        tag = db.query(Tag).filter(
+            func.lower(Tag.name) == name.lower(),
+            Tag.visibility == paper.visibility,
+            Tag.department_id == paper.department_id,
+        ).first()
         if not tag:
-            tag = Tag(name=name, color=payload.default_color)
+            tag = Tag(
+                name=name,
+                color=payload.default_color,
+                visibility=paper.visibility,
+                department_id=paper.department_id,
+                created_by_user_id=user.id,
+            )
             db.add(tag)
             db.flush()
         db.add(PaperTag(paper_id=paper_id, tag_id=tag.id))
@@ -371,15 +495,15 @@ def translate_abstract(
     paper_id: int,
     background_tasks: BackgroundTasks,
     config_id: int | None = None,
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Trigger LLM translation of paper abstract to Chinese."""
-    paper = db.query(Paper).filter(Paper.id == paper_id).first()
-    if not paper:
-        raise HTTPException(status_code=404, detail="论文不存在")
+    paper = get_visible_or_404(db, Paper, paper_id, user)
+    require_writable(paper, user)
     if not paper.abstract:
         raise HTTPException(status_code=400, detail="该论文没有摘要内容")
 
     background_tasks.add_task(_run_abstract_translate, paper_id, config_id, db)
     logger.info("Triggered abstract translation for paper %d", paper_id)
-    return paper
+    return paper_response(db, paper, user)

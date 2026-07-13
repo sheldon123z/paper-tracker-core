@@ -2,6 +2,7 @@ import React, { Suspense, useEffect } from 'react'
 import { Route, Routes, Navigate, useLocation } from 'react-router-dom'
 import copilotKitV2Styles from '@copilotkit/react-core/v2/styles.css?raw'
 
+import api from './api'
 import CopilotProvider from './components/copilot/CopilotProvider'
 import GlobalChatDrawer from './components/chat/GlobalChatDrawer'
 import Sidebar from './components/layout/Sidebar'
@@ -61,10 +62,14 @@ const DuplicatesPage = React.lazy(() => import('./pages/DuplicatesPage'))
 const SettingsPage = React.lazy(() => import('./pages/SettingsPage'))
 const AssistantPage = React.lazy(() => import('./pages/AssistantPage'))
 const WorkflowPage = React.lazy(() => import('./pages/WorkflowPage'))
+const AccessControlPage = React.lazy(() => import('./pages/AccessControlPage'))
+const ChangePasswordPage = React.lazy(() => import('./pages/ChangePasswordPage'))
 
 function ProtectedRoute({ children }) {
   const isAuthenticated = useStore((s) => s.isAuthenticated)
   const authPending = useStore((s) => s.authPending)
+  const user = useStore((s) => s.user)
+  const location = useLocation()
 
   // While session validation is in progress, show loading to avoid flash redirect
   if (authPending) {
@@ -76,7 +81,15 @@ function ProtectedRoute({ children }) {
   }
 
   if (!isAuthenticated) return <Navigate to="/login" replace />
+  if (user?.must_change_password && location.pathname !== '/change-password') {
+    return <Navigate to="/change-password" replace />
+  }
   return children
+}
+
+function ManagerRoute({ children }) {
+  const user = useStore((s) => s.user)
+  return user?.role === 'manager' ? children : <Navigate to="/" replace />
 }
 
 const SuspenseFallback = (
@@ -90,6 +103,18 @@ export default function App() {
   const location = useLocation()
   const isMobile = useIsMobile()
   const userId = user?.id
+
+  useEffect(() => {
+    if (!isAuthenticated || user?.must_change_password || location.pathname === '/login') return undefined
+    const record = (eventType) => {
+      api.post('/api/activity', { event_type: eventType, path: location.pathname }).catch(() => {})
+    }
+    record('page_view')
+    const heartbeat = window.setInterval(() => {
+      if (document.visibilityState === 'visible') record('heartbeat')
+    }, 60000)
+    return () => window.clearInterval(heartbeat)
+  }, [isAuthenticated, location.pathname, user?.must_change_password])
 
   // Validate httpOnly cookie session on mount (replaces localStorage token check)
   useEffect(() => {
@@ -111,8 +136,18 @@ export default function App() {
         </div>
       )
     }
-    if (isAuthenticated) return <Navigate to="/" replace />
+    if (isAuthenticated) return <Navigate to={user?.must_change_password ? '/change-password' : '/'} replace />
     return <LoginPage />
+  }
+
+  if (location.pathname === '/change-password') {
+    return (
+      <ProtectedRoute>
+        <div className={darkMode ? 'dark app-theme-root' : 'app-theme-root'}>
+          <Suspense fallback={SuspenseFallback}><ChangePasswordPage /></Suspense>
+        </div>
+      </ProtectedRoute>
+    )
   }
 
   const isFullPage = ['/assistant', '/workflow'].includes(location.pathname)
@@ -139,6 +174,7 @@ export default function App() {
                       <Route path="/settings" element={<SettingsPage />} />
                       <Route path="/assistant" element={<AssistantPage />} />
                       <Route path="/workflow" element={<WorkflowPage />} />
+                      <Route path="/access-control" element={<ManagerRoute><AccessControlPage /></ManagerRoute>} />
                     </Routes>
                   </Suspense>
                 </main>
@@ -206,6 +242,7 @@ export default function App() {
                           <Route path="/tags" element={<TagsPage />} />
                           <Route path="/duplicates" element={<DuplicatesPage />} />
                           <Route path="/settings" element={<SettingsPage />} />
+                          <Route path="/access-control" element={<ManagerRoute><AccessControlPage /></ManagerRoute>} />
                         </Routes>
                       </Suspense>
                     </div>

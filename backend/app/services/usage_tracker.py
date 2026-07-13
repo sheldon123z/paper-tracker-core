@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import logging
 import time
 from datetime import UTC, datetime, timedelta
@@ -22,6 +23,9 @@ def create_usage_collector(
     model_name: str = "",
     agent_type: str | None = None,
     session_id: str | None = None,
+    user_id: int | None = None,
+    department_id: int | None = None,
+    request_type: str | None = None,
 ) -> dict:
     """Create a mutable dict that accumulates usage data during streaming."""
     return {
@@ -30,6 +34,9 @@ def create_usage_collector(
         "model_name": model_name,
         "agent_type": agent_type,
         "session_id": session_id,
+        "user_id": user_id,
+        "department_id": department_id,
+        "request_type": request_type,
         "start_time": time.time(),
         "prompt_tokens": 0,
         "completion_tokens": 0,
@@ -56,6 +63,9 @@ def save_usage_log(db: Session, collector: dict) -> None:
             model_name=collector.get("model_name", "unknown"),
             agent_type=collector.get("agent_type"),
             session_id=collector.get("session_id"),
+            user_id=collector.get("user_id"),
+            department_id=collector.get("department_id"),
+            request_type=collector.get("request_type"),
             prompt_tokens=collector["prompt_tokens"],
             completion_tokens=completion_tokens,
             total_tokens=collector["total_tokens"],
@@ -68,6 +78,36 @@ def save_usage_log(db: Session, collector: dict) -> None:
         )
         db.add(log)
         db.commit()
+        try:
+            from ..control_plane.database import ControlSessionLocal
+            from ..control_plane.models import AuditEvent
+
+            audit_db = ControlSessionLocal()
+            try:
+                request_type = collector.get("request_type") or collector.get("agent_type")
+                audit_db.add(AuditEvent(
+                    actor_user_id=collector.get("user_id"),
+                    department_id=collector.get("department_id"),
+                    event_type="ai.call",
+                    outcome="success" if collector.get("status", "success") == "success" else "failure",
+                    method="POST",
+                    path=f"/api/agui/{request_type}" if request_type else "/api/agui",
+                    resource_type="llm",
+                    resource_id=str(collector.get("config_id")) if collector.get("config_id") else None,
+                    metadata_json=json.dumps({
+                        "request_type": request_type,
+                        "provider": collector.get("provider"),
+                        "model_name": collector.get("model_name"),
+                        "total_tokens": collector.get("total_tokens", 0),
+                        "duration_ms": duration_ms,
+                        "error_code": collector.get("error_code"),
+                    }, ensure_ascii=False),
+                ))
+                audit_db.commit()
+            finally:
+                audit_db.close()
+        except Exception:
+            logger.debug("Failed to save AI audit event", exc_info=True)
     except Exception:
         logger.debug("Failed to save usage log", exc_info=True)
         with contextlib.suppress(Exception):
@@ -78,7 +118,7 @@ def save_usage_log(db: Session, collector: dict) -> None:
 # Aggregation helpers
 # ---------------------------------------------------------------------------
 
-def get_usage_summary(db: Session, *, days: int = 30, config_id: int | None = None) -> dict:
+def get_usage_summary(db: Session, *, days: int = 30, config_id: int | None = None, user_id: int | None = None) -> dict:
     cutoff = datetime.now(UTC) - timedelta(days=days)
     q = db.query(
         func.count(LLMUsageLog.id),
@@ -92,6 +132,8 @@ def get_usage_summary(db: Session, *, days: int = 30, config_id: int | None = No
     ).filter(LLMUsageLog.created_at >= cutoff)
     if config_id is not None:
         q = q.filter(LLMUsageLog.config_id == config_id)
+    if user_id is not None:
+        q = q.filter(LLMUsageLog.user_id == user_id)
     row = q.one()
     return {
         "total_calls": row[0],
@@ -106,9 +148,9 @@ def get_usage_summary(db: Session, *, days: int = 30, config_id: int | None = No
     }
 
 
-def get_usage_by_model(db: Session, *, days: int = 30) -> list[dict]:
+def get_usage_by_model(db: Session, *, days: int = 30, user_id: int | None = None) -> list[dict]:
     cutoff = datetime.now(UTC) - timedelta(days=days)
-    rows = (
+    query = (
         db.query(
             LLMUsageLog.config_id,
             LLMUsageLog.provider,
@@ -118,6 +160,11 @@ def get_usage_by_model(db: Session, *, days: int = 30) -> list[dict]:
             func.coalesce(func.avg(LLMUsageLog.duration_ms), 0),
         )
         .filter(LLMUsageLog.created_at >= cutoff)
+    )
+    if user_id is not None:
+        query = query.filter(LLMUsageLog.user_id == user_id)
+    rows = (
+        query
         .group_by(LLMUsageLog.config_id, LLMUsageLog.provider, LLMUsageLog.model_name)
         .all()
     )
@@ -134,9 +181,9 @@ def get_usage_by_model(db: Session, *, days: int = 30) -> list[dict]:
     ]
 
 
-def get_usage_by_agent(db: Session, *, days: int = 30) -> list[dict]:
+def get_usage_by_agent(db: Session, *, days: int = 30, user_id: int | None = None) -> list[dict]:
     cutoff = datetime.now(UTC) - timedelta(days=days)
-    rows = (
+    query = (
         db.query(
             LLMUsageLog.agent_type,
             func.count(LLMUsageLog.id),
@@ -144,6 +191,11 @@ def get_usage_by_agent(db: Session, *, days: int = 30) -> list[dict]:
             func.coalesce(func.avg(LLMUsageLog.duration_ms), 0),
         )
         .filter(LLMUsageLog.created_at >= cutoff)
+    )
+    if user_id is not None:
+        query = query.filter(LLMUsageLog.user_id == user_id)
+    rows = (
+        query
         .group_by(LLMUsageLog.agent_type)
         .all()
     )
@@ -158,16 +210,21 @@ def get_usage_by_agent(db: Session, *, days: int = 30) -> list[dict]:
     ]
 
 
-def get_usage_timeline(db: Session, *, days: int = 30, interval: str = "day") -> list[dict]:
+def get_usage_timeline(db: Session, *, days: int = 30, interval: str = "day", user_id: int | None = None) -> list[dict]:
     cutoff = datetime.now(UTC) - timedelta(days=days)
     fmt = "%Y-%m-%d" if interval == "day" else "%Y-%m-%d %H:00"
-    rows = (
+    query = (
         db.query(
             func.strftime(fmt, LLMUsageLog.created_at),
             func.count(LLMUsageLog.id),
             func.coalesce(func.sum(LLMUsageLog.total_tokens), 0),
         )
         .filter(LLMUsageLog.created_at >= cutoff)
+    )
+    if user_id is not None:
+        query = query.filter(LLMUsageLog.user_id == user_id)
+    rows = (
+        query
         .group_by(func.strftime(fmt, LLMUsageLog.created_at))
         .order_by(func.strftime(fmt, LLMUsageLog.created_at))
         .all()
@@ -175,9 +232,12 @@ def get_usage_timeline(db: Session, *, days: int = 30, interval: str = "day") ->
     return [{"date": r[0], "calls": r[1], "tokens": r[2]} for r in rows]
 
 
-def get_recent_usage(db: Session, *, limit: int = 50) -> list[LLMUsageLog]:
+def get_recent_usage(db: Session, *, limit: int = 50, user_id: int | None = None) -> list[LLMUsageLog]:
+    query = db.query(LLMUsageLog)
+    if user_id is not None:
+        query = query.filter(LLMUsageLog.user_id == user_id)
     return (
-        db.query(LLMUsageLog)
+        query
         .order_by(LLMUsageLog.created_at.desc())
         .limit(limit)
         .all()

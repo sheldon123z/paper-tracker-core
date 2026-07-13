@@ -5,8 +5,8 @@ import json
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from ...models import Paper, PaperTag, Tag
-from .helpers import _format_paper, _format_paper_detail, _paper_to_dict
+from ...models import Paper, PaperTag, PaperUserState, Tag
+from .helpers import _current_user_id, _format_paper, _format_paper_detail, _paper_to_dict, _personal_state
 
 
 def _execute_search_papers(db: Session, arguments: dict) -> str:
@@ -36,13 +36,13 @@ def _execute_search_papers(db: Session, arguments: dict) -> str:
         header += f" in category '{category}'"
     lines = [header + ":\n"]
     for paper in papers:
-        lines.append(_format_paper(paper))
+        lines.append(_format_paper(db, paper))
         lines.append("")
     text = "\n".join(lines)
     return json.dumps({
         "type": "search_papers",
         "summary": text,
-        "data": [_paper_to_dict(p) for p in papers],
+        "data": [_paper_to_dict(db, p) for p in papers],
     }, ensure_ascii=False)
 
 
@@ -55,11 +55,11 @@ def _execute_get_paper_detail(db: Session, arguments: dict) -> str:
     if not paper:
         return f"Paper with ID {paper_id} not found."
 
-    text = _format_paper_detail(paper)
+    text = _format_paper_detail(db, paper)
     return json.dumps({
         "type": "get_paper_detail",
         "summary": text,
-        "data": _paper_to_dict(paper),
+        "data": _paper_to_dict(db, paper),
     }, ensure_ascii=False)
 
 
@@ -72,13 +72,13 @@ def _execute_get_latest_papers(db: Session, arguments: dict) -> str:
 
     lines = [f"Latest {len(papers)} paper(s):\n"]
     for paper in papers:
-        lines.append(_format_paper(paper))
+        lines.append(_format_paper(db, paper))
         lines.append("")
     text = "\n".join(lines)
     return json.dumps({
         "type": "get_latest_papers",
         "summary": text,
-        "data": [_paper_to_dict(p) for p in papers],
+        "data": [_paper_to_dict(db, p) for p in papers],
     }, ensure_ascii=False)
 
 
@@ -102,13 +102,13 @@ def _execute_get_category_papers(db: Session, arguments: dict) -> str:
 
     lines = [f"Papers in category '{category}' ({len(papers)} results):\n"]
     for paper in papers:
-        lines.append(_format_paper(paper))
+        lines.append(_format_paper(db, paper))
         lines.append("")
     text = "\n".join(lines)
     return json.dumps({
         "type": "get_category_papers",
         "summary": text,
-        "data": [_paper_to_dict(p) for p in papers],
+        "data": [_paper_to_dict(db, p) for p in papers],
     }, ensure_ascii=False)
 
 
@@ -165,9 +165,10 @@ def _execute_get_paper_notes(db: Session, arguments: dict) -> str:
         paper = db.query(Paper).filter(Paper.id == paper_id).first()
         if not paper:
             return f"Paper with ID {paper_id} not found."
+        _, _, notes = _personal_state(db, paper)
         lines = [
             f"Notes for [ID:{paper.id}] {paper.title}:\n",
-            f"  Notes: {paper.notes or '(empty)'}",
+            f"  Notes: {notes or '(empty)'}",
             f"  AI Summary: {paper.ai_summary or '(none)'}",
         ]
         text = "\n".join(lines)
@@ -176,27 +177,32 @@ def _execute_get_paper_notes(db: Session, arguments: dict) -> str:
             "summary": text,
             "data": [{
                 "id": paper.id, "title": paper.title,
-                "notes": paper.notes or "", "ai_summary": paper.ai_summary or "",
+                "notes": notes, "ai_summary": paper.ai_summary or "",
             }],
         }, ensure_ascii=False)
 
     # List all papers with notes
-    papers = (
-        db.query(Paper)
-        .filter((Paper.notes.isnot(None)) & (Paper.notes != ""))
-        .order_by(Paper.updated_at.desc())
-        .limit(limit)
-        .all()
-    )
+    user_id = _current_user_id(db)
+    if user_id is None:
+        rows = [(paper, paper.notes or "") for paper in db.query(Paper).filter(
+            (Paper.notes.isnot(None)) & (Paper.notes != "")
+        ).order_by(Paper.updated_at.desc()).limit(limit).all()]
+    else:
+        rows = db.query(Paper, PaperUserState.notes).join(
+            PaperUserState,
+            (PaperUserState.paper_id == Paper.id) & (PaperUserState.user_id == user_id),
+        ).filter(PaperUserState.notes != "").order_by(
+            PaperUserState.updated_at.desc(),
+        ).limit(limit).all()
 
-    if not papers:
+    if not rows:
         return "No papers with notes found."
 
-    lines = [f"Papers with notes ({len(papers)} results):\n"]
+    lines = [f"Papers with notes ({len(rows)} results):\n"]
     data_list = []
-    for p in papers:
-        notes_preview = (p.notes or "")[:150]
-        if len(p.notes or "") > 150:
+    for p, notes in rows:
+        notes_preview = notes[:150]
+        if len(notes) > 150:
             notes_preview += "..."
         lines.append(f"  [ID:{p.id}] {p.title}")
         lines.append(f"    Notes: {notes_preview}")
@@ -205,7 +211,7 @@ def _execute_get_paper_notes(db: Session, arguments: dict) -> str:
         lines.append("")
         data_list.append({
             "id": p.id, "title": p.title,
-            "notes": p.notes or "", "ai_summary": p.ai_summary or "",
+            "notes": notes, "ai_summary": p.ai_summary or "",
         })
 
     text = "\n".join(lines)
@@ -218,14 +224,19 @@ def _execute_get_paper_notes(db: Session, arguments: dict) -> str:
 
 def _execute_get_favorites_overview(db: Session, arguments: dict) -> str:
     limit = min(arguments.get("limit", 20), 50)
+    user_id = _current_user_id(db)
 
-    favorites = (
-        db.query(Paper)
-        .filter(Paper.is_favorited.is_(True))
-        .order_by(Paper.relevance.desc(), Paper.created_at.desc())
-        .limit(limit)
-        .all()
-    )
+    favorites_query = db.query(Paper)
+    if user_id is None:
+        favorites_query = favorites_query.filter(Paper.is_favorited.is_(True))
+    else:
+        favorites_query = favorites_query.join(
+            PaperUserState,
+            (PaperUserState.paper_id == Paper.id) & (PaperUserState.user_id == user_id),
+        ).filter(PaperUserState.is_favorited.is_(True))
+    favorites = favorites_query.order_by(
+        Paper.relevance.desc(), Paper.created_at.desc(),
+    ).limit(limit).all()
 
     if not favorites:
         return "No favorited papers found."
@@ -237,7 +248,15 @@ def _execute_get_favorites_overview(db: Session, arguments: dict) -> str:
         by_category.setdefault(cat, []).append(p)
 
     # Compute average relevance for favorites vs all papers
-    avg_fav_rel = db.query(func.avg(Paper.relevance)).filter(Paper.is_favorited.is_(True)).scalar() or 0.0
+    avg_query = db.query(func.avg(Paper.relevance))
+    if user_id is None:
+        avg_query = avg_query.filter(Paper.is_favorited.is_(True))
+    else:
+        avg_query = avg_query.join(
+            PaperUserState,
+            (PaperUserState.paper_id == Paper.id) & (PaperUserState.user_id == user_id),
+        ).filter(PaperUserState.is_favorited.is_(True))
+    avg_fav_rel = avg_query.scalar() or 0.0
     avg_all_rel = db.query(func.avg(Paper.relevance)).scalar() or 0.0
 
     lines = [
@@ -252,7 +271,7 @@ def _execute_get_favorites_overview(db: Session, arguments: dict) -> str:
         cat_papers = []
         for p in papers:
             lines.append(f"    [ID:{p.id}] {p.title} (relevance: {p.relevance:.1f})")
-            cat_papers.append(_paper_to_dict(p))
+            cat_papers.append(_paper_to_dict(db, p))
         lines.append("")
         data_categories.append({"category": cat, "papers": cat_papers})
 
@@ -285,16 +304,16 @@ def _execute_compare_papers(db: Session, arguments: dict) -> str:
 
     lines = [
         "=== Paper 1 ===",
-        _format_paper_detail(paper1),
+        _format_paper_detail(db, paper1),
         "",
         "=== Paper 2 ===",
-        _format_paper_detail(paper2),
+        _format_paper_detail(db, paper2),
     ]
     text = "\n".join(lines)
     return json.dumps({
         "type": "compare_papers",
         "summary": text,
-        "data": {"paper1": _paper_to_dict(paper1), "paper2": _paper_to_dict(paper2)},
+        "data": {"paper1": _paper_to_dict(db, paper1), "paper2": _paper_to_dict(db, paper2)},
     }, ensure_ascii=False)
 
 

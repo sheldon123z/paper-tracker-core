@@ -2,9 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import rehypeHighlight from 'rehype-highlight'
 import remarkGfm from 'remark-gfm'
-import { renderToStaticMarkup } from 'react-dom/server'
 import { getWorkflowTemplate } from './templates'
 import AppIcon from '../ui/AppIcon'
+import api from '../../api'
 
 function asArray(value) {
   return Array.isArray(value) ? value : []
@@ -45,10 +45,13 @@ function downloadBlob(blob, filename) {
   URL.revokeObjectURL(url)
 }
 
-function reportToHtml(markdown) {
-  return renderToStaticMarkup(
-    <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdown}</ReactMarkdown>,
+export async function exportWorkflowDocument(markdown, format, filename) {
+  const response = await api.post(
+    `/api/agui/workflow/export/${format}`,
+    { markdown },
+    { responseType: 'blob', timeout: 240_000 },
   )
+  downloadBlob(response.data, filename)
 }
 
 export default function CompletionPanel({ agentState, templateId, onNewWorkflow }) {
@@ -62,6 +65,8 @@ export default function CompletionPanel({ agentState, templateId, onNewWorkflow 
   const [copied, setCopied] = useState(false)
   const [renderMode, setRenderMode] = useState(false)
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
+  const [exporting, setExporting] = useState(null)
+  const [exportError, setExportError] = useState('')
   const exportMenuRef = useRef(null)
 
   // Close export dropdown on outside click
@@ -91,66 +96,23 @@ export default function CompletionPanel({ agentState, templateId, onNewWorkflow 
     setExportMenuOpen(false)
   }
 
-  function handleExportWord() {
+  async function handleExportDocument(format) {
     if (!primaryReport) return
-    const html = reportToHtml(primaryReport)
-    const fullHtml = [
-      '<html xmlns:o="urn:schemas-microsoft-com:office:office"',
-      '      xmlns:w="urn:schemas-microsoft-com:office:word"',
-      '      xmlns="http://www.w3.org/TR/REC-html40">',
-      '<head><meta charset="utf-8">',
-      '<style>',
-      'body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; line-height: 1.8; color: #1a1a1a; }',
-      'h1 { font-size: 22pt; font-weight: bold; margin-top: 18pt; }',
-      'h2 { font-size: 16pt; font-weight: bold; margin-top: 14pt; }',
-      'h3 { font-size: 13pt; font-weight: bold; margin-top: 12pt; }',
-      'p { font-size: 11pt; margin: 6pt 0; }',
-      'li { font-size: 11pt; margin: 3pt 0; }',
-      'code { font-family: Consolas, monospace; background: #f5f5f5; padding: 1px 4px; border-radius: 3px; }',
-      'pre { background: #f5f5f5; padding: 10px; border-radius: 6px; font-size: 10pt; }',
-      'table { border-collapse: collapse; width: 100%; }',
-      'th, td { border: 1px solid #ccc; padding: 6px 10px; text-align: left; }',
-      'th { background: #f0f0f0; font-weight: bold; }',
-      'blockquote { border-left: 3px solid #4f46e5; padding-left: 12px; color: #555; }',
-      '</style>',
-      '</head><body>',
-      html,
-      '</body></html>',
-    ].join('\n')
-    const filename = getExportBaseName(template, topic) + '.doc'
-    downloadBlob(new Blob(['\ufeff' + fullHtml], { type: 'application/msword' }), filename)
-    setExportMenuOpen(false)
-  }
-
-  function handleExportPdf() {
-    if (!primaryReport) return
-    const html = reportToHtml(primaryReport)
-    const printWindow = window.open('', '_blank')
-    if (!printWindow) return
-    printWindow.document.write([
-      '<!DOCTYPE html><html><head><meta charset="utf-8">',
-      `<title>${getExportBaseName(template, topic)}</title>`,
-      '<style>',
-      'body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; line-height: 1.8; color: #1a1a1a; max-width: 800px; margin: 0 auto; padding: 40px; }',
-      'h1 { font-size: 24px; font-weight: bold; margin-top: 24px; }',
-      'h2 { font-size: 20px; font-weight: bold; margin-top: 20px; }',
-      'h3 { font-size: 16px; font-weight: bold; margin-top: 16px; }',
-      'p { margin: 8px 0; }',
-      'code { font-family: Consolas, monospace; background: #f5f5f5; padding: 1px 4px; border-radius: 3px; font-size: 0.9em; }',
-      'pre { background: #f5f5f5; padding: 12px; border-radius: 6px; overflow-x: auto; }',
-      'table { border-collapse: collapse; width: 100%; margin: 12px 0; }',
-      'th, td { border: 1px solid #ccc; padding: 8px 12px; text-align: left; }',
-      'th { background: #f0f0f0; font-weight: bold; }',
-      'blockquote { border-left: 3px solid #4f46e5; padding-left: 12px; color: #555; margin: 12px 0; }',
-      '@media print { body { padding: 0; } }',
-      '</style>',
-      '</head><body>',
-      html,
-      '</body></html>',
-    ].join('\n'))
-    printWindow.document.close()
-    setTimeout(() => printWindow.print(), 300)
-    setExportMenuOpen(false)
+    setExporting(format)
+    setExportError('')
+    try {
+      await exportWorkflowDocument(
+        primaryReport,
+        format,
+        `${getExportBaseName(template, topic)}.${format}`,
+      )
+      setExportMenuOpen(false)
+    } catch (error) {
+      const detail = error?.response?.data?.detail
+      setExportError(typeof detail === 'string' ? detail : '导出失败，请检查本地报告转换服务。')
+    } finally {
+      setExporting(null)
+    }
   }
 
   return (
@@ -234,18 +196,24 @@ export default function CompletionPanel({ agentState, templateId, onNewWorkflow 
                     <span className="wf-export-dropdown-icon">MD</span>
                     <span>Markdown (.md)</span>
                   </button>
-                  <button className="wf-export-dropdown-item" onClick={handleExportWord}>
+                  <button className="wf-export-dropdown-item" disabled={!!exporting} onClick={() => handleExportDocument('docx')}>
                     <span className="wf-export-dropdown-icon" style={{ color: '#2b579a' }}>W</span>
-                    <span>Word (.doc)</span>
+                    <span>{exporting === 'docx' ? '正在生成…' : 'Word (.docx)'}</span>
                   </button>
-                  <button className="wf-export-dropdown-item" onClick={handleExportPdf}>
+                  <button className="wf-export-dropdown-item" disabled={!!exporting} onClick={() => handleExportDocument('pdf')}>
                     <span className="wf-export-dropdown-icon" style={{ color: '#d32f2f' }}>P</span>
-                    <span>PDF (打印)</span>
+                    <span>{exporting === 'pdf' ? '正在生成…' : 'PDF (.pdf)'}</span>
                   </button>
                 </div>
               )}
             </div>
           </div>
+
+          {exportError && (
+            <div role="alert" style={{ color: 'var(--danger, #dc2626)', fontSize: 12, marginBottom: 12 }}>
+              {exportError}
+            </div>
+          )}
 
           {/* Report content */}
           {renderMode ? (

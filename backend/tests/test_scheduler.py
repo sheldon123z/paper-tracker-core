@@ -11,7 +11,10 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from apscheduler.schedulers.background import BackgroundScheduler
-from backend.app.auth.dependencies import get_current_user, get_current_user_or_service
+from backend.app.auth.dependencies import (
+    get_current_user,
+    get_current_user_or_ingestion_service,
+)
 from backend.app.models import Feed
 from backend.app.routes import scheduler_routes as scheduler_module
 from backend.app.services import scheduler as scheduler_service
@@ -97,7 +100,7 @@ class SchedulerTestBase(unittest.TestCase):
 
         self.app.dependency_overrides[scheduler_module.get_db] = override_get_db
         self.app.dependency_overrides[get_current_user] = make_fake_user
-        self.app.dependency_overrides[get_current_user_or_service] = make_fake_user
+        self.app.dependency_overrides[get_current_user_or_ingestion_service] = make_fake_user
         self.client = TestClient(self.app)
 
     def tearDown(self):

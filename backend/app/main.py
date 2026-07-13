@@ -13,10 +13,15 @@ from slowapi.middleware import SlowAPIMiddleware
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from .control_plane.database import ControlBase, control_engine
+from .auth.dependencies import get_current_user
+from .control_plane.database import ControlBase, ControlSessionLocal, control_engine
+from .control_plane.migrations import migrate_control_schema
+from .control_plane.models import User
 from .database import Base, engine, get_db
-from .models import ChatMessage, GlobalChatSession, Paper
+from .models import ChatMessage, GlobalChatSession, Paper, PaperUserState
 from .routes import limiter
+from .routes.admin import activity_router
+from .routes.admin import router as admin_router
 from .routes.agui import router as agui_router
 from .routes.agui_workflow import router as agui_workflow_router
 from .routes.auth import router as auth_router
@@ -33,6 +38,9 @@ from .routes.system_prompts import router as system_prompts_router
 from .routes.tags import router as tags_router
 from .routes.usage import router as usage_router
 from .schemas import StatsOut
+from .services.access_control import scope_session
+from .services.access_migration import migrate_legacy_personal_states
+from .services.audit import write_audit_event
 from .services.checkpointer import close_checkpointer, open_checkpointer
 from .services.db_backup import perform_backup, schedule_backups
 from .services.db_migrations import migrate_database_schema, migrate_llm_config_rows
@@ -94,6 +102,26 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def audit_authenticated_api_requests(request: Request, call_next):
+    response = await call_next(request)
+    user = getattr(request.state, "user", None)
+    if user is not None and request.url.path.startswith("/api/") and request.url.path != "/api/activity":
+        db = ControlSessionLocal()
+        try:
+            write_audit_event(
+                db,
+                event_type="api.request",
+                outcome="success" if response.status_code < 400 else "failure",
+                request=request,
+                actor=user,
+                metadata={"status_code": response.status_code},
+            )
+        finally:
+            db.close()
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -228,6 +256,8 @@ app.include_router(usage_router)
 app.include_router(budget_router)
 app.include_router(auth_router)
 app.include_router(files_router)
+app.include_router(admin_router)
+app.include_router(activity_router)
 
 
 @app.on_event("startup")
@@ -250,9 +280,12 @@ def startup_event():
     migrate_database_schema(engine)
     logger.info("Database initialized.")
     ControlBase.metadata.create_all(bind=control_engine)
+    migrate_control_schema(control_engine)
     logger.info("Control plane database initialized.")
     db = next(get_db())
+    control_db = ControlSessionLocal()
     try:
+        migrate_legacy_personal_states(db, control_db)
         migrate_llm_config_rows(db)
         seed_prompt_templates(db)
         migrate_llm_configs(db)
@@ -262,6 +295,7 @@ def startup_event():
         ensure_new_skills(db)
         _fix_double_prefix_sessions(db)
     finally:
+        control_db.close()
         db.close()
     init_scheduler()
 
@@ -328,11 +362,18 @@ def health_check():
 @app.get("/api/stats", response_model=StatsOut)
 def get_stats(
     period: int = Query(default=30, ge=1, le=365, description="Number of days for papers_over_time"),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    scope_session(db, user)
     total_papers = db.query(func.count(Paper.id)).scalar() or 0
-    unread_papers = db.query(func.count(Paper.id)).filter(Paper.is_read.is_(False)).scalar() or 0
-    favorited_papers = db.query(func.count(Paper.id)).filter(Paper.is_favorited.is_(True)).scalar() or 0
+    state_query = db.query(Paper.id).outerjoin(
+        PaperUserState,
+        (PaperUserState.paper_id == Paper.id) & (PaperUserState.user_id == user.id),
+    )
+    read_papers = state_query.filter(PaperUserState.is_read.is_(True)).count()
+    unread_papers = max(0, total_papers - read_papers)
+    favorited_papers = state_query.filter(PaperUserState.is_favorited.is_(True)).count()
     avg_relevance = db.query(func.avg(Paper.relevance)).scalar() or 0.0
 
     source_distribution = {
