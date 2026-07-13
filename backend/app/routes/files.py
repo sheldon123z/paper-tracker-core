@@ -13,6 +13,7 @@ from ..control_plane.models import User
 from ..database import SessionLocal, get_db
 from ..models import Paper, PaperFile
 from ..schemas import PaperFileOut, PaperFileUpdate
+from ..services.access_control import get_visible_or_404, require_writable
 from ..services.file_storage import (
     delete_file,
     infer_file_type,
@@ -20,7 +21,6 @@ from ..services.file_storage import (
     save_file,
     validate_upload,
 )
-from ..services.access_control import get_visible_or_404, require_writable
 
 logger = logging.getLogger("paper-tracker.files")
 

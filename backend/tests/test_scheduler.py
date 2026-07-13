@@ -12,7 +12,8 @@ from unittest.mock import patch
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from backend.app.auth.dependencies import (
-    get_current_user, get_current_user_or_ingestion_service,
+    get_current_user,
+    get_current_user_or_ingestion_service,
 )
 from backend.app.models import Feed
 from backend.app.routes import scheduler_routes as scheduler_module

@@ -9,10 +9,9 @@ from ..control_plane.models import User
 from ..database import get_db
 from ..models import Feed, Paper
 from ..schemas import PaperOut
+from ..services.access_control import filter_visible, get_visible_or_404, paper_response, require_writable
 from ..services.rss_parser import ingest_feeds
 from ..services.scheduler import get_scheduler_status
-from ..services.access_control import get_visible_or_404, paper_response, require_writable
-from ..services.access_control import filter_visible
 
 logger = logging.getLogger("paper-tracker.scheduler")
 

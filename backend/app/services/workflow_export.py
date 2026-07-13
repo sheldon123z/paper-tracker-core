@@ -9,7 +9,6 @@ import sys
 import tempfile
 from pathlib import Path
 
-
 ASSET_ROOT = Path(__file__).resolve().parents[1] / "assets" / "workflow_export"
 REFERENCE_DOC = ASSET_ROOT / "reference.docx"
 WORD_EXPORT_RUNNER = Path(__file__).with_name("workflow_export_runner.py")

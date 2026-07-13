@@ -10,6 +10,7 @@ from ..control_plane.models import User
 from ..database import get_db
 from ..models import LLMUsageLog
 from ..schemas import LLMUsageLogOut, PaginationMeta, UsageByModelItem, UsageSummaryOut, UsageTimelinePoint
+from ..services.access_control import is_manager
 from ..services.pricing import get_cost_summary
 from ..services.usage_tracker import (
     get_recent_usage,
@@ -18,7 +19,6 @@ from ..services.usage_tracker import (
     get_usage_summary,
     get_usage_timeline,
 )
-from ..services.access_control import is_manager
 
 router = APIRouter(prefix="/api/usage", tags=["usage"], dependencies=[Depends(get_current_user)])
 

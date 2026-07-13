@@ -2,11 +2,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from sqlalchemy import create_engine, inspect, text
-from sqlalchemy.exc import IntegrityError
-
 from backend.app.control_plane.migrations import migrate_control_schema
 from backend.app.services.db_migrations import migrate_database_schema
+from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.exc import IntegrityError
 
 
 class AccessMigrationTests(unittest.TestCase):

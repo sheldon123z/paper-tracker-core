@@ -10,10 +10,14 @@ from ..control_plane.models import User
 from ..database import get_db
 from ..models import Feed, Paper, PaperUserState
 from ..schemas import FeedCreate, FeedOut, FeedUpdate, PaginationMeta, PaperListResponse
-from ..services.scheduler import schedule_feed, unschedule_feed
 from ..services.access_control import (
-    filter_visible, get_visible_or_404, normalize_new_scope, paper_response, require_writable,
+    filter_visible,
+    get_visible_or_404,
+    normalize_new_scope,
+    paper_response,
+    require_writable,
 )
+from ..services.scheduler import schedule_feed, unschedule_feed
 
 logger = logging.getLogger("paper-tracker.feeds")
 
@@ -119,7 +123,7 @@ def list_feed_papers(
     db: Session = Depends(get_db),
 ):
     """List papers ingested from a specific feed, newest first."""
-    feed = get_visible_or_404(db, Feed, feed_id, user)
+    get_visible_or_404(db, Feed, feed_id, user)
 
     query = db.query(Paper).outerjoin(
         PaperUserState,

@@ -2,15 +2,14 @@ import unittest
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
+from backend.app.control_plane.database import ControlBase
+from backend.app.control_plane.models import AuditEvent, Department, User, UserSession
+from backend.app.routes.admin import UserCreate, create_user, delete_user
 from fastapi import HTTPException
 from pydantic import ValidationError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
-
-from backend.app.control_plane.database import ControlBase
-from backend.app.control_plane.models import AuditEvent, Department, User, UserSession
-from backend.app.routes.admin import UserCreate, create_user, delete_user
 
 
 class AdminAccessTests(unittest.TestCase):

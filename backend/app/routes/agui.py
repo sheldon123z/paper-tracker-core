@@ -25,6 +25,7 @@ from ..auth.dependencies import get_current_user
 from ..control_plane.models import User
 from ..database import get_db
 from ..models import ChatMessage, GlobalChatSession, Paper, PaperFile
+from ..services.access_control import get_user_state, get_visible_or_404, is_manager, scope_session
 from ..services.agui_streaming import (
     emit_llm_config_error,
     emit_paper_validation_error,
@@ -43,7 +44,6 @@ from ..services.file_storage import read_file
 from ..services.llm_service import get_system_prompt, resolve_llm_config
 from ..services.skill_registry import get_tools_for_agent
 from ..services.structured_logging import RequestTimer, get_logger
-from ..services.access_control import get_user_state, get_visible_or_404, is_manager, scope_session
 from ..services.tools import get_tool_descriptions_for
 from . import limiter  # shared rate limiter instance
 

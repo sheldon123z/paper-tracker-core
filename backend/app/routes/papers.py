@@ -24,14 +24,19 @@ from ..schemas import (
     TagAssignRequest,
     TagOut,
 )
+from ..services.access_control import (
+    filter_visible,
+    get_user_state,
+    get_visible_or_404,
+    is_manager,
+    normalize_new_scope,
+    paper_response,
+    require_writable,
+)
 from ..services.cache import cache
 from ..services.dedup_service import find_duplicates, merge_duplicates
 from ..services.file_storage import delete_file
 from ..services.rss_parser import ingest_feeds
-from ..services.access_control import (
-    filter_visible, get_user_state, get_visible_or_404, is_manager, normalize_new_scope,
-    paper_response, require_writable,
-)
 from . import limiter  # shared rate limiter instance
 
 logger = logging.getLogger("paper-tracker.papers")

@@ -42,13 +42,14 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
-from starlette.background import BackgroundTask
 from sqlalchemy.orm import Session
+from starlette.background import BackgroundTask
 
 from ..auth.dependencies import get_current_user
 from ..control_plane.models import User
 from ..database import get_db
 from ..models import ChatMessage, WorkflowSession
+from ..services.access_control import scope_session
 from ..services.agui_streaming import (
     append_text,
     emit_text,
@@ -66,9 +67,8 @@ from ..services.checkpointer import get_checkpointer
 from ..services.llm_runtime import classify_runtime_error, extract_text_parts
 from ..services.llm_service import resolve_llm_config
 from ..services.structured_logging import RequestTimer, get_logger
-from ..services.access_control import scope_session
-from ..services.workflow_graph import WORKFLOW_INITIAL_STATE, create_workflow_graph
 from ..services.workflow_export import WorkflowExportError, export_workflow_report
+from ..services.workflow_graph import WORKFLOW_INITIAL_STATE, create_workflow_graph
 from ..services.workflow_template_registry import get_workflow_template, get_workflow_templates_payload
 from . import limiter  # shared rate limiter instance
 

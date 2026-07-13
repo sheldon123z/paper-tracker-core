@@ -2,11 +2,6 @@ import json
 import unittest
 from types import SimpleNamespace
 
-from fastapi import HTTPException
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
-
 from backend.app.database import Base
 from backend.app.models import Paper, PaperUserState
 from backend.app.services.access_control import (
@@ -20,6 +15,10 @@ from backend.app.services.access_control import (
 )
 from backend.app.services.tools.paper_tools import _execute_get_paper_notes
 from backend.app.services.tools.stats_tools import _execute_get_research_stats
+from fastapi import HTTPException
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 
 def principal(user_id, *, role="user", department_id=1, department_status="active"):

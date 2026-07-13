@@ -1,6 +1,6 @@
-from datetime import UTC, datetime
-import secrets
 import os
+import secrets
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse
