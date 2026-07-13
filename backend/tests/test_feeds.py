@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from unittest.mock import patch
 from uuid import uuid4
 
-from backend.app.auth.dependencies import get_current_user
+from backend.app.auth.dependencies import get_current_user, get_current_user_or_service
 from backend.app.database import Base
 from backend.app.models import Feed
 from backend.tests.support import make_fake_user, make_test_session_factory, patched_env
@@ -32,6 +32,7 @@ class TestFeeds(unittest.TestCase):
         from backend.app.main import app
         app.dependency_overrides.pop(get_db, None)
         app.dependency_overrides.pop(get_current_user, None)
+        app.dependency_overrides.pop(get_current_user_or_service, None)
         self.db.close()
 
     def _create_app(self):
@@ -41,6 +42,7 @@ class TestFeeds(unittest.TestCase):
 
         app.dependency_overrides[get_db] = lambda: self.db
         app.dependency_overrides[get_current_user] = make_fake_user
+        app.dependency_overrides[get_current_user_or_service] = make_fake_user
         return TestClient(app)
 
     def _create_feed(self, **kwargs):
@@ -231,7 +233,7 @@ class TestFeeds(unittest.TestCase):
                     "fetch_interval": 120,
                 },
             )
-            self.assertEqual(response.status_code, 409)
+            self.assertEqual(response.status_code, 400)
             self.assertIn("already exists", response.json()["detail"])
 
     def test_create_feed_validation_missing_name(self):

@@ -9,9 +9,8 @@ import api from '../api'
 import ExpandedPaperFiles from '../components/paper/ExpandedPaperFiles'
 import FilterPanel from '../components/paper/FilterPanel'
 import SearchBar from '../components/paper/SearchBar'
-import { Badge, Button, Input, Modal, Select, useToast } from '../components/ui'
+import { Badge, Button, Modal, useToast } from '../components/ui'
 import useIsMobile from '../hooks/useIsMobile'
-import { PAPER_TAGS_UPDATED_EVENT } from '../paperEvents'
 import useStore from '../store'
 
 // ── Icons ──────────────────────────────────────────────────────────
@@ -47,42 +46,6 @@ function RelevanceBadge({ value }) {
   return <Badge variant={variant}>{num.toFixed(1)}</Badge>
 }
 
-function LibraryBadge({ paper }) {
-  const isPublic = paper.visibility === 'public'
-  return <Badge variant={isPublic ? 'success' : 'neutral'}>{isPublic ? '公共库' : (paper.department_name || '部门库')}</Badge>
-}
-
-function PaperTags({ value, colors = {} }) {
-  const tags = (Array.isArray(value) ? value : String(value || '').split(','))
-    .map((tag) => typeof tag === 'string' ? tag.trim() : tag?.name?.trim())
-    .filter(Boolean)
-
-  if (tags.length === 0) {
-    return <span style={{ color: 'var(--text-secondary)' }}>—</span>
-  }
-
-  return (
-    <div className="flex flex-wrap gap-1" aria-label={`标签：${tags.join('、')}`}>
-      {tags.map((tag) => (
-        <span
-          key={tag}
-          className="inline-flex max-w-full items-center gap-1 truncate rounded px-1.5 py-0.5 text-xs"
-          style={{ backgroundColor: 'var(--accent-light)', color: 'var(--accent)' }}
-          title={tag}
-        >
-          <span
-            className="h-1.5 w-1.5 shrink-0 rounded-full"
-            style={{ backgroundColor: colors[tag] || 'var(--accent)' }}
-            data-testid={`tag-color-${tag}`}
-            aria-hidden="true"
-          />
-          {tag}
-        </span>
-      ))}
-    </div>
-  )
-}
-
 // ── Sort indicator ────────────────────────────────────────────────
 
 function SortIcon({ direction }) {
@@ -108,24 +71,9 @@ export default function PapersPage() {
   const [batchDeleting, setBatchDeleting] = useState(false)
   const [expandedRows, setExpandedRows] = useState({})
   const [expandedData, setExpandedData] = useState({})
-  const [tagColors, setTagColors] = useState({})
-  const [libraryScope, setLibraryScope] = useState('all')
-  const [departments, setDepartments] = useState([])
-  const [createOpen, setCreateOpen] = useState(false)
-  const [creating, setCreating] = useState(false)
-  const [newPaper, setNewPaper] = useState({ title: '', authors: '', link: '', abstract: '', visibility: 'public', department_id: '' })
-  const { openTab, user } = useStore()
+  const { openTab } = useStore()
   const { addToast } = useToast()
   const isMobile = useIsMobile()
-
-  const scopeParams = () => {
-    if (libraryScope === 'public') return { library_scope: 'public' }
-    if (libraryScope === 'department') return { library_scope: 'department' }
-    if (libraryScope.startsWith('department:')) {
-      return { library_scope: 'department', department_id: Number(libraryScope.split(':')[1]) }
-    }
-    return {}
-  }
 
   // ── Data fetching ────────────────────────────────────────────
 
@@ -141,7 +89,6 @@ export default function PapersPage() {
         tag: filters.tag || undefined,
         sort_by: sortBy || undefined,
         sort_dir: sortDir || undefined,
-        ...scopeParams(),
       }
       const res = await api.get('/api/papers', { params })
       setPapers(res.data.items || [])
@@ -156,36 +103,8 @@ export default function PapersPage() {
     }
   }
 
-  useEffect(() => { loadPapers(1) }, [filters, libraryScope]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { loadPapers(1) }, [filters]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { loadPapers(page) }, [sortBy, sortDir]) // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    api.get('/api/tags')
-      .then((res) => {
-        const colors = Object.fromEntries(
-          (res.data || []).filter((tag) => tag?.name).map((tag) => [tag.name, tag.color])
-        )
-        setTagColors(colors)
-      })
-      .catch(() => setTagColors({}))
-  }, [])
-  useEffect(() => {
-    if (user?.role !== 'manager') return
-    api.get('/api/admin/departments').then((res) => setDepartments(res.data || [])).catch(() => setDepartments([]))
-  }, [user?.role])
-  useEffect(() => {
-    const handleTagsUpdated = (event) => {
-      const { paperId, tags: updatedTags, tagRecords = [] } = event.detail || {}
-      setPapers((current) => current.map((paper) => (
-        paper.id === paperId ? { ...paper, tags: updatedTags } : paper
-      )))
-      setTagColors((current) => ({
-        ...current,
-        ...Object.fromEntries(tagRecords.map((tag) => [tag.name, tag.color])),
-      }))
-    }
-    window.addEventListener(PAPER_TAGS_UPDATED_EVENT, handleTagsUpdated)
-    return () => window.removeEventListener(PAPER_TAGS_UPDATED_EVENT, handleTagsUpdated)
-  }, [])
 
   const handleSearch = (params) => {
     setSearchParams(params)
@@ -201,7 +120,6 @@ export default function PapersPage() {
           tag: filters.tag || undefined,
           sort_by: sortBy || undefined,
           sort_dir: sortDir || undefined,
-          ...scopeParams(),
         }
         const res = await api.get('/api/papers', { params: reqParams })
         setPapers(res.data.items || [])
@@ -294,32 +212,14 @@ export default function PapersPage() {
     } catch {}
   }
 
-  const handleCreatePaper = async () => {
-    setCreating(true)
-    try {
-      const payload = { title: newPaper.title, authors: newPaper.authors, link: newPaper.link || null, abstract: newPaper.abstract }
-      if (user?.role === 'manager') {
-        payload.visibility = newPaper.visibility
-        payload.department_id = newPaper.visibility === 'department' ? Number(newPaper.department_id) : null
-      }
-      await api.post('/api/papers', payload)
-      setNewPaper({ title: '', authors: '', link: '', abstract: '', visibility: 'public', department_id: '' })
-      setCreateOpen(false)
-      await loadPapers(1)
-      addToast({ type: 'success', message: '论文已添加' })
-    } catch (err) {
-      addToast({ type: 'error', message: err.response?.data?.detail || '添加论文失败' })
-    } finally { setCreating(false) }
-  }
-
   // ── TanStack Table columns ──────────────────────────────────
 
   const columns = useMemo(() => [
     {
       id: 'expand',
-      size: 30,
-      minSize: 30,
-      maxSize: 30,
+      size: 32,
+      minSize: 32,
+      maxSize: 32,
       enableResizing: false,
       header: () => null,
       cell: ({ row }) => (
@@ -338,9 +238,9 @@ export default function PapersPage() {
     },
     {
       id: 'select',
-      size: 34,
-      minSize: 34,
-      maxSize: 34,
+      size: 40,
+      minSize: 40,
+      maxSize: 40,
       enableResizing: false,
       header: () => {
         const allSelected = papers.length > 0 && selected.size === papers.length
@@ -368,8 +268,8 @@ export default function PapersPage() {
     {
       accessorKey: 'title',
       header: '标题',
-      size: 240,
-      minSize: 160,
+      size: 400,
+      minSize: 200,
       cell: ({ getValue }) => (
         <div className="truncate font-medium" style={{ color: 'var(--text-primary)' }} title={getValue()}>
           {getValue()}
@@ -380,8 +280,8 @@ export default function PapersPage() {
     {
       accessorKey: 'authors',
       header: '作者',
-      size: 130,
-      minSize: 90,
+      size: 220,
+      minSize: 100,
       cell: ({ getValue }) => (
         <div className="truncate" style={{ color: 'var(--text-secondary)' }} title={getValue()}>
           {getValue() || '—'}
@@ -391,8 +291,8 @@ export default function PapersPage() {
     {
       accessorKey: 'category',
       header: '分类',
-      size: 80,
-      minSize: 64,
+      size: 130,
+      minSize: 80,
       cell: ({ getValue }) => {
         const v = getValue()
         return v ? (
@@ -404,40 +304,26 @@ export default function PapersPage() {
       enableSorting: true,
     },
     {
-      id: 'library',
-      header: '库范围',
-      size: 82,
-      minSize: 72,
-      cell: ({ row }) => <LibraryBadge paper={row.original} />,
-    },
-    {
-      accessorKey: 'tags',
-      header: '标签',
-      size: 110,
-      minSize: 80,
-      cell: ({ getValue }) => <PaperTags value={getValue()} colors={tagColors} />,
-    },
-    {
       accessorKey: 'source',
       header: '来源',
-      size: 62,
-      minSize: 54,
+      size: 80,
+      minSize: 60,
       cell: ({ getValue }) => <span style={{ color: 'var(--text-secondary)' }}>{getValue() || '—'}</span>,
       enableSorting: true,
     },
     {
       accessorKey: 'relevance',
       header: '相关度',
-      size: 62,
-      minSize: 56,
+      size: 80,
+      minSize: 60,
       cell: ({ getValue }) => <RelevanceBadge value={getValue()} />,
       enableSorting: true,
     },
     {
       id: 'status',
       header: '状态',
-      size: 62,
-      minSize: 58,
+      size: 70,
+      minSize: 60,
       enableResizing: false,
       cell: ({ row }) => {
         const paper = row.original
@@ -458,12 +344,12 @@ export default function PapersPage() {
     {
       accessorKey: 'published_date',
       header: '日期',
-      size: 88,
-      minSize: 76,
+      size: 100,
+      minSize: 80,
       cell: ({ getValue }) => <span style={{ color: 'var(--text-secondary)' }}>{formatDate(getValue())}</span>,
       enableSorting: true,
     },
-  ], [papers, selected, expandedRows, tagColors]) // eslint-disable-line react-hooks/exhaustive-deps
+  ], [papers, selected, expandedRows]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── TanStack Table instance ─────────────────────────────────
 
@@ -509,26 +395,9 @@ export default function PapersPage() {
             {meta.total > 0 && <span className="ml-2 text-xs font-normal" style={{ color: 'var(--text-secondary)' }}>共 {meta.total} 篇</span>}
             </h1>
           </div>
-          <div className="flex gap-2">
-            <Button size="sm" onClick={() => setCreateOpen(true)}>新增论文</Button>
-            <Button variant="secondary" size="sm" onClick={handleExport}>导出 BibTeX</Button>
-          </div>
+          <Button variant="secondary" size="sm" onClick={handleExport}>导出 BibTeX</Button>
         </div>
         <SearchBar onSearch={handleSearch} />
-        <div className="mt-3 max-w-xs">
-          <Select
-            label="论文库范围"
-            value={libraryScope}
-            onChange={setLibraryScope}
-            options={[
-              { value: 'all', label: '全部可见论文' },
-              { value: 'public', label: '公共数据库' },
-              ...(user?.role === 'manager'
-                ? departments.map((department) => ({ value: `department:${department.id}`, label: `${department.name} 私有库` }))
-                : [{ value: 'department', label: '本部门私有库' }]),
-            ]}
-          />
-        </div>
         <FilterPanel filters={filters} onChange={setFilters} />
       </div>
 
@@ -590,8 +459,6 @@ export default function PapersPage() {
                           {p.category}
                         </span>
                       )}
-                      <LibraryBadge paper={p} />
-                      <PaperTags value={p.tags} colors={tagColors} />
                       {p.relevance != null && <RelevanceBadge value={p.relevance} />}
                       <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{formatDate(p.published_date)}</span>
                       <div className="flex items-center gap-1.5 ml-auto">
@@ -619,7 +486,7 @@ export default function PapersPage() {
                   <th
                     key={header.id}
                     colSpan={header.colSpan}
-                    className="px-2 py-2.5 border-b text-left font-medium select-none"
+                    className="px-3 py-2.5 border-b text-left font-medium select-none"
                     style={{ borderColor: 'var(--border)', width: header.getSize(), position: 'relative' }}
                   >
                     {header.isPlaceholder ? null : header.column.getCanSort() ? (
@@ -693,7 +560,7 @@ export default function PapersPage() {
                       onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = isSelected ? 'var(--accent-light)' : 'transparent' }}
                     >
                       {row.getVisibleCells().map((cell) => (
-                        <td key={cell.id} className="px-2 py-2.5 border-b" style={{ borderColor: 'var(--border)', width: cell.column.getSize() }}>
+                        <td key={cell.id} className="px-3 py-2.5 border-b" style={{ borderColor: 'var(--border)', width: cell.column.getSize() }}>
                           {flexRender(cell.column.columnDef.cell, cell.getContext())}
                         </td>
                       ))}
@@ -738,18 +605,6 @@ export default function PapersPage() {
         </>}
       >
         <p>确定删除已选择的 {selected.size} 篇论文？相关附件也会一并删除，此操作不可撤销。</p>
-      </Modal>
-      <Modal isOpen={createOpen} onClose={() => !creating && setCreateOpen(false)} title="新增论文" size="lg"
-        actions={<><Button variant="secondary" disabled={creating} onClick={() => setCreateOpen(false)}>取消</Button><Button loading={creating} disabled={!newPaper.title.trim() || (user?.role === 'manager' && newPaper.visibility === 'department' && !newPaper.department_id)} onClick={handleCreatePaper}>保存论文</Button></>}
-      >
-        <div className="space-y-3">
-          <Input label="标题" value={newPaper.title} onChange={(event) => setNewPaper((value) => ({ ...value, title: event.target.value }))} required />
-          <Input label="作者" value={newPaper.authors} onChange={(event) => setNewPaper((value) => ({ ...value, authors: event.target.value }))} />
-          <Input label="论文链接" type="url" value={newPaper.link} onChange={(event) => setNewPaper((value) => ({ ...value, link: event.target.value }))} />
-          <label className="flex flex-col gap-1.5 text-xs font-semibold uppercase tracking-wider text-secondary">摘要<textarea className="input-surface min-h-28 w-full rounded-2xl border px-4 py-3 text-sm font-normal normal-case tracking-normal text-primary outline-none focus:border-accent focus:ring-2 focus:ring-accent/25" value={newPaper.abstract} onChange={(event) => setNewPaper((value) => ({ ...value, abstract: event.target.value }))} /></label>
-          {user?.role === 'manager' && <div className="grid gap-3 sm:grid-cols-2"><Select label="入库范围" value={newPaper.visibility} onChange={(visibility) => setNewPaper((value) => ({ ...value, visibility }))} options={[{ value: 'public', label: '公共数据库' }, { value: 'department', label: '部门私有数据库' }]} />{newPaper.visibility === 'department' && <Select label="所属部门" value={newPaper.department_id} onChange={(department_id) => setNewPaper((value) => ({ ...value, department_id }))} options={[{ value: '', label: '请选择部门' }, ...departments.filter((department) => department.status === 'active').map((department) => ({ value: String(department.id), label: department.name }))]} />}</div>}
-          {user?.role !== 'manager' && <p className="text-xs text-tertiary">新论文将自动保存到你的部门私有数据库。</p>}
-        </div>
       </Modal>
     </div>
   )

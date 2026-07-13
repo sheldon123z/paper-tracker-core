@@ -56,8 +56,4 @@ def make_fake_user():
     user.email = "test@example.com"
     user.display_name = "Test User"
     user.status = "active"
-    user.role = "manager"
-    user.department_id = None
-    user.department = None
-    user.must_change_password = False
     return user

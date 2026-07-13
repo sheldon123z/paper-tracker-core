@@ -15,7 +15,6 @@ import copy
 import html
 import json
 import os
-import shutil
 import uuid
 
 import jsonpatch
@@ -39,10 +38,7 @@ from ag_ui.core import (
     ToolCallStartEvent,
 )
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse, StreamingResponse
-from pydantic import BaseModel, Field
-from starlette.background import BackgroundTask
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from ..auth.dependencies import get_current_user
@@ -66,19 +62,13 @@ from ..services.checkpointer import get_checkpointer
 from ..services.llm_runtime import classify_runtime_error, extract_text_parts
 from ..services.llm_service import resolve_llm_config
 from ..services.structured_logging import RequestTimer, get_logger
-from ..services.access_control import scope_session
 from ..services.workflow_graph import WORKFLOW_INITIAL_STATE, create_workflow_graph
-from ..services.workflow_export import WorkflowExportError, export_workflow_report
 from ..services.workflow_template_registry import get_workflow_template, get_workflow_templates_payload
 from . import limiter  # shared rate limiter instance
 
 logger = get_logger("agui_workflow")
 
 router = APIRouter(prefix="/api/agui", tags=["ag-ui-workflow"], dependencies=[Depends(get_current_user)])
-
-
-class WorkflowExportRequest(BaseModel):
-    markdown: str = Field(min_length=1, max_length=1_000_000)
 
 
 # ---------------------------------------------------------------------------
@@ -270,7 +260,6 @@ async def workflow_agent(request: Request, db: Session = Depends(get_db), user: 
     - 确定性工具调用也会被桥接成 TOOL_CALL_* 事件
     - workflow 完成后，同一线程中的后续追问会进入 discussion 分支
     """
-    scope_session(db, user)
     body = await request.json()
     encoder = make_agui_encoder(request)
     thread_id, run_id, messages, props = parse_agui_request(body)
@@ -336,12 +325,12 @@ async def workflow_agent(request: Request, db: Session = Depends(get_db), user: 
 
         user_content = last_user_content(messages)
         if user_content:
-            db.add(ChatMessage(session_id=session_id, user_id=user.id, session_type="workflow", role="user", content=user_content))
+            db.add(ChatMessage(session_id=session_id, session_type="workflow", role="user", content=user_content))
             db.commit()
 
         history = (
             db.query(ChatMessage)
-            .filter(ChatMessage.session_id == session_id, ChatMessage.session_type == "workflow", ChatMessage.user_id == user.id)
+            .filter(ChatMessage.session_id == session_id, ChatMessage.session_type == "workflow")
             .order_by(ChatMessage.id)
             .all()
         )
@@ -682,23 +671,23 @@ async def workflow_agent(request: Request, db: Session = Depends(get_db), user: 
             for seg in wf_segments:
                 if seg["type"] == "text" and seg["content"].strip():
                     db.add(ChatMessage(
-                        session_id=session_id, user_id=user.id, session_type="workflow",
+                        session_id=session_id, session_type="workflow",
                         role="assistant", content=seg["content"],
                     ))
                 elif seg["type"] == "tool":
                     db.add(ChatMessage(
-                        session_id=session_id, user_id=user.id, session_type="workflow",
+                        session_id=session_id, session_type="workflow",
                         role="tool", content=json.dumps(seg["data"], ensure_ascii=False),
                     ))
         elif tool_data or collected:
             for td in tool_data:
                 db.add(ChatMessage(
-                    session_id=session_id, user_id=user.id, session_type="workflow",
+                    session_id=session_id, session_type="workflow",
                     role="tool", content=json.dumps(td, ensure_ascii=False),
                 ))
             if collected:
                 db.add(ChatMessage(
-                    session_id=session_id, user_id=user.id, session_type="workflow",
+                    session_id=session_id, session_type="workflow",
                     role="assistant", content="".join(collected),
                 ))
         db.commit()
@@ -726,28 +715,6 @@ async def workflow_agent(request: Request, db: Session = Depends(get_db), user: 
 @router.get("/workflow/templates")
 def list_workflow_templates():
     return get_workflow_templates_payload()
-
-
-@router.post("/workflow/export/{output_format}")
-async def export_workflow_document(output_format: str, body: WorkflowExportRequest):
-    if output_format not in {"docx", "pdf"}:
-        raise HTTPException(status_code=400, detail="Export format must be docx or pdf")
-    try:
-        output_path = await run_in_threadpool(export_workflow_report, body.markdown, output_format)
-    except WorkflowExportError as exc:
-        logger.warning("Workflow report export failed: %s", exc)
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-
-    media_type = {
-        "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "pdf": "application/pdf",
-    }[output_format]
-    return FileResponse(
-        output_path,
-        media_type=media_type,
-        filename=f"workflow_report.{output_format}",
-        background=BackgroundTask(shutil.rmtree, output_path.parent, True),
-    )
 
 
 @router.get("/workflow/sessions")

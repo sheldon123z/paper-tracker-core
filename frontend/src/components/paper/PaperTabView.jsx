@@ -2,11 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import api from '../../api'
 import useIsMobile from '../../hooks/useIsMobile'
-import { notifyPaperTagsUpdated } from '../../paperEvents'
 import useStore from '../../store'
 import AIChatPanel from '../chat/AIChatPanel'
 import { Badge, Button, Skeleton } from '../ui'
-import PaperTagSelector from './PaperTagSelector'
 import InlineFileViewer from './viewer/InlineFileViewer'
 
 function ResizeHandle({ onMouseDown }) {
@@ -26,7 +24,6 @@ export default function PaperTabView({ paperId }) {
   const [tags, setTags] = useState('')
   const [notesSaved, setNotesSaved] = useState(false)
   const [tagsSaved, setTagsSaved] = useState(false)
-  const [availableTags, setAvailableTags] = useState([])
   const [chatWidth, setChatWidth] = useState(420)
   const [viewerOpen, setViewerOpen] = useState(false)
   const [files, setFiles] = useState([])
@@ -149,10 +146,6 @@ export default function PaperTabView({ paperId }) {
       .get(`/api/papers/${paperId}/files`)
       .then((res) => setFiles(res.data))
       .catch(() => {})
-    api
-      .get('/api/tags')
-      .then((res) => setAvailableTags(res.data || []))
-      .catch(() => setAvailableTags([]))
   }, [paperId])
 
   const saveNotes = async (value) => {
@@ -189,16 +182,7 @@ export default function PaperTabView({ paperId }) {
         .split(',')
         .map((t) => t.trim())
         .filter(Boolean)
-      const assigned = await api.post(`/api/papers/${paperId}/tags`, { tags: normalized })
-      const tagRecords = assigned.data || []
-      const canonicalTags = tagRecords.map((tag) => tag.name).join(', ')
-      setTags(canonicalTags)
-      setAvailableTags((current) => {
-        const merged = new Map(current.map((tag) => [tag.name, tag]))
-        tagRecords.forEach((tag) => merged.set(tag.name, tag))
-        return [...merged.values()].sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
-      })
-      notifyPaperTagsUpdated(paperId, tagRecords)
+      await api.post(`/api/papers/${paperId}/tags`, { tags: normalized })
       const res = await api.get(`/api/papers/${paperId}`)
       setPaper(res.data)
       setTagsSaved(true)
@@ -447,10 +431,17 @@ export default function PaperTabView({ paperId }) {
         <h3 className="text-sm font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
           标签
         </h3>
-        <PaperTagSelector
+        <input
+          type="text"
           value={tags}
-          onChange={setTags}
-          options={availableTags}
+          onChange={(e) => setTags(e.target.value)}
+          placeholder="逗号分隔的标签，如：LLM, 多模态, 检索增强"
+          className="w-full rounded-md border px-3 py-2 text-sm outline-none"
+          style={{
+            borderColor: 'var(--border)',
+            backgroundColor: 'var(--bg-secondary)',
+            color: 'var(--text-primary)',
+          }}
         />
         <div className="mt-2 flex items-center gap-2">
           <Button size="sm" onClick={saveTags}>

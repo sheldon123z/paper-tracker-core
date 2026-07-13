@@ -8,30 +8,14 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from ...models import Paper, PaperTag, PaperUserState, Tag
-from .helpers import _current_user_id, _paper_to_dict
+from ...models import Paper, PaperTag, Tag
+from .helpers import _paper_to_dict
 
 
 def _execute_get_research_stats(db: Session, arguments: dict) -> str:
     total = db.query(func.count(Paper.id)).scalar() or 0
-    user_id = _current_user_id(db)
-    if user_id is None:
-        read = db.query(func.count(Paper.id)).filter(Paper.is_read.is_(True)).scalar() or 0
-        favorited = db.query(func.count(Paper.id)).filter(Paper.is_favorited.is_(True)).scalar() or 0
-    else:
-        read = db.query(func.count(PaperUserState.id)).join(
-            Paper, Paper.id == PaperUserState.paper_id,
-        ).filter(
-            PaperUserState.user_id == user_id,
-            PaperUserState.is_read.is_(True),
-        ).scalar() or 0
-        favorited = db.query(func.count(PaperUserState.id)).join(
-            Paper, Paper.id == PaperUserState.paper_id,
-        ).filter(
-            PaperUserState.user_id == user_id,
-            PaperUserState.is_favorited.is_(True),
-        ).scalar() or 0
-    unread = total - read
+    unread = db.query(func.count(Paper.id)).filter(Paper.is_read.is_(False)).scalar() or 0
+    favorited = db.query(func.count(Paper.id)).filter(Paper.is_favorited.is_(True)).scalar() or 0
     avg_relevance = db.query(func.avg(Paper.relevance)).scalar() or 0.0
 
     category_rows = db.query(Paper.category, func.count(Paper.id)).group_by(Paper.category).all()
@@ -71,38 +55,19 @@ def _execute_get_reading_progress(db: Session, arguments: dict) -> str:
     recommend_count = min(arguments.get("recommend_count", 5), 20)
 
     total = db.query(func.count(Paper.id)).scalar() or 0
-    user_id = _current_user_id(db)
-    if user_id is None:
-        read_count = db.query(func.count(Paper.id)).filter(Paper.is_read.is_(True)).scalar() or 0
-        fav_count = db.query(func.count(Paper.id)).filter(Paper.is_favorited.is_(True)).scalar() or 0
-    else:
-        read_count = db.query(func.count(PaperUserState.id)).join(
-            Paper, Paper.id == PaperUserState.paper_id,
-        ).filter(
-            PaperUserState.user_id == user_id,
-            PaperUserState.is_read.is_(True),
-        ).scalar() or 0
-        fav_count = db.query(func.count(PaperUserState.id)).join(
-            Paper, Paper.id == PaperUserState.paper_id,
-        ).filter(
-            PaperUserState.user_id == user_id,
-            PaperUserState.is_favorited.is_(True),
-        ).scalar() or 0
+    read_count = db.query(func.count(Paper.id)).filter(Paper.is_read.is_(True)).scalar() or 0
     unread_count = total - read_count
+    fav_count = db.query(func.count(Paper.id)).filter(Paper.is_favorited.is_(True)).scalar() or 0
     read_pct = (read_count / total * 100) if total > 0 else 0.0
 
     # Top unread papers by relevance
-    top_unread_query = db.query(Paper)
-    if user_id is None:
-        top_unread_query = top_unread_query.filter(Paper.is_read.is_(False))
-    else:
-        top_unread_query = top_unread_query.outerjoin(
-            PaperUserState,
-            (PaperUserState.paper_id == Paper.id) & (PaperUserState.user_id == user_id),
-        ).filter(func.coalesce(PaperUserState.is_read, False).is_(False))
-    top_unread = top_unread_query.order_by(
-        Paper.relevance.desc(), Paper.created_at.desc(),
-    ).limit(recommend_count).all()
+    top_unread = (
+        db.query(Paper)
+        .filter(Paper.is_read.is_(False))
+        .order_by(Paper.relevance.desc(), Paper.created_at.desc())
+        .limit(recommend_count)
+        .all()
+    )
 
     lines = [
         "Reading Progress:\n",
@@ -126,7 +91,7 @@ def _execute_get_reading_progress(db: Session, arguments: dict) -> str:
             "unread": unread_count,
             "favorited": fav_count,
             "read_percentage": round(read_pct, 1),
-            "recommended_unread": [_paper_to_dict(db, p) for p in top_unread],
+            "recommended_unread": [_paper_to_dict(p) for p in top_unread],
         },
     }, ensure_ascii=False)
 
@@ -224,7 +189,7 @@ def _execute_find_duplicates(db: Session, arguments: dict) -> str:
         group_papers = []
         for p in papers:
             lines.append(f"    [ID:{p.id}] {p.title}")
-            group_papers.append(_paper_to_dict(db, p))
+            group_papers.append(_paper_to_dict(p))
         lines.append("")
         data_list.append({"similarity": sim, "papers": group_papers})
 

@@ -10,8 +10,6 @@ class FeedBase(BaseModel):
     source: str = "rss"
     is_active: bool = True
     fetch_interval: int = Field(default=18000, description="Automatic fetch interval in seconds")
-    visibility: str | None = None
-    department_id: int | None = None
 
 
 class FeedCreate(FeedBase):
@@ -24,15 +22,12 @@ class FeedUpdate(BaseModel):
     source: str | None = None
     is_active: bool | None = None
     fetch_interval: int | None = Field(default=None, ge=60, description="Automatic fetch interval in seconds")
-    visibility: str | None = None
-    department_id: int | None = None
 
 
 class FeedOut(FeedBase):
     id: int
     last_fetched: datetime | None = None
     last_error: str | None = None
-    created_by_user_id: int | None = None
 
     @field_serializer("last_fetched", when_used="json")
     def serialize_last_fetched(self, value: datetime | None) -> str | None:
@@ -61,24 +56,6 @@ class PaperBase(BaseModel):
     is_favorited: bool = False
     notes: str = ""
     tags: str = ""
-    visibility: str = "public"
-    department_id: int | None = None
-
-
-class PaperCreate(BaseModel):
-    title: str = Field(min_length=1, max_length=512)
-    authors: str = ""
-    abstract: str = ""
-    link: str | None = None
-    source: str = "manual"
-    published_date: datetime | None = None
-    relevance: float = 0.0
-    category: str = "Uncategorized"
-    arxiv_id: str | None = None
-    doi: str | None = None
-    pdf_url: str | None = None
-    visibility: str | None = None
-    department_id: int | None = None
 
 
 class PaperOut(PaperBase):
@@ -90,37 +67,23 @@ class PaperOut(PaperBase):
     ai_summary: str | None = None
     abstract_zh: str | None = None
     source_feed_id: int | None = None
-    created_by_user_id: int | None = None
 
     class Config:
         from_attributes = True
 
 
 class PaperPatch(BaseModel):
-    title: str | None = None
-    authors: str | None = None
-    abstract: str | None = None
-    link: str | None = None
-    source: str | None = None
-    published_date: datetime | None = None
     relevance: float | None = None
     category: str | None = None
     is_read: bool | None = None
     is_favorited: bool | None = None
     notes: str | None = None
-    arxiv_id: str | None = None
-    doi: str | None = None
-    pdf_url: str | None = None
-    visibility: str | None = None
-    department_id: int | None = None
 
 
 class TagOut(BaseModel):
     id: int
     name: str
     color: str
-    visibility: str = "public"
-    department_id: int | None = None
 
     class Config:
         from_attributes = True
@@ -131,8 +94,6 @@ class TagWithCount(BaseModel):
     name: str
     color: str
     paper_count: int = 0
-    visibility: str = "public"
-    department_id: int | None = None
 
     class Config:
         from_attributes = True
@@ -141,8 +102,6 @@ class TagWithCount(BaseModel):
 class TagCreate(BaseModel):
     name: str
     color: str = "#3b82f6"
-    visibility: str | None = None
-    department_id: int | None = None
 
 
 class TagUpdate(BaseModel):
@@ -394,9 +353,6 @@ class LLMUsageLogOut(BaseModel):
     model_name: str
     agent_type: str | None = None
     session_id: str | None = None
-    user_id: int | None = None
-    department_id: int | None = None
-    request_type: str | None = None
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0

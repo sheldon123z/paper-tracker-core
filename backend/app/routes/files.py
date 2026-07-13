@@ -9,7 +9,6 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from ..auth.dependencies import get_current_user
-from ..control_plane.models import User
 from ..database import SessionLocal, get_db
 from ..models import Paper, PaperFile
 from ..schemas import PaperFileOut, PaperFileUpdate
@@ -20,23 +19,22 @@ from ..services.file_storage import (
     save_file,
     validate_upload,
 )
-from ..services.access_control import get_visible_or_404, require_writable
 
 logger = logging.getLogger("paper-tracker.files")
 
 router = APIRouter(prefix="/api/papers/{paper_id}/files", tags=["files"], dependencies=[Depends(get_current_user)])
 
 
-def _get_paper_or_404(paper_id: int, db: Session, user: User) -> Paper:
-    paper = get_visible_or_404(db, Paper, paper_id, user)
+def _get_paper_or_404(paper_id: int, db: Session) -> Paper:
+    paper = db.query(Paper).filter(Paper.id == paper_id).first()
     if not paper:
         raise HTTPException(status_code=404, detail="论文不存在")
     return paper
 
 
 @router.get("", response_model=list[PaperFileOut])
-def list_files(paper_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    _get_paper_or_404(paper_id, db, user)
+def list_files(paper_id: int, db: Session = Depends(get_db)):
+    _get_paper_or_404(paper_id, db)
     files = (
         db.query(PaperFile)
         .filter(PaperFile.paper_id == paper_id)
@@ -50,11 +48,9 @@ def list_files(paper_id: int, user: User = Depends(get_current_user), db: Sessio
 async def upload_file(
     paper_id: int,
     file: UploadFile = File(...),
-    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    paper = _get_paper_or_404(paper_id, db, user)
-    require_writable(paper, user)
+    _get_paper_or_404(paper_id, db)
 
     content = await file.read()
     content_type = file.content_type or "application/octet-stream"
@@ -89,8 +85,7 @@ async def upload_file(
 
 
 @router.get("/{file_id}/download")
-def download_file(paper_id: int, file_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    _get_paper_or_404(paper_id, db, user)
+def download_file(paper_id: int, file_id: int, db: Session = Depends(get_db)):
     paper_file = (
         db.query(PaperFile)
         .filter(PaperFile.id == file_id, PaperFile.paper_id == paper_id)
@@ -112,8 +107,7 @@ def download_file(paper_id: int, file_id: int, user: User = Depends(get_current_
 
 
 @router.get("/{file_id}/content")
-def get_file_content(paper_id: int, file_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    _get_paper_or_404(paper_id, db, user)
+def get_file_content(paper_id: int, file_id: int, db: Session = Depends(get_db)):
     paper_file = (
         db.query(PaperFile)
         .filter(PaperFile.id == file_id, PaperFile.paper_id == paper_id)
@@ -144,11 +138,8 @@ def update_file(
     paper_id: int,
     file_id: int,
     payload: PaperFileUpdate,
-    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    paper = _get_paper_or_404(paper_id, db, user)
-    require_writable(paper, user)
     paper_file = (
         db.query(PaperFile)
         .filter(PaperFile.id == file_id, PaperFile.paper_id == paper_id)
@@ -178,9 +169,7 @@ def update_file(
 
 
 @router.delete("/{file_id}")
-def delete_paper_file(paper_id: int, file_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    paper = _get_paper_or_404(paper_id, db, user)
-    require_writable(paper, user)
+def delete_paper_file(paper_id: int, file_id: int, db: Session = Depends(get_db)):
     paper_file = (
         db.query(PaperFile)
         .filter(PaperFile.id == file_id, PaperFile.paper_id == paper_id)
@@ -218,12 +207,9 @@ def trigger_parse(
     file_id: int,
     background_tasks: BackgroundTasks,
     engine: str = "mineru",
-    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Trigger PDF parsing for a file. engine: 'mineru' or 'doc2x'."""
-    paper = _get_paper_or_404(paper_id, db, user)
-    require_writable(paper, user)
     if engine not in ("mineru", "doc2x"):
         raise HTTPException(status_code=400, detail=f"不支持的解析引擎: {engine}")
 
@@ -250,9 +236,8 @@ def trigger_parse(
 
 
 @router.get("/{file_id}/parse-status")
-def get_parse_status(paper_id: int, file_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def get_parse_status(paper_id: int, file_id: int, db: Session = Depends(get_db)):
     """Check parsing status of a file."""
-    _get_paper_or_404(paper_id, db, user)
     paper_file = (
         db.query(PaperFile)
         .filter(PaperFile.id == file_id, PaperFile.paper_id == paper_id)
@@ -286,12 +271,9 @@ def trigger_translate(
     file_id: int,
     background_tasks: BackgroundTasks,
     config_id: int | None = None,
-    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Translate a parsed markdown file to Chinese using LLM."""
-    paper = _get_paper_or_404(paper_id, db, user)
-    require_writable(paper, user)
     paper_file = (
         db.query(PaperFile)
         .filter(PaperFile.id == file_id, PaperFile.paper_id == paper_id)

@@ -6,19 +6,12 @@ from email.utils import parsedate_to_datetime
 from typing import Any
 
 import feedparser
-from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from ..models import Feed, Paper
 from .relevance import infer_category, load_keywords_from_env, score_relevance
 
 logger = logging.getLogger(__name__)
-
-
-def _feed_paper_scope(feed: Feed):
-    if feed.visibility == "public":
-        return and_(Paper.visibility == "public", Paper.department_id.is_(None))
-    return and_(Paper.visibility == "department", Paper.department_id == feed.department_id)
 
 
 def _extract_published_date(entry: dict[str, Any]) -> datetime | None:
@@ -208,13 +201,11 @@ def ingest_feeds(db: Session, feeds: list[Feed]) -> dict[str, int]:
                 # 老数据 + 已 ingested 的 duplicate 都没值，否则下游按 feed 过滤永远空集。
                 existing = None
                 if link:
-                    existing = db.query(Paper).filter(Paper.link == link, _feed_paper_scope(feed)).first()
+                    existing = db.query(Paper).filter(Paper.link == link).first()
                 if not existing and arxiv_id:
-                    existing = db.query(Paper).filter(Paper.arxiv_id == arxiv_id, _feed_paper_scope(feed)).first()
+                    existing = db.query(Paper).filter(Paper.arxiv_id == arxiv_id).first()
                 if not existing:
-                    existing = db.query(Paper).filter(
-                        Paper.content_hash == content_hash, _feed_paper_scope(feed),
-                    ).first()
+                    existing = db.query(Paper).filter(Paper.content_hash == content_hash).first()
 
                 if existing is not None:
                     if existing.source_feed_id is None:
@@ -243,9 +234,6 @@ def ingest_feeds(db: Session, feeds: list[Feed]) -> dict[str, int]:
                     pdf_url=pdf_url,
                     doi=doi,
                     source_feed_id=feed.id,
-                    visibility=feed.visibility,
-                    department_id=feed.department_id,
-                    created_by_user_id=feed.created_by_user_id,
                 )
                 db.add(paper)
                 stats["new_papers"] += 1
@@ -283,7 +271,7 @@ def refresh_abstracts(db: Session, feeds: list[Feed]) -> dict[str, int]:
                 if not link:
                     continue
 
-                paper = db.query(Paper).filter(Paper.link == link, _feed_paper_scope(feed)).first()
+                paper = db.query(Paper).filter(Paper.link == link).first()
                 if not paper:
                     continue
 

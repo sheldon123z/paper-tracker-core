@@ -150,41 +150,6 @@ class TestIngestFeedsBackfill(unittest.TestCase):
         self.db.refresh(paper)
         self.assertEqual(paper.source_feed_id, feed.id)
 
-    def test_ingest_does_not_deduplicate_across_department_libraries(self):
-        feed_one = self._create_feed(
-            name="Department One",
-            url="https://one.example.com/feed.xml",
-            visibility="department",
-            department_id=1,
-        )
-        feed_two = self._create_feed(
-            name="Department Two",
-            url="https://two.example.com/feed.xml",
-            visibility="department",
-            department_id=2,
-        )
-        link = "https://example.com/papers/shared"
-        self._create_paper(
-            title="Shared Paper",
-            link=link,
-            content_hash=rss_parser._compute_content_hash("Shared Paper"),
-            source_feed_id=feed_one.id,
-            visibility="department",
-            department_id=1,
-        )
-
-        with patch.object(
-            rss_parser,
-            "fetch_feed_entries",
-            return_value=[{"link": link, "title": "Shared Paper", "author": "Some Author"}],
-        ):
-            stats = rss_parser.ingest_feeds(self.db, [feed_two])
-
-        self.assertEqual(stats["new_papers"], 1)
-        self.assertEqual(stats["skipped_duplicates"], 0)
-        papers = self.db.query(Paper).filter(Paper.link == link).all()
-        self.assertEqual({paper.department_id for paper in papers}, {1, 2})
-
     def test_ingest_skips_entries_with_unknown_or_missing_authors(self):
         """Unknown 作者和缺少作者的 feed 条目不应进入论文库。"""
         feed = self._create_feed()

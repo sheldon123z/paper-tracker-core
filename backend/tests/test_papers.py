@@ -6,9 +6,9 @@ import unittest
 from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
-from backend.app.auth.dependencies import get_current_user
+from backend.app.auth.dependencies import get_current_user, get_current_user_or_service
 from backend.app.database import Base
-from backend.app.models import Feed, Paper, PaperTag, PaperUserState, Tag
+from backend.app.models import Feed, Paper, PaperTag, Tag
 from backend.app.services.cache import cache
 from backend.tests.support import make_fake_user, make_test_session_factory, patched_env
 from starlette.testclient import TestClient
@@ -35,6 +35,7 @@ class TestPapers(unittest.TestCase):
         from backend.app.main import app
         app.dependency_overrides.pop(get_db, None)
         app.dependency_overrides.pop(get_current_user, None)
+        app.dependency_overrides.pop(get_current_user_or_service, None)
         self.db.close()
 
     def _create_app(self):
@@ -44,6 +45,7 @@ class TestPapers(unittest.TestCase):
 
         app.dependency_overrides[get_db] = lambda: self.db
         app.dependency_overrides[get_current_user] = make_fake_user
+        app.dependency_overrides[get_current_user_or_service] = make_fake_user
         return TestClient(app)
 
     def _create_paper(self, **kwargs):
@@ -371,9 +373,11 @@ class TestPapers(unittest.TestCase):
             data = response.json()
             self.assertEqual(data["affected"], 2)
 
-            states = self.db.query(PaperUserState).filter(PaperUserState.paper_id.in_([p1.id, p2.id])).all()
-            self.assertEqual(len(states), 2)
-            self.assertTrue(all(state.is_read for state in states))
+            # Verify papers are marked as read
+            self.db.refresh(p1)
+            self.db.refresh(p2)
+            self.assertTrue(p1.is_read)
+            self.assertTrue(p2.is_read)
 
     def test_batch_mark_unread(self):
         """Test batch marking papers as unread."""
@@ -394,9 +398,10 @@ class TestPapers(unittest.TestCase):
             data = response.json()
             self.assertEqual(data["affected"], 2)
 
-            states = self.db.query(PaperUserState).filter(PaperUserState.paper_id.in_([p1.id, p2.id])).all()
-            self.assertEqual(len(states), 2)
-            self.assertTrue(all(not state.is_read for state in states))
+            self.db.refresh(p1)
+            self.db.refresh(p2)
+            self.assertFalse(p1.is_read)
+            self.assertFalse(p2.is_read)
 
     def test_batch_favorite(self):
         """Test batch favoriting papers."""
@@ -417,9 +422,10 @@ class TestPapers(unittest.TestCase):
             data = response.json()
             self.assertEqual(data["affected"], 2)
 
-            states = self.db.query(PaperUserState).filter(PaperUserState.paper_id.in_([p1.id, p2.id])).all()
-            self.assertEqual(len(states), 2)
-            self.assertTrue(all(state.is_favorited for state in states))
+            self.db.refresh(p1)
+            self.db.refresh(p2)
+            self.assertTrue(p1.is_favorited)
+            self.assertTrue(p2.is_favorited)
 
     def test_batch_unfavorite(self):
         """Test batch unfavoriting papers."""
@@ -440,9 +446,10 @@ class TestPapers(unittest.TestCase):
             data = response.json()
             self.assertEqual(data["affected"], 2)
 
-            states = self.db.query(PaperUserState).filter(PaperUserState.paper_id.in_([p1.id, p2.id])).all()
-            self.assertEqual(len(states), 2)
-            self.assertTrue(all(not state.is_favorited for state in states))
+            self.db.refresh(p1)
+            self.db.refresh(p2)
+            self.assertFalse(p1.is_favorited)
+            self.assertFalse(p2.is_favorited)
 
     def test_batch_delete(self):
         """Test batch deleting papers."""
@@ -583,11 +590,7 @@ class TestPapers(unittest.TestCase):
         tag = self._create_tag(name="TestTag")
         # Create PaperTag for p2
         paper_tag = PaperTag(paper_id=p2.id, tag_id=tag.id)
-        self.db.add_all([
-            paper_tag,
-            PaperUserState(paper_id=p1.id, user_id=1, notes="Original notes"),
-            PaperUserState(paper_id=p2.id, user_id=1, notes="Duplicate notes"),
-        ])
+        self.db.add(paper_tag)
         self.db.commit()
 
         with patched_env(
@@ -608,14 +611,9 @@ class TestPapers(unittest.TestCase):
             # Verify p2 is deleted
             self.assertIsNone(self.db.query(Paper).filter(Paper.id == p2.id).first())
 
-            # Personal notes merge without writing the legacy global field.
-            state = self.db.query(PaperUserState).filter(
-                PaperUserState.paper_id == p1.id,
-                PaperUserState.user_id == 1,
-            ).one()
-            self.assertIn("Duplicate notes", state.notes)
+            # Verify p1 notes include p2 notes
             self.db.refresh(p1)
-            self.assertEqual(p1.notes, "Original notes")
+            self.assertIn("Duplicate notes", p1.notes)
 
     def test_merge_duplicates_invalid_keep_id(self):
         """Test merging with non-existent keep_id."""
@@ -632,7 +630,7 @@ class TestPapers(unittest.TestCase):
                 json={"keep_id": 9999, "merge_ids": [p1.id]},
             )
             self.assertEqual(response.status_code, 404)
-            self.assertIn("Paper not found", response.json()["detail"])
+            self.assertIn("Keep paper not found", response.json()["detail"])
 
     # ==================== GET/UPDATE SINGLE PAPER TESTS ====================
 
