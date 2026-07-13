@@ -11,6 +11,7 @@ Usage:
 Environment:
     PAPER_TRACKER_API_URL  - Base URL of the Paper Tracker API
                              (default: http://localhost:5002)
+    PAPER_TRACKER_BEARER_TOKEN - User access token issued by /api/auth/token
 """
 
 import json
@@ -46,9 +47,9 @@ except TypeError:
 def _client() -> httpx.AsyncClient:
     """Create an httpx async client with reasonable defaults."""
     headers: dict[str, str] = {}
-    svc_token = os.environ.get("PAPER_TRACKER_SERVICE_TOKEN", "").strip()
-    if svc_token:
-        headers["X-Service-Token"] = svc_token
+    bearer_token = os.environ.get("PAPER_TRACKER_BEARER_TOKEN", "").strip()
+    if bearer_token:
+        headers["Authorization"] = f"Bearer {bearer_token}"
     return httpx.AsyncClient(base_url=API_BASE, timeout=30.0, headers=headers)
 
 

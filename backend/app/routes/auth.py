@@ -1,4 +1,6 @@
 from datetime import UTC, datetime
+import secrets
+import os
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse
@@ -11,6 +13,7 @@ from ..auth.schemas import (
     LoginRequest,
     RefreshRequest,
     RegisterRequest,
+    TokenResponse,
     UserResponse,
 )
 from ..auth.tokens import (
@@ -23,6 +26,7 @@ from ..auth.tokens import (
 )
 from ..control_plane.database import get_control_db
 from ..control_plane.models import User, UserSession
+from ..services.audit import write_audit_event
 from . import limiter  # shared rate limiter instance
 
 
@@ -59,7 +63,10 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit("10/minute")
 def register(request: Request, body: RegisterRequest, db: Session = Depends(get_control_db)):
-    """Register a new user account."""
+    """Public registration is disabled; managers provision accounts."""
+    allow_registration = os.getenv("PAPER_TRACKER_ALLOW_PUBLIC_REGISTRATION", "").strip().lower()
+    if allow_registration not in {"1", "true", "yes"}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Public registration is disabled")
     # Validate password strength
     try:
         validate_password_strength(body.password)
@@ -98,24 +105,29 @@ def login(request: Request, body: LoginRequest, db: Session = Depends(get_contro
     """Authenticate and receive access + refresh tokens."""
     user = db.query(User).filter(User.email == body.email).first()
     if not user or not verify_password(body.password, user.password_hash):
+        write_audit_event(
+            db, event_type="auth.login", outcome="failure", request=request,
+            metadata={"email": body.email.lower().strip()},
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
         )
 
     if user.status != "active":
+        write_audit_event(db, event_type="auth.login", outcome="blocked", request=request, actor=user)
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account is disabled",
         )
 
-    # Create tokens
-    access_token, _ = create_access_token(user.id, user.email, user.role)
+    session_key = secrets.token_urlsafe(32)
     refresh_token = create_refresh_token()
 
     # Store refresh token session
     session = UserSession(
         user_id=user.id,
+        session_key=session_key,
         refresh_token_hash=hash_refresh_token(refresh_token),
         expires_at=get_refresh_token_expiry(),
         ip_address=request.client.host if request.client else None,
@@ -126,6 +138,9 @@ def login(request: Request, body: LoginRequest, db: Session = Depends(get_contro
     # Update last login
     user.last_login_at = datetime.now(UTC)
     db.commit()
+    access_token, _ = create_access_token(user.id, user.email, user.role, session_key)
+    request.state.session_key = session_key
+    write_audit_event(db, event_type="auth.login", request=request, actor=user)
 
     # Return user info in body; tokens go in httpOnly cookies
     user_data = {
@@ -135,6 +150,8 @@ def login(request: Request, body: LoginRequest, db: Session = Depends(get_contro
         "display_name": user.display_name,
         "status": user.status,
         "role": user.role,
+        "department_id": user.department_id,
+        "must_change_password": user.must_change_password,
         "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
         "created_at": user.created_at.isoformat() if user.created_at else None,
     }
@@ -145,6 +162,40 @@ def login(request: Request, body: LoginRequest, db: Session = Depends(get_contro
     })
     _set_auth_cookies(response, access_token, refresh_token)
     return response
+
+
+@router.post("/token", response_model=TokenResponse)
+@limiter.limit("10/minute")
+def issue_bearer_token(request: Request, body: LoginRequest, db: Session = Depends(get_control_db)):
+    """Issue a user-scoped bearer token pair for MCP and non-browser clients."""
+    user = db.query(User).filter(User.email == body.email).first()
+    if not user or not verify_password(body.password, user.password_hash):
+        write_audit_event(db, event_type="auth.token", outcome="failure", request=request)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+    if user.status != "active":
+        write_audit_event(db, event_type="auth.token", outcome="blocked", request=request, actor=user)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is disabled")
+
+    session_key = secrets.token_urlsafe(32)
+    refresh_token = create_refresh_token()
+    db.add(UserSession(
+        user_id=user.id,
+        session_key=session_key,
+        refresh_token_hash=hash_refresh_token(refresh_token),
+        expires_at=get_refresh_token_expiry(),
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    ))
+    user.last_login_at = datetime.now(UTC)
+    db.commit()
+    access_token, _ = create_access_token(user.id, user.email, user.role, session_key)
+    request.state.session_key = session_key
+    write_audit_event(db, event_type="auth.token", request=request, actor=user)
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        expires_in=_get_access_expire_minutes() * 60,
+    )
 
 
 @router.post("/logout")
@@ -158,7 +209,16 @@ def logout(
     # Read refresh token from cookie first, then body (backward compat for API callers)
     raw_refresh = request.cookies.get("refresh_token") or (body.refresh_token if body else None)
 
-    if raw_refresh:
+    session_key = getattr(request.state, "session_key", None)
+    if session_key:
+        session = db.query(UserSession).filter(
+            UserSession.session_key == session_key,
+            UserSession.user_id == current_user.id,
+        ).first()
+        if session:
+            session.revoked_at = datetime.now(UTC)
+            db.commit()
+    elif raw_refresh:
         token_hash = hash_refresh_token(raw_refresh)
         session = (
             db.query(UserSession)
@@ -171,6 +231,8 @@ def logout(
         if session:
             session.revoked_at = datetime.now(UTC)
             db.commit()
+
+    write_audit_event(db, event_type="auth.logout", request=request, actor=current_user)
 
     response = JSONResponse(content={"message": "Logged out"})
     _clear_auth_cookies(response)
@@ -222,12 +284,13 @@ def refresh(request: Request, body: RefreshRequest | None = None, db: Session = 
     session.revoked_at = datetime.now(UTC)
 
     # Create new tokens
-    access_token, _ = create_access_token(user.id, user.email, user.role)
+    session_key = secrets.token_urlsafe(32)
     new_refresh_token = create_refresh_token()
 
     # Store new session
     new_session = UserSession(
         user_id=user.id,
+        session_key=session_key,
         refresh_token_hash=hash_refresh_token(new_refresh_token),
         expires_at=get_refresh_token_expiry(),
         ip_address=request.client.host if request.client else None,
@@ -235,6 +298,7 @@ def refresh(request: Request, body: RefreshRequest | None = None, db: Session = 
     )
     db.add(new_session)
     db.commit()
+    access_token, _ = create_access_token(user.id, user.email, user.role, session_key)
 
     response = JSONResponse(content={
         "message": "Token refreshed",
@@ -252,6 +316,7 @@ def get_me(current_user: User = Depends(get_current_user)):
 
 @router.post("/change-password")
 def change_password(
+    request: Request,
     body: ChangePasswordRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_control_db),
@@ -269,5 +334,7 @@ def change_password(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
 
     current_user.password_hash = hash_password(body.new_password)
+    current_user.must_change_password = False
     db.commit()
+    write_audit_event(db, event_type="auth.password_changed", request=request, actor=current_user)
     return {"message": "Password changed"}

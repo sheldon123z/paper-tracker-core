@@ -31,7 +31,7 @@ def _get_refresh_expire_days() -> int:
     return int(os.getenv("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "30"))
 
 
-def create_access_token(user_id: int, email: str, role: str) -> tuple[str, datetime]:
+def create_access_token(user_id: int, email: str, role: str, session_key: str | None = None) -> tuple[str, datetime]:
     expire = datetime.now(UTC) + timedelta(minutes=_get_access_expire_minutes())
     payload = {
         "sub": str(user_id),
@@ -41,6 +41,8 @@ def create_access_token(user_id: int, email: str, role: str) -> tuple[str, datet
         "type": "access",
         "jti": secrets.token_hex(16),
     }
+    if session_key:
+        payload["sid"] = session_key
     token = encode(payload, _get_secret_key(), algorithm=JWT_ALGORITHM)
     return token, expire
 

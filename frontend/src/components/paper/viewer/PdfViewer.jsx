@@ -5,8 +5,16 @@ import 'react-pdf/dist/Page/AnnotationLayer.css'
 import { Button } from '../../ui'
 import useStore from '../../../store'
 
-// Use CDN worker to avoid Vite bundling issues
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`
+// Bundle the worker with the app so local/offline viewing does not depend on a CDN.
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.mjs',
+  import.meta.url,
+).toString()
+
+// Attachment endpoints are protected by httpOnly auth cookies and run on the
+// backend port in local development. PDF.js defaults to omitting credentials
+// for that cross-origin request unless this is enabled explicitly.
+const PDF_DOCUMENT_OPTIONS = { withCredentials: true }
 
 export default function PdfViewer({ fileUrl, onSelectionChange }) {
   const [numPages, setNumPages] = useState(null)
@@ -74,6 +82,7 @@ export default function PdfViewer({ fileUrl, onSelectionChange }) {
       <div className="pdf-pages" ref={pagesRef} onMouseUp={handleMouseUp}>
         <Document
           file={fileUrl}
+          options={PDF_DOCUMENT_OPTIONS}
           onLoadSuccess={onDocumentLoadSuccess}
           loading={
             <div className="flex items-center justify-center py-12">

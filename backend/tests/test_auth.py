@@ -262,7 +262,10 @@ class AuthAPITestBase(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         from backend.app.routes import limiter
 
-        self.env_patcher = patch.dict(os.environ, {"JWT_SECRET_KEY": TEST_JWT_SECRET})
+        self.env_patcher = patch.dict(os.environ, {
+            "JWT_SECRET_KEY": TEST_JWT_SECRET,
+            "PAPER_TRACKER_ALLOW_PUBLIC_REGISTRATION": "1",
+        })
         self.env_patcher.start()
 
         self.app = FastAPI()
@@ -668,6 +671,14 @@ class DependencyTests(unittest.TestCase):
             db.commit()
             db.refresh(user)
             cls.test_user_id = user.id
+            cls.session_key = "dependency-test-session"
+            db.add(UserSession(
+                user_id=user.id,
+                session_key=cls.session_key,
+                refresh_token_hash="dependency-test-refresh",
+                expires_at=datetime.now(UTC) + timedelta(days=1),
+            ))
+            db.commit()
 
     @classmethod
     def tearDownClass(cls):
@@ -686,7 +697,9 @@ class DependencyTests(unittest.TestCase):
     def test_get_current_user_valid_token(self):
         from backend.app.auth.dependencies import get_current_user
         with patched_env(JWT_SECRET_KEY=TEST_JWT_SECRET):
-            token, _ = create_access_token(self.test_user_id, "dep@test.com", "user")
+            token, _ = create_access_token(
+                self.test_user_id, "dep@test.com", "user", self.session_key,
+            )
             db = self._get_db()
             try:
                 user = get_current_user(request=self._mock_request(), token=token, db=db)
@@ -750,7 +763,9 @@ class DependencyTests(unittest.TestCase):
     def test_get_optional_user_with_valid_token(self):
         from backend.app.auth.dependencies import get_optional_user
         with patched_env(JWT_SECRET_KEY=TEST_JWT_SECRET):
-            token, _ = create_access_token(self.test_user_id, "dep@test.com", "user")
+            token, _ = create_access_token(
+                self.test_user_id, "dep@test.com", "user", self.session_key,
+            )
             db = self._get_db()
             try:
                 user = get_optional_user(request=self._mock_request(), token=token, db=db)
@@ -779,142 +794,37 @@ class DependencyTests(unittest.TestCase):
             finally:
                 db.close()
 
-
-# ======================================================================
-# 5b. get_current_user_or_service — service-token + loopback bypass
-# ======================================================================
-
-class CurrentUserOrServiceTests(unittest.TestCase):
-    """Direct unit tests for get_current_user_or_service.
-
-    Covers:
-      - service-token bypass still works (header path)
-      - loopback bypass allows anonymous (127.0.0.1 / ::1 / localhost)
-      - loopback bypass disabled via PAPER_TRACKER_DISABLE_LOOPBACK_BYPASS
-      - non-loopback caller without token still raises 401
-    """
-
-    @classmethod
-    def setUpClass(cls):
-        cls.session_factory = make_control_plane_session_factory()
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.session_factory.kw["bind"].dispose()
-
-    def _get_db(self):
-        return self.session_factory()
-
-    @staticmethod
-    def _mock_request(client_host: str | None = None, cookies=None):
-        """Build a minimal request whose .client.host / .cookies / .state are set.
-
-        Mirrors what FastAPI / Starlette pass to dependency callables.
-        """
+    def test_ingestion_service_requires_the_explicit_service_token(self):
         import types
 
-        client = types.SimpleNamespace(host=client_host) if client_host is not None else None
-        return types.SimpleNamespace(
-            client=client,
-            cookies=cookies or {},
-            state=types.SimpleNamespace(),
-        )
-
-    def test_service_token_still_works(self):
-        """X-Service-Token bypass returns None and marks request as service call."""
-        from backend.app.auth.dependencies import get_current_user_or_service
-
-        with patched_env(
-            PAPER_TRACKER_SERVICE_TOKEN="my-service-token",
-            PAPER_TRACKER_DISABLE_LOOPBACK_BYPASS="1",  # ensure loopback path doesn't shortcut
-        ):
-            req = self._mock_request(client_host="10.0.0.5")
-            db = self._get_db()
-            try:
-                user = get_current_user_or_service(
-                    request=req,
-                    token=None,
-                    x_service_token="my-service-token",
-                    db=db,
-                )
-                self.assertIsNone(user)
-                self.assertTrue(getattr(req.state, "is_service_call", False))
-            finally:
-                db.close()
-
-    def test_loopback_bypass_allows_anonymous(self):
-        """Direct 127.0.0.1 / ::1 / localhost callers are accepted with no token."""
-        from backend.app.auth.dependencies import get_current_user_or_service
-
-        for host in ("127.0.0.1", "::1", "localhost"):
-            with self.subTest(host=host):
-                with patched_env(
-                    PAPER_TRACKER_SERVICE_TOKEN=None,
-                    PAPER_TRACKER_DISABLE_LOOPBACK_BYPASS=None,
-                ):
-                    req = self._mock_request(client_host=host)
-                    db = self._get_db()
-                    try:
-                        user = get_current_user_or_service(
-                            request=req,
-                            token=None,
-                            x_service_token=None,
-                            db=db,
-                        )
-                        self.assertIsNone(user)
-                        self.assertTrue(getattr(req.state, "is_service_call", False))
-                    finally:
-                        db.close()
-
-    def test_loopback_bypass_disabled_via_env(self):
-        """When PAPER_TRACKER_DISABLE_LOOPBACK_BYPASS=1, loopback caller without token must 401."""
-        from backend.app.auth.dependencies import get_current_user_or_service
+        from backend.app.auth.dependencies import get_current_user_or_ingestion_service
         from fastapi import HTTPException
 
-        with patched_env(
-            PAPER_TRACKER_SERVICE_TOKEN=None,
-            PAPER_TRACKER_DISABLE_LOOPBACK_BYPASS="1",
-        ):
-            req = self._mock_request(client_host="127.0.0.1")
-            db = self._get_db()
-            try:
-                with self.assertRaises(HTTPException) as ctx:
-                    get_current_user_or_service(
-                        request=req,
+        request = types.SimpleNamespace(
+            cookies={},
+            state=types.SimpleNamespace(),
+            client=types.SimpleNamespace(host="127.0.0.1"),
+        )
+        db = self._get_db()
+        try:
+            with patched_env(PAPER_TRACKER_SERVICE_TOKEN="scheduler-secret"):
+                principal = get_current_user_or_ingestion_service(
+                    request=request,
+                    token=None,
+                    x_service_token="scheduler-secret",
+                    db=db,
+                )
+                self.assertIsNone(principal)
+                with self.assertRaises(HTTPException) as raised:
+                    get_current_user_or_ingestion_service(
+                        request=request,
                         token=None,
                         x_service_token=None,
                         db=db,
                     )
-                self.assertEqual(ctx.exception.status_code, 401)
-            finally:
-                db.close()
-
-    def test_non_loopback_no_token_returns_401(self):
-        """Remote caller without JWT and without service token must 401 (no spoofing via odd IPs)."""
-        from backend.app.auth.dependencies import get_current_user_or_service
-        from fastapi import HTTPException
-
-        # Pick a host that would falsely match `is_loopback` (127.x.y.z) but
-        # NOT match our strict allow-list of {"127.0.0.1", "::1", "localhost"}.
-        for host in ("10.0.0.5", "192.168.1.10", "127.0.0.2"):
-            with self.subTest(host=host):
-                with patched_env(
-                    PAPER_TRACKER_SERVICE_TOKEN=None,
-                    PAPER_TRACKER_DISABLE_LOOPBACK_BYPASS=None,
-                ):
-                    req = self._mock_request(client_host=host)
-                    db = self._get_db()
-                    try:
-                        with self.assertRaises(HTTPException) as ctx:
-                            get_current_user_or_service(
-                                request=req,
-                                token=None,
-                                x_service_token=None,
-                                db=db,
-                            )
-                        self.assertEqual(ctx.exception.status_code, 401)
-                    finally:
-                        db.close()
+                self.assertEqual(raised.exception.status_code, 401)
+        finally:
+            db.close()
 
 
 # ======================================================================

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import api from '../api'
-import { Button, Card, Input, Modal, useToast } from '../components/ui'
+import { Badge, Button, Card, Input, Modal, Select, useToast } from '../components/ui'
+import useStore from '../store'
 
 const SECONDS_PER_HOUR = 3600
 const DEFAULT_FETCH_INTERVAL_HOURS = 5
@@ -172,6 +173,9 @@ export function FeedRow({ feed, onDelete, onUpdate, onFetched, now }) {
               >
                 {feed.is_active ? '启用' : '停用'}
               </span>
+              <Badge variant={feed.visibility === 'public' ? 'success' : 'neutral'}>
+                {feed.visibility === 'public' ? '公共库' : '部门库'}
+              </Badge>
             </div>
             <p className="text-xs truncate mb-1" style={{ color: 'var(--text-secondary)' }}>
               {feed.url}
@@ -237,6 +241,10 @@ export default function FeedsPage() {
   const [form, setForm] = useState(initialFeed)
   const [deleteTargetId, setDeleteTargetId] = useState(null)
   const [now, setNow] = useState(() => Date.now())
+  const [scope, setScope] = useState('department')
+  const [departmentId, setDepartmentId] = useState('')
+  const [departments, setDepartments] = useState([])
+  const user = useStore((state) => state.user)
   const { addToast } = useToast()
 
   const loadFeeds = async () => {
@@ -256,6 +264,14 @@ export default function FeedsPage() {
     }, 60_000)
     return () => window.clearInterval(refreshTimer)
   }, [])
+  useEffect(() => {
+    if (user?.role !== 'manager') return
+    api.get('/api/admin/departments').then((res) => {
+      const active = (res.data || []).filter((department) => department.status === 'active')
+      setDepartments(active)
+      if (active[0]) setDepartmentId(String(active[0].id))
+    }).catch(() => setDepartments([]))
+  }, [user?.role])
 
   const handleFetched = async () => {
     await loadFeeds()
@@ -265,7 +281,12 @@ export default function FeedsPage() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     try {
-      await api.post('/api/feeds', normalizeFeedForm(form))
+      const payload = normalizeFeedForm(form)
+      if (user?.role === 'manager') {
+        payload.visibility = scope
+        payload.department_id = scope === 'department' ? Number(departmentId) : null
+      }
+      await api.post('/api/feeds', payload)
       setForm(initialFeed)
       loadFeeds()
       addToast({ type: 'success', message: '订阅已添加' })
@@ -338,6 +359,12 @@ export default function FeedsPage() {
             onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))}
             required
           />
+          {user?.role === 'manager' && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Select label="入库范围" value={scope} onChange={setScope} options={[{ value: 'public', label: '公共数据库' }, { value: 'department', label: '部门私有数据库' }]} />
+              {scope === 'department' && <Select label="所属部门" value={departmentId} onChange={setDepartmentId} options={departments.map((department) => ({ value: String(department.id), label: department.name }))} />}
+            </div>
+          )}
           <div className="flex items-end gap-3">
             <Input
               label="自动抓取间隔 (小时)"

@@ -18,6 +18,12 @@ CONTROL_DB_PATH = CONTROL_DB_DIR / "control_plane.db"
 
 
 def _get_control_db_url() -> str:
+    configured = os.getenv("CONTROL_DATABASE_URL", "").strip()
+    if configured:
+        if configured.startswith("sqlite:///"):
+            configured_path = Path(configured.removeprefix("sqlite:///")).expanduser()
+            configured_path.parent.mkdir(parents=True, exist_ok=True)
+        return configured
     os.makedirs(CONTROL_DB_DIR, exist_ok=True)
     return f"sqlite:///{CONTROL_DB_PATH}"
 
