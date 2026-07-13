@@ -51,8 +51,6 @@ class ChatAgentConfig:
     resolved: ResolvedLLMConfig | None = None
     track_history: bool = False             # assistant: True
     track_ordered_segments: bool = False    # assistant: True
-    user_id: int | None = None
-    department_id: int | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -204,7 +202,6 @@ def save_user_message(db: Session, config: ChatAgentConfig, user_content: str | 
     if config.session_type == "paper":
         db.add(ChatMessage(
             paper_id=config.paper_id,
-            user_id=config.user_id,
             session_type="paper",
             role="user",
             content=user_content,
@@ -212,7 +209,6 @@ def save_user_message(db: Session, config: ChatAgentConfig, user_content: str | 
     else:
         db.add(ChatMessage(
             session_id=config.session_id,
-            user_id=config.user_id,
             session_type=config.session_type,
             role="user",
             content=user_content,
@@ -240,7 +236,6 @@ def save_response_messages(
                 if seg["type"] == "text" and seg["content"].strip():
                     db.add(ChatMessage(
                         session_id=config.session_id,
-                        user_id=config.user_id,
                         session_type=config.session_type,
                         role="assistant",
                         content=seg["content"],
@@ -248,7 +243,6 @@ def save_response_messages(
                 elif seg["type"] == "tool":
                     db.add(ChatMessage(
                         session_id=config.session_id,
-                        user_id=config.user_id,
                         session_type=config.session_type,
                         role="tool",
                         content=json.dumps(seg["data"], ensure_ascii=False),
@@ -259,7 +253,6 @@ def save_response_messages(
             for td in tool_interactions:
                 db.add(ChatMessage(
                     session_id=config.session_id,
-                    user_id=config.user_id,
                     session_type=config.session_type,
                     role="tool",
                     content=json.dumps(td, ensure_ascii=False),
@@ -267,7 +260,6 @@ def save_response_messages(
             if full_text:
                 db.add(ChatMessage(
                     session_id=config.session_id,
-                    user_id=config.user_id,
                     session_type=config.session_type,
                     role="assistant",
                     content="".join(full_text),
@@ -279,7 +271,6 @@ def save_response_messages(
             if config.session_type == "paper":
                 db.add(ChatMessage(
                     paper_id=config.paper_id,
-                    user_id=config.user_id,
                     session_type="paper",
                     role="assistant",
                     content="".join(full_text),
@@ -287,7 +278,6 @@ def save_response_messages(
             else:
                 db.add(ChatMessage(
                     session_id=config.session_id,
-                    user_id=config.user_id,
                     session_type=config.session_type,
                     role="assistant",
                     content="".join(full_text),
@@ -333,7 +323,6 @@ async def run_chat_agent(
             .filter(
                 ChatMessage.session_id == config.session_id,
                 ChatMessage.session_type == config.session_type,
-                ChatMessage.user_id == config.user_id,
             )
             .order_by(ChatMessage.id)
             .all()
@@ -353,9 +342,6 @@ async def run_chat_agent(
         model_name=config.resolved.model_name,
         agent_type=config.agent_type,
         session_id=config.session_id,
-        user_id=config.user_id,
-        department_id=config.department_id,
-        request_type=config.agent_type,
     )
 
     try:

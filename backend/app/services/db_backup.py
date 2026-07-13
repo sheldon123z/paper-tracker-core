@@ -39,7 +39,7 @@ def _resolve_db_paths() -> list[tuple[str, Path]]:
     Each name is the stem used in the backup filename (e.g.
     ``paper_tracker``).
     """
-    from ..control_plane.database import control_engine
+    from ..control_plane.database import CONTROL_DB_PATH
     from ..database import DATABASE_URL
 
     pairs: list[tuple[str, Path]] = []
@@ -59,8 +59,7 @@ def _resolve_db_paths() -> list[tuple[str, Path]]:
     pairs.append(("graph_checkpoints", checkpoint_path))
 
     # 3. Control-plane (auth) database
-    if control_engine.url.drivername == "sqlite" and control_engine.url.database:
-        pairs.append(("control_plane", Path(control_engine.url.database)))
+    pairs.append(("control_plane", CONTROL_DB_PATH))
 
     return pairs
 

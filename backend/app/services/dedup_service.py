@@ -3,7 +3,7 @@ from difflib import SequenceMatcher
 
 from sqlalchemy.orm import Session
 
-from ..models import ChatMessage, Paper, PaperTag, PaperUserState
+from ..models import ChatMessage, Paper, PaperTag
 
 # Lightweight row proxy for dedup — avoids loading abstract/notes blobs
 _PaperRow = namedtuple("_PaperRow", ["id", "title", "authors"])
@@ -124,22 +124,8 @@ def merge_duplicates(db: Session, keep_id: int, remove_ids: list[int]):
         dup = db.query(Paper).filter(Paper.id == rid).first()
         if not dup:
             continue
-        duplicate_states = db.query(PaperUserState).filter(PaperUserState.paper_id == rid).all()
-        for duplicate_state in duplicate_states:
-            keep_state = db.query(PaperUserState).filter(
-                PaperUserState.paper_id == keep_id,
-                PaperUserState.user_id == duplicate_state.user_id,
-            ).first()
-            if keep_state is None:
-                duplicate_state.paper_id = keep_id
-                continue
-            keep_state.is_read = keep_state.is_read or duplicate_state.is_read
-            keep_state.is_favorited = keep_state.is_favorited or duplicate_state.is_favorited
-            if duplicate_state.notes and duplicate_state.notes.strip():
-                keep_state.notes = (
-                    (keep_state.notes or "") + "\n---\n" + duplicate_state.notes
-                ).strip()
-            db.delete(duplicate_state)
+        if dup.notes and dup.notes.strip():
+            keep.notes = ((keep.notes or "") + "\n---\n" + dup.notes).strip()
         dup_tags = db.query(PaperTag).filter(PaperTag.paper_id == rid).all()
         existing_tag_ids = {pt.tag_id for pt in db.query(PaperTag).filter(PaperTag.paper_id == keep_id).all()}
         for pt in dup_tags:

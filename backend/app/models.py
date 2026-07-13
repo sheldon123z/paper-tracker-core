@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, Float, ForeignKey, Index, Integer, String, Table, Text, UniqueConstraint, text
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Table, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from .database import Base
@@ -20,7 +20,7 @@ class Paper(Base):
     title = Column(String(512), nullable=False)
     authors = Column(String(512), default="")
     abstract = Column(Text, default="")
-    link = Column(String(1024), index=True)
+    link = Column(String(1024), unique=True, index=True)
     source = Column(String(128), default="rss", index=True)
     published_date = Column(DateTime, nullable=True, index=True)
     relevance = Column(Float, default=0.0, index=True)
@@ -39,9 +39,6 @@ class Paper(Base):
     content_hash = Column(String(64), nullable=True, index=True)
     abstract_zh = Column(Text, nullable=True)
     source_feed_id = Column(Integer, ForeignKey("feeds.id", ondelete="SET NULL"), nullable=True, index=True)
-    visibility = Column(String(16), default="public", nullable=False, index=True)
-    department_id = Column(Integer, nullable=True, index=True)
-    created_by_user_id = Column(Integer, nullable=True, index=True)
 
     source_feed = relationship("Feed", back_populates="papers")
     files = relationship("PaperFile", back_populates="paper", cascade="all, delete-orphan", passive_deletes=True)
@@ -51,28 +48,6 @@ class Paper(Base):
     paper_tags_rel = relationship(
         "PaperTag", back_populates="paper", cascade="all, delete-orphan", passive_deletes=True
     )
-    user_states = relationship("PaperUserState", back_populates="paper", cascade="all, delete-orphan", passive_deletes=True)
-
-    __table_args__ = (
-        Index(
-            "uq_papers_public_link",
-            "link",
-            unique=True,
-            sqlite_where=text("visibility = 'public' AND link IS NOT NULL"),
-        ),
-        Index(
-            "uq_papers_department_link",
-            "link",
-            "department_id",
-            unique=True,
-            sqlite_where=text("visibility = 'department' AND link IS NOT NULL"),
-        ),
-        CheckConstraint(
-            "(visibility = 'public' AND department_id IS NULL) OR "
-            "(visibility = 'department' AND department_id IS NOT NULL)",
-            name="ck_paper_visibility_department",
-        ),
-    )
 
 
 class Feed(Base):
@@ -80,7 +55,7 @@ class Feed(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False)
-    url = Column(String(1024), nullable=False)
+    url = Column(String(1024), nullable=False, unique=True)
     source = Column(String(128), default="rss")
     last_fetched = Column(DateTime, nullable=True)
     is_active = Column(Boolean, default=True)
@@ -88,84 +63,19 @@ class Feed(Base):
     # New fields for Phase 1
     fetch_interval = Column(Integer, default=18000)
     last_error = Column(Text, nullable=True)
-    visibility = Column(String(16), default="public", nullable=False, index=True)
-    department_id = Column(Integer, nullable=True, index=True)
-    created_by_user_id = Column(Integer, nullable=True, index=True)
 
     papers = relationship("Paper", back_populates="source_feed", passive_deletes=True)
-
-    __table_args__ = (
-        Index(
-            "uq_feeds_public_url",
-            "url",
-            unique=True,
-            sqlite_where=text("visibility = 'public'"),
-        ),
-        Index(
-            "uq_feeds_department_url",
-            "url",
-            "department_id",
-            unique=True,
-            sqlite_where=text("visibility = 'department'"),
-        ),
-        CheckConstraint(
-            "(visibility = 'public' AND department_id IS NULL) OR "
-            "(visibility = 'department' AND department_id IS NOT NULL)",
-            name="ck_feed_visibility_department",
-        ),
-    )
 
 
 class Tag(Base):
     __tablename__ = "tags"
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(64), nullable=False, index=True)
+    name = Column(String(64), unique=True, nullable=False, index=True)
     color = Column(String(16), default="#3B82F6")
-    visibility = Column(String(16), default="public", nullable=False, index=True)
-    department_id = Column(Integer, nullable=True, index=True)
-    created_by_user_id = Column(Integer, nullable=True, index=True)
     updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
 
     paper_tags = relationship("PaperTag", back_populates="tag")
-
-    __table_args__ = (
-        Index(
-            "uq_tags_public_name",
-            "name",
-            unique=True,
-            sqlite_where=text("visibility = 'public'"),
-        ),
-        Index(
-            "uq_tags_department_name",
-            "name",
-            "department_id",
-            unique=True,
-            sqlite_where=text("visibility = 'department'"),
-        ),
-        CheckConstraint(
-            "(visibility = 'public' AND department_id IS NULL) OR "
-            "(visibility = 'department' AND department_id IS NOT NULL)",
-            name="ck_tag_visibility_department",
-        ),
-    )
-
-
-class PaperUserState(Base):
-    __tablename__ = "paper_user_states"
-
-    id = Column(Integer, primary_key=True, index=True)
-    paper_id = Column(Integer, ForeignKey("papers.id", ondelete="CASCADE"), nullable=False, index=True)
-    user_id = Column(Integer, nullable=False, index=True)
-    is_read = Column(Boolean, default=False, nullable=False)
-    is_favorited = Column(Boolean, default=False, nullable=False)
-    notes = Column(Text, default="", nullable=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
-    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False)
-
-    paper = relationship("Paper", back_populates="user_states")
-
-    __table_args__ = (UniqueConstraint("paper_id", "user_id", name="uq_paper_user_state"),)
 
 
 class PaperTag(Base):
@@ -217,9 +127,6 @@ class LLMUsageLog(Base):
     model_name = Column(String(128), nullable=False)
     agent_type = Column(String(32), nullable=True, index=True)
     session_id = Column(String(64), nullable=True, index=True)
-    user_id = Column(Integer, nullable=True, index=True)
-    department_id = Column(Integer, nullable=True, index=True)
-    request_type = Column(String(32), nullable=True, index=True)
     prompt_tokens = Column(Integer, default=0)
     completion_tokens = Column(Integer, default=0)
     total_tokens = Column(Integer, default=0)
@@ -264,7 +171,6 @@ class ChatMessage(Base):
     id = Column(Integer, primary_key=True, index=True)
     paper_id = Column(Integer, ForeignKey("papers.id", ondelete="CASCADE"), nullable=True, index=True)
     session_id = Column(String(64), nullable=True, index=True)
-    user_id = Column(Integer, nullable=True, index=True)
     session_type = Column(String(16), nullable=False)
     role = Column(String(16), nullable=False)
     content = Column(Text, nullable=False)
@@ -278,7 +184,6 @@ class GlobalChatSession(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     session_id = Column(String(64), unique=True, nullable=False, index=True)
-    user_id = Column(Integer, nullable=True, index=True)
     title = Column(String(256), default="New Session")
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 

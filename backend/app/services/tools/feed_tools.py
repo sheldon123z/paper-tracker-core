@@ -5,8 +5,8 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from ...models import Feed, Paper, PaperUserState
-from .helpers import _current_user_id, _paper_to_dict
+from ...models import Feed, Paper
+from .helpers import _paper_to_dict
 
 
 def _execute_get_feed_status(db: Session, arguments: dict) -> str:
@@ -44,7 +44,6 @@ def _execute_get_recent_activity(db: Session, arguments: dict) -> str:
     days = min(arguments.get("days", 7), 90)
     limit_per_type = min(arguments.get("limit_per_type", 5), 20)
     since = datetime.now(UTC) - timedelta(days=days)
-    user_id = _current_user_id(db)
 
     # Recently added papers
     recently_added = (
@@ -56,34 +55,22 @@ def _execute_get_recent_activity(db: Session, arguments: dict) -> str:
     )
 
     # Recently read papers
-    recently_read_query = db.query(Paper)
-    if user_id is None:
-        recently_read_query = recently_read_query.filter(
-            Paper.is_read.is_(True), Paper.updated_at >= since,
-        ).order_by(Paper.updated_at.desc())
-    else:
-        recently_read_query = recently_read_query.join(
-            PaperUserState,
-            (PaperUserState.paper_id == Paper.id) & (PaperUserState.user_id == user_id),
-        ).filter(
-            PaperUserState.is_read.is_(True), PaperUserState.updated_at >= since,
-        ).order_by(PaperUserState.updated_at.desc())
-    recently_read = recently_read_query.limit(limit_per_type).all()
+    recently_read = (
+        db.query(Paper)
+        .filter(Paper.is_read.is_(True), Paper.updated_at >= since)
+        .order_by(Paper.updated_at.desc())
+        .limit(limit_per_type)
+        .all()
+    )
 
     # Recently favorited papers
-    recently_favorited_query = db.query(Paper)
-    if user_id is None:
-        recently_favorited_query = recently_favorited_query.filter(
-            Paper.is_favorited.is_(True), Paper.updated_at >= since,
-        ).order_by(Paper.updated_at.desc())
-    else:
-        recently_favorited_query = recently_favorited_query.join(
-            PaperUserState,
-            (PaperUserState.paper_id == Paper.id) & (PaperUserState.user_id == user_id),
-        ).filter(
-            PaperUserState.is_favorited.is_(True), PaperUserState.updated_at >= since,
-        ).order_by(PaperUserState.updated_at.desc())
-    recently_favorited = recently_favorited_query.limit(limit_per_type).all()
+    recently_favorited = (
+        db.query(Paper)
+        .filter(Paper.is_favorited.is_(True), Paper.updated_at >= since)
+        .order_by(Paper.updated_at.desc())
+        .limit(limit_per_type)
+        .all()
+    )
 
     # Feed activity
     active_feeds = (
@@ -122,9 +109,9 @@ def _execute_get_recent_activity(db: Session, arguments: dict) -> str:
         "summary": text,
         "data": {
             "days": days,
-            "recently_added": [_paper_to_dict(db, p) for p in recently_added],
-            "recently_read": [_paper_to_dict(db, p) for p in recently_read],
-            "recently_favorited": [_paper_to_dict(db, p) for p in recently_favorited],
+            "recently_added": [_paper_to_dict(p) for p in recently_added],
+            "recently_read": [_paper_to_dict(p) for p in recently_read],
+            "recently_favorited": [_paper_to_dict(p) for p in recently_favorited],
             "feed_activity": [{
                 "id": f.id, "name": f.name,
                 "last_fetched": f.last_fetched.strftime("%Y-%m-%d %H:%M") if f.last_fetched else None,

@@ -3,8 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import api from '../../api'
 import useStore from '../../store'
 
-const registrationEnabled = import.meta.env.VITE_ALLOW_PUBLIC_REGISTRATION === '1'
-
 /**
  * Glass login/register card with mode toggle.
  * Academic Grid FUI style — glass morphism, cyan glow, Orbitron + Exo 2 fonts.
@@ -45,7 +43,7 @@ export default function LoginForm() {
       const res = await api.post('/api/auth/login', { email, password })
       const userData = res.data.user
       setAuth(userData)
-      navigate(userData.must_change_password ? '/change-password' : '/', { replace: true })
+      navigate('/', { replace: true })
     } catch (err) {
       const detail = err.response?.data?.detail || '认证失败，请检查您的凭据。'
       setError(detail)
@@ -120,7 +118,7 @@ export default function LoginForm() {
       </div>
 
       {/* Mode toggle */}
-      {registrationEnabled && <div className="login-mode-toggle">
+      <div className="login-mode-toggle">
         <button
           type="button"
           className={`login-mode-btn ${mode === 'login' ? 'active' : ''}`}
@@ -135,7 +133,7 @@ export default function LoginForm() {
         >
           注册
         </button>
-      </div>}
+      </div>
 
       {/* Title */}
       <h2 className="login-card-title">

@@ -18,11 +18,9 @@ import uuid
 from ag_ui.encoder import EventEncoder
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from ..auth.dependencies import get_current_user
-from ..control_plane.models import User
 from ..database import get_db
 from ..models import ChatMessage, GlobalChatSession, Paper, PaperFile
 from ..services.agui_streaming import (
@@ -43,7 +41,6 @@ from ..services.file_storage import read_file
 from ..services.llm_service import get_system_prompt, resolve_llm_config
 from ..services.skill_registry import get_tools_for_agent
 from ..services.structured_logging import RequestTimer, get_logger
-from ..services.access_control import get_user_state, get_visible_or_404, is_manager, scope_session
 from ..services.tools import get_tool_descriptions_for
 from . import limiter  # shared rate limiter instance
 
@@ -65,14 +62,13 @@ def _make_encoder(request: Request) -> EventEncoder:
 # Route-level helpers
 # ---------------------------------------------------------------------------
 
-def _validate_and_get_paper(db: Session, user: User, props: dict, encoder: EventEncoder, thread_id: str, run_id: str, msg_id: str):
+def _validate_and_get_paper(db: Session, props: dict, encoder: EventEncoder, thread_id: str, run_id: str, msg_id: str):
     """Return (paper, None) on success, or (None, error_stream_gen) on failure."""
     paper_id = props.get("paperId")
     if not paper_id:
         return None, emit_paper_validation_error(encoder, thread_id, run_id, msg_id, paper_id, paper_exists=False)
-    try:
-        paper = get_visible_or_404(db, Paper, int(paper_id), user)
-    except HTTPException:
+    paper = db.query(Paper).filter(Paper.id == paper_id).first()
+    if not paper:
         return None, emit_paper_validation_error(encoder, thread_id, run_id, msg_id, paper_id, paper_exists=True)
     return paper, None
 
@@ -116,10 +112,8 @@ def _load_parsed_markdown(db: Session, paper_id: int, file_id) -> str | None:
     return None
 
 
-def _build_paper_context(db: Session | None, paper, user: User | dict | None = None, props: dict | None = None) -> str:
+def _build_paper_context(db: Session, paper, props: dict | None = None) -> str:
     """Build reusable paper metadata/PDF context without an agent prompt."""
-    if isinstance(user, dict) and props is None:
-        props, user = user, None
     mini_context = (
         f"当前论文: [ID:{paper.id}] {paper.title}\n"
         f"作者: {paper.authors or '未知'}\n"
@@ -131,10 +125,8 @@ def _build_paper_context(db: Session | None, paper, user: User | dict | None = N
         mini_context += f"\n原文链接: {paper.link}"
     if paper.abstract:
         mini_context += f"\n\n## 摘要\n{paper.abstract}"
-    state = get_user_state(db, paper.id, user.id) if db is not None and user is not None else None
-    notes = state.notes if state else (paper.notes if user is None else "")
-    if notes:
-        mini_context += f"\n\n## 用户笔记\n{notes}"
+    if paper.notes:
+        mini_context += f"\n\n## 用户笔记\n{paper.notes}"
     if paper.tags:
         mini_context += f"\n标签: {paper.tags}"
 
@@ -176,21 +168,16 @@ def _build_paper_context(db: Session | None, paper, user: User | dict | None = N
     return mini_context
 
 
-def _build_paper_prompt(db: Session, paper, user: User, props: dict | None = None) -> str:
+def _build_paper_prompt(db: Session, paper, props: dict | None = None) -> str:
     system_prompt = get_system_prompt(db, "paper")
-    return f"{system_prompt}\n\n{_build_paper_context(db, paper, user, props)}"
+    return f"{system_prompt}\n\n{_build_paper_context(db, paper, props)}"
 
 
-def _ensure_global_session(db: Session, user: User, session_id: str, messages: list[dict]) -> None:
-    session = db.query(GlobalChatSession).filter(
-        GlobalChatSession.session_id == session_id,
-        GlobalChatSession.user_id == user.id,
-    ).first()
+def _ensure_global_session(db: Session, session_id: str, messages: list[dict]) -> None:
+    session = db.query(GlobalChatSession).filter(GlobalChatSession.session_id == session_id).first()
     if not session:
-        if db.query(GlobalChatSession).filter(GlobalChatSession.session_id == session_id).first():
-            raise HTTPException(status_code=409, detail="Session identifier is already in use")
         title = (last_user_content(messages) or "新会话")[:64]
-        db.add(GlobalChatSession(session_id=session_id, user_id=user.id, title=title))
+        db.add(GlobalChatSession(session_id=session_id, title=title))
         db.commit()
 
 
@@ -206,8 +193,7 @@ def _normalize_assistant_session_id(props: dict, thread_id: str) -> str:
 
 @router.post("/paper")
 @limiter.limit("10/minute")
-async def paper_agent(request: Request, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    scope_session(db, user)
+async def paper_agent(request: Request, db: Session = Depends(get_db)):
     body = await request.json()
     encoder = _make_encoder(request)
     thread_id, run_id, messages, props = parse_agui_request(body)
@@ -217,7 +203,7 @@ async def paper_agent(request: Request, user: User = Depends(get_current_user), 
         msg_id = str(uuid.uuid4())
 
         with RequestTimer(logger, method="POST", path="/api/agui/paper", endpoint="paper_agent") as timer:
-            paper, err = _validate_and_get_paper(db, user, props, encoder, thread_id, run_id, msg_id)
+            paper, err = _validate_and_get_paper(db, props, encoder, thread_id, run_id, msg_id)
             if err is not None:
                 timer.status_code = 400
                 async for chunk in err:
@@ -231,7 +217,7 @@ async def paper_agent(request: Request, user: User = Depends(get_current_user), 
                     yield chunk
                 return
 
-            system_prompt = _build_paper_prompt(db, paper, user, props)
+            system_prompt = _build_paper_prompt(db, paper, props)
             tool_defs, executor = get_tools_for_agent(db, "paper")
             if tool_defs:
                 system_prompt += f"\n\n{get_tool_descriptions_for(tool_defs)}"
@@ -244,8 +230,6 @@ async def paper_agent(request: Request, user: User = Depends(get_current_user), 
                 tool_defs=tool_defs,
                 tool_executor=executor,
                 resolved=resolved,
-                user_id=user.id,
-                department_id=getattr(user, "department_id", None),
             )
             async for line in run_chat_agent(agent_config, messages, encoder, thread_id, run_id, db):
                 yield line
@@ -260,8 +244,7 @@ async def paper_agent(request: Request, user: User = Depends(get_current_user), 
 
 @router.post("/global")
 @limiter.limit("10/minute")
-async def global_agent(request: Request, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    scope_session(db, user)
+async def global_agent(request: Request, db: Session = Depends(get_db)):
     body = await request.json()
     encoder = _make_encoder(request)
     thread_id, run_id, messages, props = parse_agui_request(body)
@@ -272,7 +255,7 @@ async def global_agent(request: Request, user: User = Depends(get_current_user),
         msg_id = str(uuid.uuid4())
 
         with RequestTimer(logger, method="POST", path="/api/agui/global", endpoint="global_agent", session_id=session_id) as timer:
-            _ensure_global_session(db, user, session_id, messages)
+            _ensure_global_session(db, session_id, messages)
 
             resolved, err = _resolve_config_or_error(db, config_id, encoder, thread_id, run_id, msg_id)
             if err is not None:
@@ -309,8 +292,6 @@ async def global_agent(request: Request, user: User = Depends(get_current_user),
                 tool_defs=tool_defs,
                 tool_executor=executor,
                 resolved=resolved,
-                user_id=user.id,
-                department_id=getattr(user, "department_id", None),
             )
             async for line in run_chat_agent(agent_config, messages, encoder, thread_id, run_id, db):
                 yield line
@@ -325,8 +306,7 @@ async def global_agent(request: Request, user: User = Depends(get_current_user),
 
 @router.post("/assistant")
 @limiter.limit("10/minute")
-async def assistant_agent(request: Request, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    scope_session(db, user)
+async def assistant_agent(request: Request, db: Session = Depends(get_db)):
     body = await request.json()
     encoder = _make_encoder(request)
     thread_id, run_id, messages, props = parse_agui_request(body)
@@ -337,15 +317,10 @@ async def assistant_agent(request: Request, user: User = Depends(get_current_use
         msg_id = str(uuid.uuid4())
 
         with RequestTimer(logger, method="POST", path="/api/agui/assistant", endpoint="assistant_agent", session_id=session_id) as timer:
-            session = db.query(GlobalChatSession).filter(
-                GlobalChatSession.session_id == session_id,
-                GlobalChatSession.user_id == user.id,
-            ).first()
+            session = db.query(GlobalChatSession).filter(GlobalChatSession.session_id == session_id).first()
             if not session:
-                if db.query(GlobalChatSession).filter(GlobalChatSession.session_id == session_id).first():
-                    raise HTTPException(status_code=409, detail="Session identifier is already in use")
                 title = (last_user_content(messages) or "新会话")[:64]
-                db.add(GlobalChatSession(session_id=session_id, user_id=user.id, title=title))
+                db.add(GlobalChatSession(session_id=session_id, title=title))
                 db.commit()
                 session = db.query(GlobalChatSession).filter(GlobalChatSession.session_id == session_id).first()
 
@@ -373,7 +348,7 @@ async def assistant_agent(request: Request, user: User = Depends(get_current_use
                 if paper:
                     system_prompt += (
                         "\n\n## 当前论文上下文\n"
-                        f"{_build_paper_context(db, paper, user, props)}"
+                        f"{_build_paper_context(db, paper, props)}"
                     )
 
             agent_config = ChatAgentConfig(
@@ -386,8 +361,6 @@ async def assistant_agent(request: Request, user: User = Depends(get_current_use
                 resolved=resolved,
                 track_history=True,
                 track_ordered_segments=True,
-                user_id=user.id,
-                department_id=getattr(user, "department_id", None),
             )
 
             user_content = last_user_content(messages)
@@ -408,19 +381,11 @@ async def assistant_agent(request: Request, user: User = Depends(get_current_use
 # ---------------------------------------------------------------------------
 
 @router.get("/assistant/sessions")
-def list_assistant_sessions(
-    limit: int = 20,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+def list_assistant_sessions(limit: int = 20, db: Session = Depends(get_db)):
     """List assistant sessions (session_ids starting with 'ast-')."""
-    owner_filter = (
-        or_(GlobalChatSession.user_id == user.id, GlobalChatSession.user_id.is_(None))
-        if is_manager(user) else GlobalChatSession.user_id == user.id
-    )
     sessions = (
         db.query(GlobalChatSession)
-        .filter(GlobalChatSession.session_id.like("ast-%"), owner_filter)
+        .filter(GlobalChatSession.session_id.like("ast-%"))
         .order_by(GlobalChatSession.created_at.desc())
         .limit(limit)
         .all()
@@ -432,26 +397,15 @@ def list_assistant_sessions(
 
 
 @router.get("/assistant/{session_id}/messages")
-def get_session_messages(
-    session_id: str,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+def get_session_messages(session_id: str, db: Session = Depends(get_db)):
     """Return all chat messages for a session in chronological order.
 
     Tool messages (role='tool') are returned with parsed JSON content
     so the frontend can reconstruct tool call cards.
     """
-    session = db.query(GlobalChatSession).filter(GlobalChatSession.session_id == session_id).first()
-    if session is None or (session.user_id != user.id and not (is_manager(user) and session.user_id is None)):
-        raise HTTPException(status_code=404, detail="Assistant session not found")
     messages = (
         db.query(ChatMessage)
-        .filter(
-            ChatMessage.session_id == session_id,
-            ChatMessage.session_type == "assistant",
-            ChatMessage.user_id == session.user_id,
-        )
+        .filter(ChatMessage.session_id == session_id, ChatMessage.session_type == "assistant")
         .order_by(ChatMessage.id)
         .all()
     )
@@ -468,25 +422,15 @@ def get_session_messages(
 
 
 @router.delete("/assistant/{session_id}")
-def delete_assistant_session(
-    session_id: str,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+def delete_assistant_session(session_id: str, db: Session = Depends(get_db)):
     """Delete an assistant session and all its messages."""
     session = db.query(GlobalChatSession).filter(GlobalChatSession.session_id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Assistant session not found")
-    if session.user_id != user.id and not (is_manager(user) and session.user_id is None):
-        raise HTTPException(status_code=404, detail="Assistant session not found")
 
     deleted = (
         db.query(ChatMessage)
-        .filter(
-            ChatMessage.session_id == session_id,
-            ChatMessage.session_type == "assistant",
-            ChatMessage.user_id == session.user_id,
-        )
+        .filter(ChatMessage.session_id == session_id, ChatMessage.session_type == "assistant")
         .delete()
     )
     db.delete(session)

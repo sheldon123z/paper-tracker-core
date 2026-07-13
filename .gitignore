@@ -35,7 +35,6 @@ notion-worker/.env
 *.db-shm
 *.db-wal
 *.db.bak
-*.db.bak-*
 *.sqlite
 *.sqlite3
 
