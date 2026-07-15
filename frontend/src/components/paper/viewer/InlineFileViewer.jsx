@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Button } from '../../ui'
+import { Button, useToast } from '../../ui'
 import PdfViewer from './PdfViewer'
 import MarkdownViewer from './MarkdownViewer'
 import DocxViewer from './DocxViewer'
@@ -43,13 +43,37 @@ function OfficeUnsupported({ filename }) {
 export default function InlineFileViewer({ paperId, files, onFilesChange, onClose, initialFileId }) {
   const [activeFileId, setActiveFileId] = useState(initialFileId || null)
   const [uploading, setUploading] = useState(false)
+  const [contextMenu, setContextMenu] = useState(null)
   const fileInputRef = useRef(null)
+  const contextMenuRef = useRef(null)
+  const { addToast } = useToast()
   const setPdfSelection = useStore((s) => s.setPdfSelection)
   const setPdfActiveFileId = useStore((s) => s.setPdfActiveFileId)
 
   useEffect(() => {
     if (initialFileId) setActiveFileId(initialFileId)
   }, [initialFileId])
+
+  useEffect(() => {
+    if (!contextMenu) return undefined
+
+    const closeMenu = (event) => {
+      if (!contextMenuRef.current?.contains(event.target)) setContextMenu(null)
+    }
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setContextMenu(null)
+    }
+    window.addEventListener('resize', closeMenu)
+    window.addEventListener('scroll', closeMenu, true)
+    document.addEventListener('pointerdown', closeMenu)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      window.removeEventListener('resize', closeMenu)
+      window.removeEventListener('scroll', closeMenu, true)
+      document.removeEventListener('pointerdown', closeMenu)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [contextMenu])
 
   const activeFile = files.find((f) => f.id === activeFileId) ||
     files.find((f) => f.file_type === 'pdf') ||
@@ -84,20 +108,64 @@ export default function InlineFileViewer({ paperId, files, onFilesChange, onClos
     [paperId, onFilesChange],
   )
 
-  const handleDelete = useCallback(
-    async (fileId) => {
-      try {
-        await api.delete(`/api/papers/${paperId}/files/${fileId}`)
-        onFilesChange((prev) => prev.filter((f) => f.id !== fileId))
-        if (activeFileId === fileId) setActiveFileId(null)
-      } catch (err) {
-        console.error('Delete failed', err)
-      }
-    },
-    [paperId, activeFileId, onFilesChange],
-  )
-
   const baseUrl = api.defaults.baseURL || ''
+
+  const openContextMenu = useCallback((event, file) => {
+    event.preventDefault()
+    setActiveFileId(file.id)
+    const menuWidth = 168
+    const menuHeight = 88
+    setContextMenu({
+      file,
+      x: Math.max(8, Math.min(event.clientX, window.innerWidth - menuWidth - 8)),
+      y: Math.max(8, Math.min(event.clientY, window.innerHeight - menuHeight - 8)),
+    })
+  }, [])
+
+  const openKeyboardContextMenu = useCallback((event, file) => {
+    if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return
+    const rect = event.currentTarget.getBoundingClientRect()
+    openContextMenu({
+      preventDefault: () => event.preventDefault(),
+      clientX: rect.left + Math.min(rect.width, 24),
+      clientY: rect.bottom,
+    }, file)
+  }, [openContextMenu])
+
+  const handleDownload = useCallback(async (file) => {
+    setContextMenu(null)
+    try {
+      const response = await api.get(
+        `/api/papers/${paperId}/files/${file.id}/download`,
+        { responseType: 'blob' },
+      )
+      const objectUrl = URL.createObjectURL(response.data)
+      const link = document.createElement('a')
+      link.href = objectUrl
+      link.download = file.filename
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(objectUrl)
+    } catch (err) {
+      console.error('Download failed', err)
+      addToast({ type: 'error', message: 'PDF 下载失败' })
+    }
+  }, [addToast, paperId])
+
+  const handleDelete = useCallback(async (file) => {
+    setContextMenu(null)
+    if (!window.confirm(`确定删除“${file.filename}”吗？此操作无法撤销。`)) return
+    try {
+      await api.delete(`/api/papers/${paperId}/files/${file.id}`)
+      onFilesChange((current) => current.filter((item) => item.id !== file.id))
+      if (activeFileId === file.id) setActiveFileId(null)
+      addToast({ type: 'success', message: 'PDF 已删除' })
+    } catch (err) {
+      console.error('Delete failed', err)
+      addToast({ type: 'error', message: err.response?.data?.detail || 'PDF 删除失败' })
+    }
+  }, [activeFileId, addToast, onFilesChange, paperId])
 
   const renderViewer = () => {
     if (!activeFile) {
@@ -147,8 +215,18 @@ export default function InlineFileViewer({ paperId, files, onFilesChange, onClos
             <div
               key={f.id}
               onClick={() => setActiveFileId(f.id)}
+              onContextMenu={f.file_type === 'pdf' ? (event) => openContextMenu(event, f) : undefined}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  setActiveFileId(f.id)
+                }
+                if (f.file_type === 'pdf') openKeyboardContextMenu(event, f)
+              }}
               role="tab"
               tabIndex={0}
+              aria-selected={isActive}
+              title={f.file_type === 'pdf' ? '右键可下载或删除' : undefined}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-colors cursor-pointer"
               style={{
                 backgroundColor: isActive ? 'var(--accent-light)' : 'transparent',
@@ -158,13 +236,6 @@ export default function InlineFileViewer({ paperId, files, onFilesChange, onClos
               <span>{FILE_TYPE_LABELS[f.file_type] || f.file_type}</span>
               <span className="opacity-60 max-w-[120px] truncate">{f.filename}</span>
               <span className="opacity-40">{formatSize(f.file_size)}</span>
-              <button
-                onClick={(e) => { e.stopPropagation(); handleDelete(f.id) }}
-                className="ml-1 opacity-40 hover:opacity-100 hover:text-red-500"
-                title="删除文件"
-              >
-                x
-              </button>
             </div>
           )
         })}
@@ -214,6 +285,39 @@ export default function InlineFileViewer({ paperId, files, onFilesChange, onClos
       <div className="flex-1 overflow-y-auto">
         {renderViewer()}
       </div>
+
+      {contextMenu && (
+        <div
+          ref={contextMenuRef}
+          role="menu"
+          aria-label={`${contextMenu.file.filename} 文件操作`}
+          className="fixed z-50 min-w-[168px] rounded-lg border p-1 shadow-xl"
+          style={{
+            left: contextMenu.x,
+            top: contextMenu.y,
+            borderColor: 'var(--border)',
+            backgroundColor: 'var(--bg-primary)',
+          }}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-[var(--bg-secondary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
+            style={{ color: 'var(--text-primary)' }}
+            onClick={() => handleDownload(contextMenu.file)}
+          >
+            下载
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-red-600 transition-colors hover:bg-red-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-500 dark:hover:bg-red-950/30"
+            onClick={() => handleDelete(contextMenu.file)}
+          >
+            删除
+          </button>
+        </div>
+      )}
     </div>
   )
 }

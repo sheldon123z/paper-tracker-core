@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Document, Page, pdfjs } from 'react-pdf'
 import 'react-pdf/dist/Page/TextLayer.css'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
@@ -18,7 +18,8 @@ const PDF_DOCUMENT_OPTIONS = { withCredentials: true }
 
 export default function PdfViewer({ fileUrl, onSelectionChange }) {
   const [numPages, setNumPages] = useState(null)
-  const [scale, setScale] = useState(1.2)
+  const [scale, setScale] = useState(1)
+  const [fitWidth, setFitWidth] = useState(560)
   const pagesRef = useRef(null)
 
   // Read selection from Zustand (persists across clicks outside PDF)
@@ -27,6 +28,20 @@ export default function PdfViewer({ fileUrl, onSelectionChange }) {
 
   const onDocumentLoadSuccess = useCallback(({ numPages: n }) => {
     setNumPages(n)
+  }, [])
+
+  useEffect(() => {
+    const pages = pagesRef.current
+    if (!pages) return undefined
+
+    const updateFitWidth = () => {
+      // Keep a small gutter around the page and never pass an invalid width to PDF.js.
+      setFitWidth(Math.max(240, Math.floor(pages.clientWidth - 32)))
+    }
+    updateFitWidth()
+    const observer = new ResizeObserver(updateFitWidth)
+    observer.observe(pages)
+    return () => observer.disconnect()
   }, [])
 
   // KEY FIX: Only update selection when user selects NEW text.
@@ -71,6 +86,9 @@ export default function PdfViewer({ fileUrl, onSelectionChange }) {
         <Button size="sm" variant="ghost" onClick={() => setScale((s) => Math.min(3, s + 0.2))}>
           +
         </Button>
+        <Button size="sm" variant="ghost" onClick={() => setScale(1)}>
+          适合宽度
+        </Button>
         {numPages && (
           <span className="text-xs ml-2" style={{ color: 'var(--text-secondary)' }}>
             {numPages} 页
@@ -102,6 +120,7 @@ export default function PdfViewer({ fileUrl, onSelectionChange }) {
               <Page
                 key={i + 1}
                 pageNumber={i + 1}
+                width={fitWidth}
                 scale={scale}
                 className="pdf-page"
                 renderTextLayer={true}

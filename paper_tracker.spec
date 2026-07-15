@@ -8,24 +8,32 @@ Output: dist/PaperTrackerPro/
 
 import os
 import sys
+from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs
 
 block_cipher = None
 
 # Paths
-SPEC_DIR = os.path.dirname(os.path.abspath(SPECPATH))
+# PyInstaller exposes SPECPATH as the directory containing this spec file.
+SPEC_DIR = os.path.abspath(SPECPATH)
 BACKEND_DIR = os.path.join(SPEC_DIR, 'backend')
 FRONTEND_DIST = os.path.join(SPEC_DIR, 'frontend', 'dist')
+TESSDATA_DIR = os.path.join(BACKEND_DIR, 'app', 'resources', 'tessdata')
+
+pdfium_binaries = collect_dynamic_libs('pypdfium2')
+ocr_datas = collect_data_files('pypdfium2')
+if os.path.isdir(TESSDATA_DIR):
+    ocr_datas.append((TESSDATA_DIR, 'tessdata'))
 
 a = Analysis(
     [os.path.join(BACKEND_DIR, 'launcher.py')],
     pathex=[BACKEND_DIR],
-    binaries=[],
+    binaries=pdfium_binaries,
     datas=[
         # Frontend static files
         (FRONTEND_DIST, os.path.join('frontend', 'dist')),
         # .env.example for first-run setup
         (os.path.join(SPEC_DIR, '.env.example'), '.'),
-    ],
+    ] + ocr_datas,
     hiddenimports=[
         # FastAPI / Uvicorn
         'uvicorn',
@@ -77,6 +85,12 @@ a = Analysis(
         # Multipart
         'multipart',
         'python_multipart',
+        # Offline PDF metadata extraction and OCR
+        'pypdf',
+        'pypdfium2',
+        'PIL',
+        'PIL.Image',
+        'pytesseract',
         # AG-UI
         'ag_ui_protocol',
         # dotenv
@@ -102,7 +116,6 @@ a = Analysis(
     excludes=[
         'tkinter',
         'matplotlib',
-        'PIL',
         'scipy',
         'numpy.testing',
         'test',

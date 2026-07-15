@@ -75,7 +75,7 @@ export default function AssistantPage() {
 
   const newSession = useCallback(() => {
     const id = 'ast-' + crypto.randomUUID()
-    setSessions((prev) => [{ session_id: id, title: '新会话' }, ...prev])
+    setSessions((prev) => [{ session_id: id, title: '新会话', paper_id: null, paper_title: null }, ...prev])
     setCurrentSessionId(id)
   }, [setCurrentSessionId])
 
@@ -192,7 +192,11 @@ export default function AssistantPage() {
                     <span className="assistant-session-item__index">{String(index + 1).padStart(2, '0')}</span>
                     <span className="assistant-session-item__content">
                       <span className="assistant-session-item__title">{s.title || '未命名会话'}</span>
-                      <span className="assistant-session-item__meta">{isActive ? '当前会话' : '点击继续对话'}</span>
+                      <span className="assistant-session-item__meta">
+                        {s.paper_title
+                          ? `论文 · ${s.paper_title}${isActive ? ' · 当前会话' : ''}`
+                          : isActive ? '全局会话 · 当前会话' : '全局会话'}
+                      </span>
                     </span>
                   </button>
                   <button

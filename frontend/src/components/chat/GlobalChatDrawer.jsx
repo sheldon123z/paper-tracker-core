@@ -21,11 +21,13 @@ export default function GlobalChatDrawer({ children, hidden = false }) {
   const {
     currentSessionId,
     sessions,
+    loading: sessionsLoading,
+    ready: sessionReady,
     newSession,
     selectSession,
-  } = useAssistantSessions(!hidden)
+  } = useAssistantSessions({ enabled: !hidden })
 
-  useAssistantSessionHistory(currentSessionId, !hidden)
+  useAssistantSessionHistory(currentSessionId, !hidden && sessionReady)
 
   useEffect(() => {
     if (!globalChatOpen || hidden) return undefined
@@ -93,6 +95,8 @@ export default function GlobalChatDrawer({ children, hidden = false }) {
             <AssistantSessionToolbar
               currentSessionId={currentSessionId}
               sessions={sessions}
+              loading={sessionsLoading}
+              showSessionScope
               surfaceId={isMobile ? 'mobile-global' : 'global'}
               title="研究助手"
               onClose={toggleGlobalChat}
@@ -101,14 +105,18 @@ export default function GlobalChatDrawer({ children, hidden = false }) {
             />
           </div>
           <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
-            <CopilotChat
-              key={`global-chat-${currentSessionId || 'default'}`}
-              agentId="assistantAgent"
-              threadId={currentSessionId || 'assistant-default'}
-              messageView={SINGLE_COPY_MESSAGE_VIEW}
-              labels={GLOBAL_LABELS}
-              className="absolute inset-0"
-            />
+            {sessionReady ? (
+              <CopilotChat
+                key={`global-chat-${currentSessionId}`}
+                agentId="assistantAgent"
+                threadId={currentSessionId}
+                messageView={SINGLE_COPY_MESSAGE_VIEW}
+                labels={GLOBAL_LABELS}
+                className="absolute inset-0"
+              />
+            ) : (
+              <div className="assistant-session-loading" role="status">正在加载会话…</div>
+            )}
           </div>
         </aside>
       )}

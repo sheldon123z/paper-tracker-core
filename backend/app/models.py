@@ -293,8 +293,17 @@ class GlobalChatSession(Base):
     id = Column(Integer, primary_key=True, index=True)
     session_id = Column(String(64), unique=True, nullable=False, index=True)
     user_id = Column(Integer, nullable=True, index=True)
+    paper_id = Column(Integer, ForeignKey("papers.id", ondelete="SET NULL"), nullable=True, index=True)
     title = Column(String(256), default="New Session")
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+
+    paper = relationship("Paper")
 
 
 class WorkflowSession(Base):
@@ -350,6 +359,7 @@ class PaperFile(Base):
     file_type = Column(String(32), nullable=False)  # pdf|markdown|text
     content_type = Column(String(128), nullable=False)
     file_size = Column(Integer, default=0)
+    content_hash = Column(String(64), nullable=True, index=True)
     is_primary = Column(Boolean, default=False)
     annotations_json = Column(Text, nullable=True)
     parse_status = Column(String(32), nullable=True)  # None|pending|processing|completed|failed

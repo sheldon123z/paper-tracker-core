@@ -42,6 +42,7 @@ function _persistTabs(tabs, activeTabId) {
 }
 
 let _llmCatalogRequest = null
+let _fileOpenRequestSequence = 0
 
 const useStore = create((set, get) => ({
   // ---- Auth state ----
@@ -93,11 +94,21 @@ const useStore = create((set, get) => ({
   openTab: (paper, options = {}) => {
     const { tabs } = get()
     const existingTab = tabs.find((t) => t.id === paper.id)
+    const hasFileRequest = options.fileId !== undefined && options.fileId !== null
+    const fileOpenRequestId = hasFileRequest ? ++_fileOpenRequestSequence : null
     let newTabs
     if (!existingTab) {
-      newTabs = [...tabs, { ...paper, _initialFileId: options.fileId || null }]
-    } else if (options.fileId) {
-      newTabs = tabs.map((t) => t.id === paper.id ? { ...t, _initialFileId: options.fileId } : t)
+      newTabs = [...tabs, {
+        ...paper,
+        _initialFileId: hasFileRequest ? options.fileId : null,
+        _fileOpenRequestId: fileOpenRequestId,
+      }]
+    } else if (hasFileRequest) {
+      newTabs = tabs.map((t) => t.id === paper.id ? {
+        ...t,
+        _initialFileId: options.fileId,
+        _fileOpenRequestId: fileOpenRequestId,
+      } : t)
     } else {
       newTabs = tabs
     }
@@ -199,6 +210,13 @@ const useStore = create((set, get) => ({
   // Assistant session ID (forwarded to backend via CopilotKit properties)
   assistantSessionId: null,
   setAssistantSessionId: (id) => set({ assistantSessionId: id }),
+  paperAssistantSessionIds: {},
+  setPaperAssistantSessionId: (paperId, sessionId) => set((state) => ({
+    paperAssistantSessionIds: {
+      ...state.paperAssistantSessionIds,
+      [String(paperId)]: sessionId || null,
+    },
+  })),
 
   // Catalog session ID (forwarded to backend via CopilotKit properties).
   // Each paper detail panel gets a stable id (`cat-paper-{paperId}`) so

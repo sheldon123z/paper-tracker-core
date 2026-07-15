@@ -311,6 +311,31 @@ def migrate_database_schema(engine: Engine) -> None:
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN user_id INTEGER"))
                     conn.execute(text(f"CREATE INDEX IF NOT EXISTS ix_{table}_user_id ON {table}(user_id)"))
 
+    if "global_chat_sessions" in table_names:
+        existing = {col["name"] for col in inspector.get_columns("global_chat_sessions")}
+        with engine.begin() as conn:
+            if "paper_id" not in existing:
+                conn.execute(text(
+                    "ALTER TABLE global_chat_sessions ADD COLUMN paper_id "
+                    "INTEGER REFERENCES papers(id) ON DELETE SET NULL"
+                ))
+            if "updated_at" not in existing:
+                conn.execute(text(
+                    "ALTER TABLE global_chat_sessions ADD COLUMN updated_at DATETIME"
+                ))
+            conn.execute(text(
+                "UPDATE global_chat_sessions "
+                "SET updated_at = COALESCE(updated_at, created_at, CURRENT_TIMESTAMP)"
+            ))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_global_chat_sessions_paper_id "
+                "ON global_chat_sessions(paper_id)"
+            ))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_global_chat_sessions_updated_at "
+                "ON global_chat_sessions(updated_at)"
+            ))
+
     if "chat_messages" in table_names and "workflow_sessions" in table_names:
         with engine.begin() as conn:
             conn.execute(text("""
@@ -352,6 +377,7 @@ def migrate_database_schema(engine: Engine) -> None:
                     file_type VARCHAR(32) NOT NULL,
                     content_type VARCHAR(128) NOT NULL,
                     file_size INTEGER DEFAULT 0,
+                    content_hash VARCHAR(64),
                     is_primary BOOLEAN DEFAULT 0,
                     annotations_json TEXT,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -359,10 +385,12 @@ def migrate_database_schema(engine: Engine) -> None:
                 )
             """))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_paper_files_paper_id ON paper_files(paper_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_paper_files_content_hash ON paper_files(content_hash)"))
             logger.info("Created table: paper_files")
 
     # --- paper_files column migrations ---
     _PAPER_FILE_COLUMNS: dict[str, str] = {
+        "content_hash": "VARCHAR(64)",
         "parse_status": "VARCHAR(32)",
         "parse_error": "TEXT",
         "parsed_file_id": "INTEGER",
@@ -380,6 +408,11 @@ def migrate_database_schema(engine: Engine) -> None:
                 for stmt in pf_statements:
                     conn.execute(text(stmt))
                     logger.info("Applied schema migration: %s", stmt)
+        with engine.begin() as conn:
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_paper_files_content_hash "
+                "ON paper_files(content_hash)"
+            ))
 
     # --- workflow_sessions column migrations ---
     _WORKFLOW_SESSION_COLUMNS: dict[str, str] = {

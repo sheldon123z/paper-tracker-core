@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react'
-import { CopilotChat } from '@copilotkit/react-core/v2'
+import {
+  CopilotChat,
+  CopilotChatSuggestionView,
+  CopilotChatView,
+} from '@copilotkit/react-core/v2'
 
 import api from '../../api'
 import useStore from '../../store'
@@ -25,6 +29,45 @@ const CONTEXT_LENGTH_OPTIONS = [
   { value: 32000, label: '32K' },
   { value: 0, label: '全量' },
 ]
+
+/**
+ * Keep paper actions attached to the composer instead of appending them to
+ * the message transcript, where they can appear to float in an empty panel.
+ */
+export function PaperChatView({
+  suggestions = [],
+  suggestionLoadingIndexes,
+  onSelectSuggestion,
+  className = '',
+  ...chatViewProps
+}) {
+  return (
+    <div
+      data-copilotkit
+      data-testid="paper-chat-layout"
+      className={`paper-chat-layout ${className}`.trim()}
+    >
+      <CopilotChatView {...chatViewProps} suggestions={[]}>
+        {({ scrollView, input }) => (
+          <>
+            <div className="paper-chat-layout__messages">{scrollView}</div>
+            <div className="paper-chat-layout__composer" data-testid="paper-chat-composer">
+              {suggestions.length > 0 && (
+                <CopilotChatSuggestionView
+                  suggestions={suggestions}
+                  loadingIndexes={suggestionLoadingIndexes}
+                  onSelectSuggestion={onSelectSuggestion}
+                  className="paper-chat-layout__suggestions"
+                />
+              )}
+              {input}
+            </div>
+          </>
+        )}
+      </CopilotChatView>
+    </div>
+  )
+}
 
 /**
  * Context control bar — user controls what PDF context is injected into LLM.
@@ -116,16 +159,18 @@ function ContextControlBar() {
   )
 }
 
-export default function AIChatPanel({ paper }) {
+export default function AIChatPanel({ paper, onClose }) {
   const [suggestions, setSuggestions] = useState([])
   const sessionsEnabled = Boolean(paper?.id)
   const {
     currentSessionId,
     sessions,
+    loading: sessionsLoading,
+    ready: sessionReady,
     newSession,
     selectSession,
-  } = useAssistantSessions(sessionsEnabled)
-  useAssistantSessionHistory(currentSessionId, sessionsEnabled)
+  } = useAssistantSessions({ enabled: sessionsEnabled, paperId: paper?.id })
+  useAssistantSessionHistory(currentSessionId, sessionsEnabled && sessionReady)
 
   useEffect(() => {
     api
@@ -155,8 +200,10 @@ export default function AIChatPanel({ paper }) {
         <AssistantSessionToolbar
           currentSessionId={currentSessionId}
           sessions={sessions}
+          loading={sessionsLoading}
           surfaceId={`paper-${paper?.id || 'loading'}`}
           title="AI 论文助手"
+          onClose={onClose}
           onNewSession={newSession}
           onSelectSession={selectSession}
         />
@@ -164,20 +211,25 @@ export default function AIChatPanel({ paper }) {
       <ContextControlBar />
 
       <div className="relative flex-1 min-h-0">
-        <CopilotChat
-          key={`paper-chat-${paper?.id || 'loading'}-${currentSessionId || 'default'}`}
-          agentId="assistantAgent"
-          threadId={currentSessionId || 'assistant-default'}
-          messageView={SINGLE_COPY_MESSAGE_VIEW}
-          labels={{
-            ...PAPER_LABELS,
-            welcomeMessageText: paper
-              ? `正在分析：${paper.title}。可以点击快捷按钮或直接输入问题。`
-              : '点击快捷操作或输入问题开始分析这篇论文。',
-          }}
-          suggestions={filledSuggestions}
-          className="absolute inset-0"
-        />
+        {sessionReady ? (
+          <CopilotChat
+            key={`paper-chat-${paper?.id || 'loading'}-${currentSessionId}`}
+            agentId="assistantAgent"
+            threadId={currentSessionId}
+            chatView={PaperChatView}
+            messageView={SINGLE_COPY_MESSAGE_VIEW}
+            labels={{
+              ...PAPER_LABELS,
+              welcomeMessageText: paper
+                ? `正在分析：${paper.title}。可以点击快捷按钮或直接输入问题。`
+                : '点击快捷操作或输入问题开始分析这篇论文。',
+            }}
+            suggestions={filledSuggestions}
+            className="absolute inset-0"
+          />
+        ) : (
+          <div className="assistant-session-loading" role="status">正在加载该论文的会话…</div>
+        )}
       </div>
     </div>
   )

@@ -77,6 +77,7 @@ describe('Zustand Store', () => {
       const state = useStore.getState()
 
       expect(state.globalChatOpen).toBe(false)
+      expect(state.paperAssistantSessionIds).toEqual({})
     })
   })
 
@@ -169,6 +170,19 @@ describe('Zustand Store', () => {
 
       const state = useStore.getState()
       expect(state.tabs[0]._initialFileId).toBe('file-123')
+    })
+
+    it('openTab should create a new request when reopening the same file', () => {
+      const { openTab } = useStore.getState()
+      const paper = { id: 1, title: 'Test Paper' }
+
+      openTab(paper, { fileId: 'file-123' })
+      const firstRequestId = useStore.getState().tabs[0]._fileOpenRequestId
+      openTab(paper, { fileId: 'file-123' })
+      const state = useStore.getState()
+
+      expect(state.tabs[0]._initialFileId).toBe('file-123')
+      expect(state.tabs[0]._fileOpenRequestId).toBeGreaterThan(firstRequestId)
     })
 
     it('closeTab should remove tab and update activeTabId', () => {
@@ -478,6 +492,18 @@ describe('Zustand Store', () => {
       setAssistantSessionId('assistant-session-1')
 
       expect(useStore.getState().assistantSessionId).toBe('assistant-session-1')
+    })
+
+    it('keeps assistant selections isolated by paper ID', () => {
+      const { setPaperAssistantSessionId } = useStore.getState()
+
+      setPaperAssistantSessionId(61, 'ast-paper-a')
+      setPaperAssistantSessionId(62, 'ast-paper-b')
+
+      expect(useStore.getState().paperAssistantSessionIds).toEqual({
+        61: 'ast-paper-a',
+        62: 'ast-paper-b',
+      })
     })
   })
 })

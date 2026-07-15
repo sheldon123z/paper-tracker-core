@@ -31,6 +31,7 @@ from .routes.feeds import router as feeds_router
 from .routes.files import router as files_router
 from .routes.llm_config import router as llm_config_router
 from .routes.papers import router as papers_router
+from .routes.pdf_import import router as pdf_import_router
 from .routes.prompt_templates import router as prompt_templates_router
 from .routes.scheduler_routes import router as scheduler_router
 from .routes.skills import router as skills_router
@@ -127,7 +128,7 @@ async def audit_authenticated_api_requests(request: Request, call_next):
 # ---------------------------------------------------------------------------
 # Body size limit middleware — streaming byte count (not just Content-Length)
 # ---------------------------------------------------------------------------
-MAX_BODY_SIZE = int(os.getenv("MAX_BODY_SIZE", str(10 * 1024 * 1024)))  # 10 MB default
+GENERAL_MAX_BODY_SIZE = int(os.getenv("MAX_BODY_SIZE", str(10 * 1024 * 1024)))  # 10 MB default
 
 # Paths that are exempt from body size limits (e.g. file uploads with their own checks)
 # 收紧豁免规则，仅精确匹配上传路由
@@ -135,6 +136,14 @@ def is_upload_endpoint(path: str, method: str) -> bool:
     """Check if the request is an upload endpoint that should be exempt from body size limits."""
     # 仅豁免 POST 请求到 /api/papers/{paper_id}/files（文件上传）
     if method == "POST":
+        # PDF import performs its own 100 MB validation after reading the
+        # multipart upload. Applying the general request limit here would
+        # reject most papers before the route can validate them.
+        if path in {
+            "/api/papers/import/pdf/analyze",
+            "/api/papers/import/pdf/commit",
+        }:
+            return True
         # 匹配 /api/papers/1/files 或 /api/papers/123/files/ 格式
         import re
         if re.match(r"^/api/papers/[1-9]\d*/files/?$", path):
@@ -162,7 +171,7 @@ async def limit_request_body(request: Request, call_next):
     content_length = request.headers.get("content-length")
     if content_length is not None:
         try:
-            if int(content_length) > MAX_BODY_SIZE:
+            if int(content_length) > GENERAL_MAX_BODY_SIZE:
                 return PlainTextResponse("Request body too large", status_code=413)
         except ValueError:
             pass
@@ -178,7 +187,7 @@ async def limit_request_body(request: Request, call_next):
         if message.get("type") == "http.request":
             body = message.get("body", b"")
             received += len(body)
-            if received > MAX_BODY_SIZE:
+            if received > GENERAL_MAX_BODY_SIZE:
                 raise HTTPException(status_code=413, detail="Request body too large")
         return message
 
@@ -212,7 +221,7 @@ async def add_security_headers(request, call_next):
 # ---------------------------------------------------------------------------
 # Request body size limit for AG-UI streaming endpoints (Issue #27)
 # ---------------------------------------------------------------------------
-MAX_BODY_SIZE = 1024 * 1024  # 1 MB
+AGUI_MAX_BODY_SIZE = 1024 * 1024  # 1 MB
 _AG_UI_PREFIXES = ("/api/agui/", "/api/copilotkit")
 
 
@@ -225,7 +234,7 @@ async def limit_agui_body_size(request: Request, call_next):
         content_length = request.headers.get("content-length")
         if content_length:
             try:
-                if int(content_length) > MAX_BODY_SIZE:
+                if int(content_length) > AGUI_MAX_BODY_SIZE:
                     from fastapi.responses import JSONResponse
                     return JSONResponse(
                         status_code=413,
@@ -243,6 +252,7 @@ app.add_middleware(SlowAPIMiddleware)
 
 app.include_router(feeds_router)
 app.include_router(papers_router)
+app.include_router(pdf_import_router)
 app.include_router(llm_config_router)
 app.include_router(prompt_templates_router)
 app.include_router(tags_router)

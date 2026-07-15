@@ -128,6 +128,30 @@ class TestPapers(unittest.TestCase):
             self.assertEqual(len(data["items"]), 3)
             self.assertEqual(data["meta"]["total"], 3)
 
+    def test_list_papers_switches_published_date_sort_direction(self):
+        self._create_paper(title="Middle Paper", published_date=datetime(2025, 6, 1, tzinfo=UTC))
+        self._create_paper(title="Old Paper", published_date=datetime(2024, 1, 1, tzinfo=UTC))
+        self._create_paper(title="New Paper", published_date=datetime(2026, 7, 14, tzinfo=UTC))
+
+        with patched_env(
+            ENCRYPTION_KEY="lK5o9r4iJmP2uV1xYw8nQaBcDeFgHiJkLmNoPqRsTuU=",
+            JWT_SECRET_KEY="test-jwt-secret-key-32-bytes-long!!",
+        ):
+            client = self._create_app()
+            ascending = client.get("/api/papers?sort_by=published_date&sort_dir=asc")
+            descending = client.get("/api/papers?sort_by=published_date&sort_dir=desc")
+
+        self.assertEqual(ascending.status_code, 200, ascending.text)
+        self.assertEqual(descending.status_code, 200, descending.text)
+        self.assertEqual(
+            [item["title"] for item in ascending.json()["items"]],
+            ["Old Paper", "Middle Paper", "New Paper"],
+        )
+        self.assertEqual(
+            [item["title"] for item in descending.json()["items"]],
+            ["New Paper", "Middle Paper", "Old Paper"],
+        )
+
     def test_list_papers_search(self):
         """Test searching papers by title, authors, abstract, and notes."""
         self._create_paper(title="Machine Learning Basics", authors="John Doe")

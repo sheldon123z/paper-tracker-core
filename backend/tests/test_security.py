@@ -4,6 +4,7 @@ import types
 import unittest
 
 import backend.tests  # noqa: F401
+from backend.app.main import AGUI_MAX_BODY_SIZE, GENERAL_MAX_BODY_SIZE, is_upload_endpoint
 from backend.app.security import require_llm_config_access
 from backend.tests.support import patched_env
 from fastapi import HTTPException
@@ -40,3 +41,13 @@ class SecurityTests(unittest.TestCase):
                 authorization=None,
                 x_llm_admin_token="secret-token",
             )
+
+    def test_pdf_import_routes_bypass_general_body_limit(self):
+        self.assertTrue(is_upload_endpoint("/api/papers/import/pdf/analyze", "POST"))
+        self.assertTrue(is_upload_endpoint("/api/papers/import/pdf/commit", "POST"))
+        self.assertFalse(is_upload_endpoint("/api/papers/import/pdf/analyze", "GET"))
+        self.assertFalse(is_upload_endpoint("/api/papers/import/pdf/other", "POST"))
+
+    def test_agui_limit_does_not_override_general_body_limit(self):
+        self.assertEqual(AGUI_MAX_BODY_SIZE, 1024 * 1024)
+        self.assertEqual(GENERAL_MAX_BODY_SIZE, 10 * 1024 * 1024)

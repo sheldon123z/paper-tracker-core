@@ -2,8 +2,11 @@
 setlocal
 cd /d "%~dp0"
 
-set "PYTHON_EXE=%~dp0..\.venv\Scripts\python.exe"
-if not exist "%PYTHON_EXE%" set "PYTHON_EXE=python.exe"
+set "PYTHON_EXE=%~dp0.venv\Scripts\python.exe"
+if not exist "%PYTHON_EXE%" (
+    echo Shared Python environment is missing: "%PYTHON_EXE%"
+    exit /b 1
+)
 
 "%PYTHON_EXE%" -c "import fastapi, uvicorn, slowapi, sqlalchemy, apscheduler" >nul 2>&1
 if errorlevel 1 (

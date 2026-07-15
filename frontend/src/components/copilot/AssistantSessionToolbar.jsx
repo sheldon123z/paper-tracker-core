@@ -2,10 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 
 export default function AssistantSessionToolbar({
   currentSessionId,
+  loading = false,
   sessions,
   onClose,
   onNewSession,
   onSelectSession,
+  showSessionScope = false,
   surfaceId = 'assistant',
   title = '研究助手',
 }) {
@@ -106,6 +108,7 @@ export default function AssistantSessionToolbar({
             type="button"
             className="assistant-session-toolbar__action"
             onClick={onNewSession}
+            disabled={loading}
             aria-label="新建聊天"
             title="新建聊天"
           >
@@ -140,6 +143,8 @@ export default function AssistantSessionToolbar({
           aria-expanded={open}
           aria-haspopup="listbox"
           aria-activedescendant={open && activeIndex >= 0 ? `${listboxId}-option-${activeIndex}` : undefined}
+          aria-busy={loading}
+          disabled={loading}
           onClick={() => setOpen((current) => !current)}
           onKeyDown={handleTriggerKeyDown}
         >
@@ -148,7 +153,9 @@ export default function AssistantSessionToolbar({
             <path d="M3 3v5h5M12 7v5l3 2" />
           </svg>
           <span className="assistant-session-toolbar__current">
-            {selectedSession?.title || '选择聊天记录'}
+            {loading
+              ? '正在加载会话…'
+              : selectedSession?.title || '选择聊天记录'}
           </span>
           <svg className="assistant-session-toolbar__chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
             <path d="m7 10 5 5 5-5" />
@@ -157,7 +164,9 @@ export default function AssistantSessionToolbar({
 
         {open && (
           <div className="assistant-session-toolbar__menu" id={listboxId} role="listbox" aria-label="聊天记录">
-            {sessions.length === 0 ? (
+            {loading ? (
+              <div className="assistant-session-toolbar__empty">正在加载会话…</div>
+            ) : sessions.length === 0 ? (
               <div className="assistant-session-toolbar__empty">暂无聊天记录</div>
             ) : sessions.map((session, index) => {
               const selected = session.session_id === currentSessionId
@@ -177,7 +186,16 @@ export default function AssistantSessionToolbar({
                   onClick={() => chooseSession(session.session_id)}
                   onMouseEnter={() => setActiveIndex(index)}
                 >
-                  <span>{session.title || '未命名会话'}</span>
+                  <span className="assistant-session-toolbar__option-content">
+                    <span className="assistant-session-toolbar__option-title">
+                      {session.title || '未命名会话'}
+                    </span>
+                    {showSessionScope && (
+                      <span className="assistant-session-toolbar__option-scope">
+                        {session.paper_title ? `论文 · ${session.paper_title}` : '全局会话'}
+                      </span>
+                    )}
+                  </span>
                   {selected && (
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                       <path d="m5 12 4 4L19 6" />

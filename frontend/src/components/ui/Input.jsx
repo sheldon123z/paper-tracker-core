@@ -1,3 +1,5 @@
+import { useId } from 'react'
+
 // Usage:
 // <Input label="Search" placeholder="Enter query..." value={q} onChange={e => setQ(e.target.value)} />
 // <Input label="Email" type="email" error="Invalid email address" value={email} onChange={...} />
@@ -13,7 +15,8 @@ export default function Input({
   id,
   ...rest
 }) {
-  const inputId = id || (label ? label.toLowerCase().replace(/\s+/g, '-') : undefined)
+  const generatedId = useId()
+  const inputId = id || (label ? generatedId : undefined)
 
   return (
     <div className={['flex flex-col gap-1.5', className].join(' ')}>
