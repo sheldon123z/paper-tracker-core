@@ -1,0 +1,69 @@
+{
+  "fps": 30,
+  "scenes": [
+    {
+      "id": "scene-00",
+      "sceneDurationInFrames": 285,
+      "captionStartFrames": [11, 93, 143],
+      "captionEndFrames": [93, 143, 254],
+      "speechStartFrames": [14, 97, 146],
+      "speechEndFrames": [88, 138, 247]
+    },
+    {
+      "id": "scene-01",
+      "sceneDurationInFrames": 365,
+      "captionStartFrames": [12, 117, 217],
+      "captionEndFrames": [117, 217, 342],
+      "speechStartFrames": [16, 120, 221],
+      "speechEndFrames": [112, 212, 335]
+    },
+    {
+      "id": "scene-02",
+      "sceneDurationInFrames": 663,
+      "captionStartFrames": [12, 153, 321, 380, 526],
+      "captionEndFrames": [153, 321, 380, 526, 640],
+      "speechStartFrames": [16, 157, 325, 384, 530],
+      "speechEndFrames": [146, 316, 374, 521, 632]
+    },
+    {
+      "id": "scene-03",
+      "sceneDurationInFrames": 585,
+      "captionStartFrames": [12, 140, 275, 364],
+      "captionEndFrames": [140, 275, 364, 561],
+      "speechStartFrames": [16, 143, 278, 368],
+      "speechEndFrames": [133, 270, 357, 554]
+    },
+    {
+      "id": "scene-04",
+      "sceneDurationInFrames": 692,
+      "captionStartFrames": [12, 194, 323, 487, 556],
+      "captionEndFrames": [194, 323, 487, 556, 669],
+      "speechStartFrames": [16, 198, 326, 490, 558],
+      "speechEndFrames": [188, 318, 482, 549, 662]
+    },
+    {
+      "id": "scene-05",
+      "sceneDurationInFrames": 588,
+      "captionStartFrames": [12, 164, 256, 448],
+      "captionEndFrames": [164, 256, 448, 564],
+      "speechStartFrames": [16, 167, 259, 452],
+      "speechEndFrames": [159, 249, 443, 557]
+    },
+    {
+      "id": "scene-06",
+      "sceneDurationInFrames": 347,
+      "captionStartFrames": [12, 111, 172],
+      "captionEndFrames": [111, 172, 324],
+      "speechStartFrames": [15, 114, 176],
+      "speechEndFrames": [107, 167, 317]
+    },
+    {
+      "id": "scene-07",
+      "sceneDurationInFrames": 301,
+      "captionStartFrames": [11, 92, 163],
+      "captionEndFrames": [92, 163, 262],
+      "speechStartFrames": [14, 95, 166],
+      "speechEndFrames": [87, 157, 256]
+    }
+  ]
+}

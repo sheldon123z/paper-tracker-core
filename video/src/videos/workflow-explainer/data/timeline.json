@@ -1,0 +1,92 @@
+{
+  "fps": 30,
+  "width": 1920,
+  "height": 1080,
+  "durationInFrames": 3826,
+  "durationSeconds": 127.533333,
+  "speechRate": 5,
+  "finalPlaybackRate": 0.88,
+  "finalDurationSeconds": 144.924242,
+  "scenes": [
+    {
+      "id": "scene-00",
+      "startFrame": 0,
+      "durationInFrames": 285,
+      "startSeconds": 0,
+      "durationSeconds": 9.5,
+      "voiceOffsetFrames": 11,
+      "voiceOffsetSeconds": 0.366667,
+      "targetTailSeconds": 1.25
+    },
+    {
+      "id": "scene-01",
+      "startFrame": 285,
+      "durationInFrames": 365,
+      "startSeconds": 9.5,
+      "durationSeconds": 12.166667,
+      "voiceOffsetFrames": 12,
+      "voiceOffsetSeconds": 0.4,
+      "targetTailSeconds": 1
+    },
+    {
+      "id": "scene-02",
+      "startFrame": 650,
+      "durationInFrames": 663,
+      "startSeconds": 21.666667,
+      "durationSeconds": 22.1,
+      "voiceOffsetFrames": 12,
+      "voiceOffsetSeconds": 0.4,
+      "targetTailSeconds": 1
+    },
+    {
+      "id": "scene-03",
+      "startFrame": 1313,
+      "durationInFrames": 585,
+      "startSeconds": 43.766667,
+      "durationSeconds": 19.5,
+      "voiceOffsetFrames": 12,
+      "voiceOffsetSeconds": 0.4,
+      "targetTailSeconds": 1
+    },
+    {
+      "id": "scene-04",
+      "startFrame": 1898,
+      "durationInFrames": 692,
+      "startSeconds": 63.266667,
+      "durationSeconds": 23.066667,
+      "voiceOffsetFrames": 12,
+      "voiceOffsetSeconds": 0.4,
+      "targetTailSeconds": 1
+    },
+    {
+      "id": "scene-05",
+      "startFrame": 2590,
+      "durationInFrames": 588,
+      "startSeconds": 86.333333,
+      "durationSeconds": 19.6,
+      "voiceOffsetFrames": 12,
+      "voiceOffsetSeconds": 0.4,
+      "targetTailSeconds": 1
+    },
+    {
+      "id": "scene-06",
+      "startFrame": 3178,
+      "durationInFrames": 347,
+      "startSeconds": 105.933333,
+      "durationSeconds": 11.566667,
+      "voiceOffsetFrames": 12,
+      "voiceOffsetSeconds": 0.4,
+      "targetTailSeconds": 1
+    },
+    {
+      "id": "scene-07",
+      "startFrame": 3525,
+      "durationInFrames": 301,
+      "startSeconds": 117.5,
+      "durationSeconds": 10.033333,
+      "voiceOffsetFrames": 11,
+      "voiceOffsetSeconds": 0.366667,
+      "targetTailSeconds": 1.5
+    }
+  ]
+}

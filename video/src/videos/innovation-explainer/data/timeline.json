@@ -1,0 +1,108 @@
+{
+  "fps": 30,
+  "durationInFrames": 4738,
+  "durationSeconds": 157.933333,
+  "speechRate": 5,
+  "scenes": [
+    {
+      "id": "scene-intro",
+      "startFrame": 0,
+      "durationInFrames": 301,
+      "startSeconds": 0,
+      "durationSeconds": 10.033333,
+      "voiceOffsetFrames": 11,
+      "voiceOffsetSeconds": 0.366667,
+      "targetTailSeconds": 1.25
+    },
+    {
+      "id": "scene-00",
+      "startFrame": 301,
+      "durationInFrames": 472,
+      "startSeconds": 10.033333,
+      "durationSeconds": 15.733333,
+      "voiceOffsetFrames": 12,
+      "voiceOffsetSeconds": 0.4,
+      "targetTailSeconds": 1
+    },
+    {
+      "id": "scene-01",
+      "startFrame": 773,
+      "durationInFrames": 521,
+      "startSeconds": 25.766667,
+      "durationSeconds": 17.366667,
+      "voiceOffsetFrames": 12,
+      "voiceOffsetSeconds": 0.4,
+      "targetTailSeconds": 1
+    },
+    {
+      "id": "scene-02",
+      "startFrame": 1294,
+      "durationInFrames": 550,
+      "startSeconds": 43.133333,
+      "durationSeconds": 18.333333,
+      "voiceOffsetFrames": 12,
+      "voiceOffsetSeconds": 0.4,
+      "targetTailSeconds": 1
+    },
+    {
+      "id": "scene-03",
+      "startFrame": 1844,
+      "durationInFrames": 774,
+      "startSeconds": 61.466667,
+      "durationSeconds": 25.8,
+      "voiceOffsetFrames": 12,
+      "voiceOffsetSeconds": 0.4,
+      "targetTailSeconds": 1
+    },
+    {
+      "id": "scene-04",
+      "startFrame": 2618,
+      "durationInFrames": 662,
+      "startSeconds": 87.266667,
+      "durationSeconds": 22.066667,
+      "voiceOffsetFrames": 12,
+      "voiceOffsetSeconds": 0.4,
+      "targetTailSeconds": 1
+    },
+    {
+      "id": "scene-05",
+      "startFrame": 3280,
+      "durationInFrames": 445,
+      "startSeconds": 109.333333,
+      "durationSeconds": 14.833333,
+      "voiceOffsetFrames": 12,
+      "voiceOffsetSeconds": 0.4,
+      "targetTailSeconds": 1
+    },
+    {
+      "id": "scene-06",
+      "startFrame": 3725,
+      "durationInFrames": 294,
+      "startSeconds": 124.166667,
+      "durationSeconds": 9.8,
+      "voiceOffsetFrames": 12,
+      "voiceOffsetSeconds": 0.4,
+      "targetTailSeconds": 1
+    },
+    {
+      "id": "scene-07",
+      "startFrame": 4019,
+      "durationInFrames": 382,
+      "startSeconds": 133.966667,
+      "durationSeconds": 12.733333,
+      "voiceOffsetFrames": 12,
+      "voiceOffsetSeconds": 0.4,
+      "targetTailSeconds": 1
+    },
+    {
+      "id": "scene-outro",
+      "startFrame": 4401,
+      "durationInFrames": 337,
+      "startSeconds": 146.7,
+      "durationSeconds": 11.233333,
+      "voiceOffsetFrames": 11,
+      "voiceOffsetSeconds": 0.366667,
+      "targetTailSeconds": 1.5
+    }
+  ]
+}
