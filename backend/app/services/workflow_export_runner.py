@@ -2,15 +2,73 @@
 
 from __future__ import annotations
 
+import ctypes
 import sys
-import time
 from pathlib import Path
 
 
-def _word_pids(win32com_client) -> set[int]:
-    service = win32com_client.GetObject("winmgmts:")
-    processes = service.ExecQuery("SELECT ProcessId FROM Win32_Process WHERE Name='WINWORD.EXE'")
-    return {int(process.ProcessId) for process in processes}
+def _record_word_pid(word, pid_file: Path) -> None:
+    try:
+        try:
+            window_handle = int(word.Hwnd)
+        except (AttributeError, TypeError, ValueError):
+            window_handle = int(word.ActiveWindow.Hwnd)
+        process_id = ctypes.c_ulong()
+        if ctypes.windll.user32.GetWindowThreadProcessId(
+            window_handle,
+            ctypes.byref(process_id),
+        ):
+            pid_file.write_text(str(process_id.value), encoding="ascii")
+    except Exception:
+        return
+
+
+def _update_document_fields(document) -> None:
+    for index in range(1, document.TablesOfContents.Count + 1):
+        document.TablesOfContents(index).Update()
+    document.Fields.Update()
+    document.Repaginate()
+
+
+def refresh_docx(docx_path: Path, pid_file: Path) -> None:
+    import pythoncom
+    import win32com.client
+
+    pythoncom.CoInitialize()
+    word = None
+    document = None
+    try:
+        word = win32com.client.DispatchEx("Word.Application")
+        _record_word_pid(word, pid_file)
+        word.Visible = False
+        word.DisplayAlerts = 0
+        word.AutomationSecurity = 3
+        word.ScreenUpdating = False
+        document = word.Documents.Open(
+            FileName=str(docx_path),
+            ConfirmConversions=False,
+            ReadOnly=False,
+            AddToRecentFiles=False,
+            Visible=False,
+            OpenAndRepair=False,
+            NoEncodingDialog=True,
+        )
+        if not pid_file.is_file():
+            _record_word_pid(word, pid_file)
+        _update_document_fields(document)
+        document.Save()
+    finally:
+        if document is not None:
+            try:
+                document.Close(SaveChanges=0)
+            except Exception:
+                pass
+        if word is not None:
+            try:
+                word.Quit(SaveChanges=0)
+            except Exception:
+                pass
+        pythoncom.CoUninitialize()
 
 
 def export_docx(docx_path: Path, pdf_path: Path, pid_file: Path) -> None:
@@ -21,19 +79,12 @@ def export_docx(docx_path: Path, pdf_path: Path, pid_file: Path) -> None:
     word = None
     document = None
     try:
-        existing_pids = _word_pids(win32com.client)
         word = win32com.client.DispatchEx("Word.Application")
+        _record_word_pid(word, pid_file)
         word.Visible = False
         word.DisplayAlerts = 0
         word.AutomationSecurity = 3
         word.ScreenUpdating = False
-        for _ in range(20):
-            new_pids = _word_pids(win32com.client) - existing_pids
-            if new_pids:
-                pid_file.write_text(str(min(new_pids)), encoding="ascii")
-                break
-            time.sleep(0.1)
-
         document = word.Documents.Open(
             FileName=str(docx_path),
             ConfirmConversions=False,
@@ -43,6 +94,9 @@ def export_docx(docx_path: Path, pdf_path: Path, pid_file: Path) -> None:
             OpenAndRepair=False,
             NoEncodingDialog=True,
         )
+        if not pid_file.is_file():
+            _record_word_pid(word, pid_file)
+        _update_document_fields(document)
         document.ExportAsFixedFormat(
             OutputFileName=str(pdf_path),
             ExportFormat=17,
@@ -72,15 +126,33 @@ def export_docx(docx_path: Path, pdf_path: Path, pid_file: Path) -> None:
 
 
 def main() -> int:
-    if len(sys.argv) != 4:
-        print("workflow_export_runner.py <input.docx> <output.pdf> <pid-file>", file=sys.stderr)
+    if len(sys.argv) not in {4, 5}:
+        print(
+            "workflow_export_runner.py refresh <input.docx> <pid-file> | "
+            "workflow_export_runner.py pdf <input.docx> <output.pdf> <pid-file>",
+            file=sys.stderr,
+        )
         return 2
-    docx_path, pdf_path, pid_file = (Path(value).resolve() for value in sys.argv[1:])
+    mode = sys.argv[1]
+    if mode == "refresh" and len(sys.argv) == 4:
+        docx_path = Path(sys.argv[2]).resolve()
+        pid_file = Path(sys.argv[3]).resolve()
+        pdf_path = None
+    elif mode == "pdf" and len(sys.argv) == 5:
+        docx_path = Path(sys.argv[2]).resolve()
+        pdf_path = Path(sys.argv[3]).resolve()
+        pid_file = Path(sys.argv[4]).resolve()
+    else:
+        print("Invalid workflow export runner arguments.", file=sys.stderr)
+        return 2
     if not docx_path.is_file():
         print(f"DOCX does not exist: {docx_path}", file=sys.stderr)
         return 2
     try:
-        export_docx(docx_path, pdf_path, pid_file)
+        if mode == "refresh":
+            refresh_docx(docx_path, pid_file)
+        else:
+            export_docx(docx_path, pdf_path, pid_file)
         return 0
     except Exception as exc:
         print(f"WORD_EXPORT_ERROR: {type(exc).__name__}: {exc}", file=sys.stderr)
