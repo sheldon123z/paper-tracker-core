@@ -1,344 +1,344 @@
 [
   {
-    "text": "国家电网电研智枢科研智能平台，",
-    "startMs": 367,
-    "endMs": 2997,
+    "text": "面向新型电力系统建设，电力科研正进入课题更复杂的新阶段。",
+    "startMs": 300,
+    "endMs": 4300,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "让领域知识持续积累，",
-    "startMs": 2997,
-    "endMs": 4817,
+    "text": "资料更庞杂，创新节奏更快。",
+    "startMs": 4500,
+    "endMs": 8000,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "让科研智能体主动推进任务，",
-    "startMs": 4817,
-    "endMs": 6937,
+    "text": "国家电网电力科研智能平台，以领域知识资产为基础，",
+    "startMs": 8200,
+    "endMs": 12400,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "助力专家判断与创新。",
-    "startMs": 6937,
-    "endMs": 9017,
+    "text": "以科研智能体为核心，为科研人员提供自主执行、主动推进、",
+    "startMs": 12600,
+    "endMs": 16900,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "面向国家电网电力科研，论文持续增长。",
-    "startMs": 10433,
-    "endMs": 13973,
+    "text": "可信可控的智能化科研支撑。",
+    "startMs": 17100,
+    "endMs": 21400,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "电网稳定、新能源消纳、运行控制等方向，",
-    "startMs": 13973,
-    "endMs": 17273,
+    "text": "在新能源并网、频率稳定、协同控制等研究中，",
+    "startMs": 22200,
+    "endMs": 26300,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "需要反复查找、对比和汇总；",
-    "startMs": 17273,
-    "endMs": 19788,
+    "text": "论文和既有成果往往分散在不同人员、部门和文件中。",
+    "startMs": 26500,
+    "endMs": 30800,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "任务结束后，知识仍散落在个人文件中，",
-    "startMs": 19788,
-    "endMs": 22848,
+    "text": "相似调研反复开展，关键证据难关联，个人积累也难持续复用。",
+    "startMs": 31000,
+    "endMs": 35500,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "相似调研又要重新开始。",
-    "startMs": 22848,
-    "endMs": 24998,
+    "text": "普通PDF阅读器解决的是“看一篇”；",
+    "startMs": 36200,
+    "endMs": 39400,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "因此，本平台不是另一款 PDF 阅读器。",
-    "startMs": 26167,
-    "endMs": 29427,
+    "text": "本平台关注的是围绕一个科研问题，",
+    "startMs": 39600,
+    "endMs": 42700,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "普通阅读器以单篇文件为中心，解决“看一篇”；",
-    "startMs": 29427,
-    "endMs": 33042,
+    "text": "持续形成有证据支撑的答案，",
+    "startMs": 42900,
+    "endMs": 46100,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "本系统面向电力科研问题，以授权论文库为中心，",
-    "startMs": 33042,
-    "endMs": 36822,
+    "text": "贯通跨文献证据、综合分析与成果输出。",
+    "startMs": 46300,
+    "endMs": 49800,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "贯通知识积累、分析与输出，",
-    "startMs": 36822,
-    "endMs": 39242,
+    "text": "批量导入的论文，在本地完成解析、OCR与去重分析，",
+    "startMs": 50200,
+    "endMs": 54600,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "把一次性阅读转化为可复用的领域能力。",
-    "startMs": 39242,
-    "endMs": 42372,
+    "text": "复核后按照权限进入公共论文库或部门论文库。",
+    "startMs": 54800,
+    "endMs": 59200,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "论文进入系统后，",
-    "startMs": 43533,
-    "endMs": 44843,
+    "text": "论文全文、元数据、研究记录和分析成果由此统一关联。",
+    "startMs": 59400,
+    "endMs": 63800,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "本地解析把文件转化为可检索、可关联的结构化信息；",
-    "startMs": 44843,
-    "endMs": 49058,
+    "text": "一次整理，持续复用，让分散论文沉淀为电力专业科研知识资产底座。",
+    "startMs": 64000,
+    "endMs": 68400,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "经复核与去重后，进入公共论文库或部门私有论文库。",
-    "startMs": 49058,
-    "endMs": 53358,
+    "text": "平台更核心的创新，是科研智能体。",
+    "startMs": 70200,
+    "endMs": 74000,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "过去散落在文件夹里的个人资料，",
-    "startMs": 53358,
-    "endMs": 55908,
+    "text": "科研人员只需提出研究目标，",
+    "startMs": 74200,
+    "endMs": 77600,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "由此成为边界清晰、持续积累、授权复用的电力科研知识资产。",
-    "startMs": 55908,
-    "endMs": 60688,
+    "text": "智能体便可在当前授权论文库范围内，自主拆解任务、主动规划步骤，",
+    "startMs": 77800,
+    "endMs": 82300,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "面对高比例新能源接入下的频率稳定、协同控制等专业问题，",
-    "startMs": 61867,
-    "endMs": 66417,
+    "text": "连续完成文献检索、证据筛选、跨文献组织，",
+    "startMs": 82500,
+    "endMs": 86700,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "传统方式仍要逐篇搜索、摘录和人工比对。",
-    "startMs": 66417,
-    "endMs": 70267,
+    "text": "技术路线归纳、研究约束识别、潜在研究空白分析和报告合成。",
+    "startMs": 86900,
+    "endMs": 91400,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "本平台借助本地 LLM 智能工具，",
-    "startMs": 70267,
-    "endMs": 73077,
+    "text": "它不是一次简单问答，而是能够保持任务状态、调用专业工具，",
+    "startMs": 91600,
+    "endMs": 96100,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "在当前授权论文库内定位电力领域证据，",
-    "startMs": 73077,
-    "endMs": 76237,
+    "text": "持续推进科研流程的智能协作者。",
+    "startMs": 96300,
+    "endMs": 99800,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "提炼技术路线、适用场景、工程约束与研究空白。",
-    "startMs": 76237,
-    "endMs": 80597,
+    "text": "平台底层采用Agentic Workflow，也就是智能体工作流架构。",
+    "startMs": 100200,
+    "endMs": 104500,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "科研人员保留判断权，",
-    "startMs": 80597,
-    "endMs": 82497,
+    "text": "LangGraph承载有状态任务图，Supervisor按科研模板完成阶段编排。",
+    "startMs": 104700,
+    "endMs": 109200,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "把时间从信息搬运转回问题定义和技术研判。",
-    "startMs": 82497,
-    "endMs": 86487,
+    "text": "检索、筛选、分析和报告合成，由Supervisor调度工具增强执行。",
+    "startMs": 109400,
+    "endMs": 113600,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "面向电力系统科研，",
-    "startMs": 87667,
-    "endMs": 89337,
+    "text": "持久化检查点记录任务状态，为复杂长任务的中断续接提供基础。",
+    "startMs": 113800,
+    "endMs": 118000,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "本平台的科研智能体能围绕研究目标自主拆解任务，",
-    "startMs": 89337,
-    "endMs": 93017,
+    "text": "AG-UI以流式方式实时呈现执行步骤、工具动作和中间结果，",
+    "startMs": 118200,
+    "endMs": 122500,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "主动检索授权论文库，",
-    "startMs": 93017,
-    "endMs": 94857,
+    "text": "使智能体工作全过程可观察、可干预、可追溯。",
+    "startMs": 122700,
+    "endMs": 126200,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "连续完成证据筛选、路线比较和报告组织。",
-    "startMs": 94857,
-    "endMs": 98357,
+    "text": "专家可以随时审阅、追问和修正，并始终保留最终判断权。",
+    "startMs": 126400,
+    "endMs": 129800,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "遇到关键假设、冲突证据和结论边界时，",
-    "startMs": 98357,
-    "endMs": 101867,
+    "text": "例如，围绕“新能源并网条件下的频率稳定研究”，",
+    "startMs": 130200,
+    "endMs": 134400,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "由科研人员确认。",
-    "startMs": 101867,
-    "endMs": 103357,
+    "text": "智能体可以在多篇授权文献中组织证据、对比不同技术路线，",
+    "startMs": 134600,
+    "endMs": 139100,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "它不是代替专家，",
-    "startMs": 103357,
-    "endMs": 104657,
+    "text": "识别结论差异、适用条件和研究约束，并生成结构化的综述初稿。",
+    "startMs": 139300,
+    "endMs": 143800,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "而是把被动工具升级为能主动推进任务的科研协作者。",
-    "startMs": 104657,
-    "endMs": 108567,
+    "text": "效率提升，并不只是把页面翻得更快。",
+    "startMs": 144000,
+    "endMs": 147200,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "效率提升不是更快翻页，",
-    "startMs": 109733,
-    "endMs": 111743,
+    "text": "更重要的是，减少反复查找、信息搬运和重复汇总，",
+    "startMs": 147400,
+    "endMs": 151500,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "而是减少重复建档、信息搬运和从头汇总。",
-    "startMs": 111743,
-    "endMs": 115223,
+    "text": "把科研人员的时间真正还给专业判断与创新思考。",
+    "startMs": 151700,
+    "endMs": 155800,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "一次整理持续复用，一次分析继续追问，",
-    "startMs": 115223,
-    "endMs": 118373,
+    "text": "平台坚持安全内生，而不是事后附加。",
+    "startMs": 156200,
+    "endMs": 159200,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "让科研人员把更多时间投入电网问题判断、技术选择与创新思考。",
-    "startMs": 118373,
-    "endMs": 123403,
+    "text": "论文、数据、模型推理、工作流状态和研究成果，",
+    "startMs": 159400,
+    "endMs": 162700,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "这些能力都在本地离线完成，",
-    "startMs": 124567,
-    "endMs": 126857,
+    "text": "全部在本地离线环境中闭环流转，科研资料不出本地。",
+    "startMs": 162900,
+    "endMs": 166200,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "并受权限和审计约束，",
-    "startMs": 126857,
-    "endMs": 128687,
+    "text": "统一身份、角色和部门属性，共同确定数据访问范围。",
+    "startMs": 166400,
+    "endMs": 169600,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "使电力科研数据、领域知识与科研智能体不越过安全边界。",
-    "startMs": 128687,
-    "endMs": 133187,
+    "text": "部门专属科研资料作为内部受控科研资产，纳入独立资料域严格隔离。",
+    "startMs": 169800,
+    "endMs": 173800,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "国家电网电研智枢科研智能平台，",
-    "startMs": 134367,
-    "endMs": 137107,
+    "text": "对非本部门用户默认不可见；未经授权，不得跨部门访问、调用或流转。",
+    "startMs": 174000,
+    "endMs": 177800,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "把电网论文变成领域知识资产，",
-    "startMs": 137107,
-    "endMs": 139487,
+    "text": "智能体继承用户权限边界，关键操作与模型调用全程留痕、可审计、可追溯。",
+    "startMs": 178000,
+    "endMs": 181900,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "把科研智能体变成主动协作者，",
-    "startMs": 139487,
-    "endMs": 141767,
+    "text": "国家电网电力科研智能平台，不仅是一套文献工具，",
+    "startMs": 182200,
+    "endMs": 185500,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "把个人积累变成组织能力，",
-    "startMs": 141767,
-    "endMs": 143857,
+    "text": "更是一套面向电力科研场景的智能科研基础设施。",
+    "startMs": 185700,
+    "endMs": 188800,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "助力新型电力系统研究。",
-    "startMs": 143857,
-    "endMs": 145927,
+    "text": "它把分散论文沉淀为领域知识，把个人积累转化为组织科研能力。",
+    "startMs": 189000,
+    "endMs": 192500,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "从电网论文到领域知识，",
-    "startMs": 147067,
-    "endMs": 149117,
+    "text": "把被动查找资料升级为智能体自主执行、主动推进、专家在环的协同科研。",
+    "startMs": 192700,
+    "endMs": 195700,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "从重复整理到智能体主动推进。",
-    "startMs": 149117,
-    "endMs": 151617,
+    "text": "未来还可拓展课题持续跟踪与研究线索主动发现，支撑新型电力系统科技创新。",
+    "startMs": 195900,
+    "endMs": 198900,
     "timestampMs": null,
     "confidence": null
   },
   {
-    "text": "国家电网电研智枢科研智能平台，让电力科研创新更有支撑。",
-    "startMs": 151617,
-    "endMs": 156657,
+    "text": "让资料成为知识，让知识形成能力，让智能体助力创新。",
+    "startMs": 199500,
+    "endMs": 204000,
     "timestampMs": null,
     "confidence": null
   }

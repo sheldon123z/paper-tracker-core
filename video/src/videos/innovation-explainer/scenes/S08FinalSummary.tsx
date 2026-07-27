@@ -1,65 +1,59 @@
-import { AbsoluteFill, Easing, interpolate } from "remotion";
-import { SYSTEM_NAME } from "../../../shared/brand";
+import { AbsoluteFill, Easing, interpolate, useCurrentFrame } from "remotion";
 import {
   FeatureGlyph,
   type GlyphType,
 } from "../../../shared/components/FeatureGlyph";
 import { COLORS, FONT_FAMILY } from "../../../shared/theme";
-import { useScaledSceneFrame } from "../utils/sceneTiming";
+import { SYSTEM_NAME } from "../brand";
 
-const SUMMARY: { label: string; detail: string; type: GlyphType }[] = [
-  { label: "领域积累", detail: "电网论文成为知识资产", type: "grid" },
-  { label: "智能体协同", detail: "自主规划并主动推进", type: "model" },
-  { label: "专家创新", detail: "关键判断始终由人负责", type: "person" },
+const SUMMARY: { label: string; type: GlyphType }[] = [
+  { label: "知识资产", type: "grid" },
+  { label: "智能体协同", type: "model" },
+  { label: "安全治理", type: "governance" },
 ];
-const SUMMARY_START_FRAMES = [8, 74, 162];
 
 export const S08FinalSummary: React.FC<{ durationInFrames: number }> = ({
   durationInFrames,
 }) => {
-  const { frame } = useScaledSceneFrame(durationInFrames, 360);
+  const frame = useCurrentFrame();
+  const opacity = interpolate(
+    frame,
+    [0, 24, durationInFrames - 16, durationInFrames - 1],
+    [0, 1, 1, 0],
+    {
+      easing: Easing.bezier(0.16, 1, 0.3, 1),
+      extrapolateLeft: "clamp",
+      extrapolateRight: "clamp",
+    },
+  );
 
   return (
     <AbsoluteFill
       style={{
         color: COLORS.white,
         fontFamily: FONT_FAMILY,
-        opacity: interpolate(
-          frame,
-          [0, 18, durationInFrames - 30, durationInFrames - 1],
-          [0, 1, 1, 0],
-          {
-            easing: Easing.bezier(0.16, 1, 0.3, 1),
-            extrapolateLeft: "clamp",
-            extrapolateRight: "clamp",
-          },
-        ),
+        opacity,
       }}
     >
       <div
         style={{
           position: "absolute",
-          inset: "92px 210px",
-          borderRadius: 72,
+          inset: "100px 230px 118px",
+          borderRadius: 64,
           background:
-            "linear-gradient(145deg, rgba(18,59,98,0.58), rgba(6,22,41,0.55))",
+            "linear-gradient(145deg, rgba(18,59,98,0.58), rgba(6,22,41,0.58))",
           border: `2px solid ${COLORS.cyan}77`,
           boxShadow:
-            "0 0 120px rgba(45,212,207,0.13), inset 0 0 100px rgba(45,212,207,0.04)",
-          scale: interpolate(frame, [0, 48], [1.025, 1], {
-            easing: Easing.bezier(0.16, 1, 0.3, 1),
-            extrapolateLeft: "clamp",
-            extrapolateRight: "clamp",
-          }),
+            "0 0 110px rgba(45,212,207,0.12), inset 0 0 90px rgba(45,212,207,0.04)",
         }}
       />
 
       <div
         style={{
           position: "absolute",
-          top: 150,
-          left: 250,
-          right: 250,
+          top: 170,
+          left: 260,
+          right: 260,
           textAlign: "center",
         }}
       >
@@ -67,7 +61,7 @@ export const S08FinalSummary: React.FC<{ durationInFrames: number }> = ({
           style={{
             color: COLORS.cyan,
             fontSize: 27,
-            letterSpacing: 11,
+            letterSpacing: 10,
             fontWeight: 760,
           }}
         >
@@ -75,76 +69,48 @@ export const S08FinalSummary: React.FC<{ durationInFrames: number }> = ({
         </div>
         <div
           style={{
-            marginTop: 24,
-            fontSize: 72,
+            marginTop: 28,
+            fontSize: 70,
             lineHeight: 1.18,
             fontWeight: 780,
-            opacity: interpolate(frame, [12, 32], [0, 1], {
-              extrapolateLeft: "clamp",
-              extrapolateRight: "clamp",
-            }),
           }}
         >
-          面向国家电网的电力科研智能平台
+          让资料成为知识，让知识形成能力
         </div>
       </div>
 
       <div
         style={{
           position: "absolute",
-          left: 330,
-          right: 330,
-          top: 430,
+          left: 350,
+          right: 350,
+          top: 470,
           display: "grid",
           gridTemplateColumns: "repeat(3, 1fr)",
-          gap: 24,
+          gap: 22,
         }}
       >
         {SUMMARY.map((item, index) => (
           <div
             key={item.label}
             style={{
-              height: 220,
-              padding: "28px 24px",
-              borderRadius: 30,
+              height: 188,
+              borderRadius: 28,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               flexDirection: "column",
-              textAlign: "center",
               background: "rgba(13,45,77,0.82)",
               border: `1px solid ${index === 2 ? COLORS.cyan : COLORS.line}`,
-              opacity: interpolate(
-                frame,
-                [SUMMARY_START_FRAMES[index], SUMMARY_START_FRAMES[index] + 22],
-                [0, 1],
-                {
-                  easing: Easing.bezier(0.16, 1, 0.3, 1),
-                  extrapolateLeft: "clamp",
-                  extrapolateRight: "clamp",
-                },
-              ),
-              translate: `0 ${interpolate(
-                frame,
-                [SUMMARY_START_FRAMES[index], SUMMARY_START_FRAMES[index] + 22],
-                [20, 0],
-                {
-                  extrapolateLeft: "clamp",
-                  extrapolateRight: "clamp",
-                },
-              )}px`,
             }}
           >
             <FeatureGlyph
               type={item.type}
-              size={62}
+              size={58}
               color={index === 2 ? COLORS.cyan : COLORS.blue}
             />
-            <div style={{ marginTop: 18, fontSize: 34, fontWeight: 760 }}>
+            <div style={{ marginTop: 18, fontSize: 33, fontWeight: 760 }}>
               {item.label}
-            </div>
-            <div style={{ marginTop: 10, color: COLORS.muted, fontSize: 21 }}>
-              {item.detail}
             </div>
           </div>
         ))}
@@ -155,19 +121,14 @@ export const S08FinalSummary: React.FC<{ durationInFrames: number }> = ({
           position: "absolute",
           left: 300,
           right: 300,
-          bottom: 230,
+          bottom: 214,
           textAlign: "center",
           color: COLORS.white,
-          fontSize: 42,
+          fontSize: 38,
           fontWeight: 720,
-          letterSpacing: 1,
-          opacity: interpolate(frame, [153, 175], [0, 1], {
-            extrapolateLeft: "clamp",
-            extrapolateRight: "clamp",
-          }),
         }}
       >
-        自主规划 · 主动推进 · 助力科研
+        让智能体助力创新
       </div>
     </AbsoluteFill>
   );

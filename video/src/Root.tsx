@@ -25,7 +25,7 @@ export const RemotionRoot: React.FC = () => {
         fps={INNOVATION_FPS}
         width={INNOVATION_WIDTH}
         height={INNOVATION_HEIGHT}
-        defaultProps={{}}
+        defaultProps={{ reviewMode: true }}
       />
       <Composition
         id="PaperTrackerWorkflowExplainer"

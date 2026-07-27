@@ -1,79 +1,332 @@
-import { Easing, interpolate, Sequence } from "remotion";
+import { Video } from "@remotion/media";
+import { Easing, Img, interpolate, staticFile, useVideoConfig } from "remotion";
 import { FeatureGlyph } from "../../../shared/components/FeatureGlyph";
 import { SceneFrame } from "../../../shared/components/SceneFrame";
-import { ScreenEvidenceFrame } from "../components/ScreenEvidenceFrame";
 import { COLORS, FONT_FAMILY } from "../../../shared/theme";
 import { useScaledSceneFrame } from "../utils/sceneTiming";
 
-const PAPER_NODES = [
-  ["频率稳定", 250, 320],
-  ["新能源消纳", 350, 575],
-  ["协同控制", 650, 675],
-  ["源网荷储", 1180, 665],
-  ["运行优化", 1430, 500],
-  ["安全约束", 1380, 290],
+const REFERENCE_DURATION_IN_FRAMES = 26 * 30;
+// The source recording starts scrolling at about 7.34s. With a 6s trim and
+// 0.6x playback, that lands at scene-local frame 67. Keep every accompanying
+// emphasis animation anchored to the same frame so picture and UI cannot drift.
+const ANALYSIS_SCROLL_CUE_FRAME = 67;
+
+const EVIDENCE_NODES = [
+  {
+    title: "技术路线",
+    detail: "不同方案与实现路径",
+    accent: COLORS.blue,
+    startFrame: ANALYSIS_SCROLL_CUE_FRAME,
+  },
+  {
+    title: "结论差异",
+    detail: "研究结论及适用条件",
+    accent: COLORS.cyan,
+    startFrame: ANALYSIS_SCROLL_CUE_FRAME + 100,
+  },
+  {
+    title: "约束与空白",
+    detail: "研究边界与潜在线索",
+    accent: COLORS.amber,
+    startFrame: ANALYSIS_SCROLL_CUE_FRAME + 200,
+  },
 ] as const;
 
-const ResearchQuestionNode: React.FC = () => (
-  <div
-    style={{
-      position: "absolute",
-      left: 785,
-      top: 338,
-      width: 350,
-      height: 250,
-      borderRadius: "50%",
-      background:
-        "radial-gradient(circle, rgba(45,212,207,0.26), rgba(13,45,77,0.82) 62%)",
-      border: `2px solid ${COLORS.cyan}`,
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      justifyContent: "center",
-      textAlign: "center",
-      fontFamily: FONT_FAMILY,
-      boxShadow: "0 0 80px rgba(45,212,207,0.16)",
-    }}
-  >
-    <FeatureGlyph type="question" size={70} color={COLORS.cyan} />
-    <div
-      style={{
-        marginTop: 12,
-        color: COLORS.white,
-        fontSize: 31,
-        fontWeight: 760,
-      }}
-    >
-      高比例新能源接入
-    </div>
-    <div style={{ marginTop: 8, color: COLORS.muted, fontSize: 20 }}>
-      频率稳定 · 协同控制 · 工程约束
-    </div>
-  </div>
-);
-
-export const S03EvidenceSynthesis: React.FC<{ durationInFrames: number }> = ({
-  durationInFrames,
-}) => {
-  const { frame, scaleFrame } = useScaledSceneFrame(durationInFrames, 960);
-  const problemOpacity = interpolate(frame, [12, 30, 160, 180], [0, 1, 1, 0], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-  });
-  const traditionalOpacity = interpolate(
+const EvidenceNode: React.FC<{
+  node: (typeof EVIDENCE_NODES)[number];
+  index: number;
+  frame: number;
+}> = ({ node, index, frame }) => {
+  const reveal = interpolate(
     frame,
-    [165, 185, 285, 315],
-    [0, 1, 1, 0],
+    [node.startFrame, node.startFrame + 36],
+    [0, 1],
     {
+      easing: Easing.bezier(0.16, 1, 0.3, 1),
       extrapolateLeft: "clamp",
       extrapolateRight: "clamp",
     },
   );
-  const networkOpacity = interpolate(
+  const lift = interpolate(
     frame,
-    [305, 340, 700, 730],
+    [node.startFrame, node.startFrame + 36],
+    [10, 0],
+    {
+      easing: Easing.bezier(0.16, 1, 0.3, 1),
+      extrapolateLeft: "clamp",
+      extrapolateRight: "clamp",
+    },
+  );
+
+  return (
+    <div
+      style={{
+        minHeight: 96,
+        display: "grid",
+        gridTemplateColumns: "70px 1fr",
+        alignItems: "center",
+        gap: 18,
+        padding: "12px 20px",
+        borderRadius: 22,
+        background: `linear-gradient(120deg, ${node.accent}18, rgba(6,22,41,0.88))`,
+        border: `1px solid ${node.accent}88`,
+        boxShadow: `0 14px 34px rgba(0,0,0,0.18), 0 0 28px ${node.accent}16`,
+        opacity: reveal,
+        translate: `0 ${lift}px`,
+      }}
+    >
+      <div
+        style={{
+          width: 58,
+          height: 58,
+          borderRadius: 18,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: `${node.accent}14`,
+          border: `1px solid ${node.accent}66`,
+        }}
+      >
+        <FeatureGlyph type="document" size={38} color={node.accent} />
+      </div>
+      <div>
+        <div
+          style={{
+            color: COLORS.white,
+            fontSize: 28,
+            lineHeight: 1.2,
+            fontWeight: 760,
+          }}
+        >
+          {String(index + 1).padStart(2, "0")} · {node.title}
+        </div>
+        <div
+          style={{
+            marginTop: 7,
+            color: COLORS.muted,
+            fontSize: 19,
+            lineHeight: 1.35,
+          }}
+        >
+          {node.detail}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const EvidenceBoard: React.FC<{ frame: number }> = ({ frame }) => {
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: 105,
+        top: 246,
+        width: 520,
+        bottom: 246,
+        padding: "28px 28px 24px",
+        boxSizing: "border-box",
+        borderRadius: 34,
+        background:
+          "linear-gradient(150deg, rgba(18,59,98,0.90), rgba(6,22,41,0.95))",
+        border: `1px solid ${COLORS.line}`,
+        boxShadow: "0 28px 76px rgba(0,0,0,0.28)",
+        fontFamily: FONT_FAMILY,
+        overflow: "hidden",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 16,
+          minHeight: 100,
+          padding: "0 18px",
+          borderRadius: 24,
+          background: "rgba(45,212,207,0.10)",
+          border: `1px solid ${COLORS.cyan}88`,
+          boxShadow: "0 0 42px rgba(45,212,207,0.10)",
+        }}
+      >
+        <FeatureGlyph type="question" size={54} color={COLORS.cyan} />
+        <div>
+          <div
+            style={{
+              color: COLORS.cyan,
+              fontSize: 17,
+              letterSpacing: 2.2,
+              fontWeight: 730,
+            }}
+          >
+            中心研究问题
+          </div>
+          <div
+            style={{
+              marginTop: 7,
+              color: COLORS.white,
+              fontSize: 26,
+              lineHeight: 1.25,
+              fontWeight: 760,
+            }}
+          >
+            新能源并网条件下的频率稳定
+          </div>
+        </div>
+      </div>
+
+      <div
+        style={{
+          position: "relative",
+          marginTop: 18,
+          display: "grid",
+          gap: 13,
+        }}
+      >
+        {EVIDENCE_NODES.map((node, index) => (
+          <EvidenceNode
+            key={node.title}
+            node={node}
+            index={index}
+            frame={frame}
+          />
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const AssistantWorkbench: React.FC<{ frame: number }> = ({ frame }) => {
+  const { fps } = useVideoConfig();
+  const reveal = interpolate(
+    frame,
+    [ANALYSIS_SCROLL_CUE_FRAME, ANALYSIS_SCROLL_CUE_FRAME + 58],
+    [0.48, 1],
+    {
+      easing: Easing.bezier(0.45, 0, 0.55, 1),
+      extrapolateLeft: "clamp",
+      extrapolateRight: "clamp",
+    },
+  );
+  const veilOpacity = interpolate(
+    frame,
+    [ANALYSIS_SCROLL_CUE_FRAME, ANALYSIS_SCROLL_CUE_FRAME + 80],
+    [0.46, 0.06],
+    {
+      easing: Easing.bezier(0.45, 0, 0.55, 1),
+      extrapolateLeft: "clamp",
+      extrapolateRight: "clamp",
+    },
+  );
+  const resultCardEnter = interpolate(
+    frame,
+    [ANALYSIS_SCROLL_CUE_FRAME, ANALYSIS_SCROLL_CUE_FRAME + 36],
+    [0, 1],
+    {
+      easing: Easing.bezier(0.16, 1, 0.3, 1),
+      extrapolateLeft: "clamp",
+      extrapolateRight: "clamp",
+    },
+  );
+  const reportOpacity = interpolate(frame, [602, 652], [0, 1], {
+    easing: Easing.bezier(0.16, 1, 0.3, 1),
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: 675,
+        right: 105,
+        top: 246,
+        bottom: 246,
+        overflow: "hidden",
+        borderRadius: 34,
+        background: "#EAF2F9",
+        border: `1px solid rgba(45,212,207,${0.45 + reveal * 0.45})`,
+        boxShadow: `0 30px 82px rgba(0,0,0,0.34), 0 0 ${42 * reveal}px rgba(45,212,207,0.11)`,
+        fontFamily: FONT_FAMILY,
+      }}
+    >
+      <Video
+        src={staticFile("shared/recordings/10-assistant-result.mp4")}
+        trimBefore={Math.round(6 * fps)}
+        playbackRate={0.6}
+        muted
+        objectFit="cover"
+        style={{
+          width: "100%",
+          height: "100%",
+          objectPosition: "center center",
+          scale: 1.656,
+          translate: "-374px 232px",
+          filter: `contrast(1.025) saturate(${0.88 + reveal * 0.13})`,
+        }}
+      />
+
+      <Img
+        src={staticFile("shared/stills/final-report.png")}
+        style={{
+          position: "absolute",
+          inset: 0,
+          width: "100%",
+          height: "100%",
+          objectFit: "cover",
+          objectPosition: "center center",
+          scale: 1.247,
+          translate: "-141px 96px",
+          opacity: reportOpacity,
+          filter: "contrast(1.03) saturate(1.01)",
+        }}
+      />
+
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          background: `rgba(6,22,41,${veilOpacity})`,
+          pointerEvents: "none",
+        }}
+      />
+
+      <div
+        style={{
+          position: "absolute",
+          right: 22,
+          top: 20,
+          padding: "10px 16px",
+          borderRadius: 999,
+          color: COLORS.white,
+          background: "rgba(6,22,41,0.88)",
+          border: `1px solid ${COLORS.cyan}88`,
+          fontSize: 18,
+          fontWeight: 720,
+          opacity: resultCardEnter,
+          translate: `0 ${interpolate(resultCardEnter, [0, 1], [10, 0])}px`,
+        }}
+      >
+        {reportOpacity > 0.5
+          ? "真实系统页面 · 结构化综述初稿"
+          : "真实系统页面 · 持续分析"}
+      </div>
+    </div>
+  );
+};
+
+export const S03EvidenceSynthesis: React.FC<{ durationInFrames: number }> = ({
+  durationInFrames,
+}) => {
+  const { frame } = useScaledSceneFrame(
+    durationInFrames,
+    REFERENCE_DURATION_IN_FRAMES,
+  );
+  const opacity = interpolate(
+    frame,
+    [0, 22, REFERENCE_DURATION_IN_FRAMES - 14, REFERENCE_DURATION_IN_FRAMES],
     [0, 1, 1, 0],
     {
+      easing: Easing.bezier(0.16, 1, 0.3, 1),
       extrapolateLeft: "clamp",
       extrapolateRight: "clamp",
     },
@@ -82,257 +335,13 @@ export const S03EvidenceSynthesis: React.FC<{ durationInFrames: number }> = ({
   return (
     <SceneFrame
       durationInFrames={durationInFrames}
-      eyebrow="03 · EVIDENCE SYNTHESIS"
-      title="围绕电力科研问题，组织跨文献证据"
+      eyebrow="06 · RESEARCH OUTCOME"
+      title="从跨文献证据，到结构化综述初稿"
     >
-      <div style={{ opacity: problemOpacity }}>
-        <ResearchQuestionNode />
+      <div style={{ opacity }}>
+        <EvidenceBoard frame={frame} />
+        <AssistantWorkbench frame={frame} />
       </div>
-      <div
-        style={{
-          position: "absolute",
-          top: 258,
-          left: 120,
-          right: 120,
-          height: 500,
-          opacity: traditionalOpacity,
-          fontFamily: FONT_FAMILY,
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 20,
-          }}
-        >
-          {["搜索", "逐篇打开", "人工摘录", "维护对比表", "重新汇总"].map(
-            (label, index) => (
-              <div
-                key={label}
-                style={{ display: "flex", alignItems: "center", gap: 20 }}
-              >
-                <div
-                  style={{
-                    width: 245,
-                    minHeight: 210,
-                    borderRadius: 26,
-                    background: "rgba(13,45,77,0.78)",
-                    border: `1px solid ${index >= 2 ? COLORS.amber + "66" : COLORS.line}`,
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 18,
-                    opacity: interpolate(
-                      frame,
-                      [175 + index * 16, 199 + index * 16],
-                      [0, 1],
-                      {
-                        extrapolateLeft: "clamp",
-                        extrapolateRight: "clamp",
-                      },
-                    ),
-                  }}
-                >
-                  <FeatureGlyph
-                    type={
-                      index === 0
-                        ? "question"
-                        : index === 3
-                          ? "table"
-                          : "document"
-                    }
-                    size={62}
-                    color={index >= 2 ? COLORS.amber : COLORS.dim}
-                  />
-                  <div style={{ fontSize: 28, fontWeight: 700 }}>{label}</div>
-                </div>
-                {index < 4 ? (
-                  <span
-                    style={{
-                      color: COLORS.amber,
-                      fontSize: 34,
-                      opacity: interpolate(
-                        frame,
-                        [183 + (index + 1) * 16, 199 + (index + 1) * 16],
-                        [0, 1],
-                        {
-                          extrapolateLeft: "clamp",
-                          extrapolateRight: "clamp",
-                        },
-                      ),
-                    }}
-                  >
-                    →
-                  </span>
-                ) : null}
-              </div>
-            ),
-          )}
-        </div>
-        <div
-          style={{
-            marginTop: 50,
-            textAlign: "center",
-            color: COLORS.amber,
-            fontSize: 34,
-            fontWeight: 720,
-          }}
-        >
-          大量时间消耗在查找、摘录与信息搬运
-        </div>
-      </div>
-
-      <div style={{ opacity: networkOpacity }}>
-        <ResearchQuestionNode />
-
-        <div
-          style={{
-            position: "absolute",
-            left: 600,
-            top: 250,
-            width: 720,
-            height: 440,
-            borderRadius: "50%",
-            border: `2px solid ${COLORS.blue}88`,
-            boxShadow: "inset 0 0 70px rgba(88,175,255,0.05)",
-          }}
-        />
-        <div
-          style={{
-            position: "absolute",
-            left: 700,
-            top: 270,
-            width: 520,
-            color: COLORS.blue,
-            fontFamily: FONT_FAMILY,
-            fontSize: 19,
-            fontWeight: 700,
-            letterSpacing: 2,
-            textAlign: "center",
-          }}
-        >
-          本地 LLM · 电力领域知识 · 当前授权论文库
-        </div>
-
-        <svg
-          width="1920"
-          height="1080"
-          viewBox="0 0 1920 1080"
-          style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
-        >
-          {PAPER_NODES.map(([, x, y], index) => (
-            <path
-              key={`${x}-${y}`}
-              d={`M ${x + 70} ${y + 45} C ${(x + 960) / 2} ${y}, 960 440, 960 465`}
-              fill="none"
-              stroke={index % 2 === 0 ? COLORS.blue : COLORS.cyan}
-              strokeWidth="2.5"
-              opacity={interpolate(
-                frame,
-                [330 + index * 12, 350 + index * 12],
-                [0, 0.75],
-                {
-                  extrapolateLeft: "clamp",
-                  extrapolateRight: "clamp",
-                },
-              )}
-            />
-          ))}
-        </svg>
-
-        {PAPER_NODES.map(([label, left, top], index) => (
-          <div
-            key={label}
-            style={{
-              position: "absolute",
-              left,
-              top,
-              width: 140,
-              height: 90,
-              borderRadius: 18,
-              background: "rgba(13,45,77,0.9)",
-              border: `1px solid ${index % 2 === 0 ? COLORS.blue : COLORS.cyan}66`,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexDirection: "column",
-              fontFamily: FONT_FAMILY,
-              opacity: interpolate(
-                frame,
-                [320 + index * 12, 342 + index * 12],
-                [0, 1],
-                {
-                  extrapolateLeft: "clamp",
-                  extrapolateRight: "clamp",
-                },
-              ),
-            }}
-          >
-            <FeatureGlyph
-              type="document"
-              size={36}
-              color={index % 2 === 0 ? COLORS.blue : COLORS.cyan}
-            />
-            <div style={{ marginTop: 5, fontSize: 18, fontWeight: 700 }}>
-              {label}
-            </div>
-          </div>
-        ))}
-
-        <div
-          style={{
-            position: "absolute",
-            left: 460,
-            right: 460,
-            bottom: 182,
-            padding: "20px 34px",
-            borderRadius: 22,
-            textAlign: "center",
-            color: COLORS.white,
-            background: "rgba(6,22,41,0.9)",
-            border: `1px solid ${COLORS.cyan}`,
-            fontFamily: FONT_FAMILY,
-            fontSize: 36,
-            fontWeight: 760,
-            opacity: interpolate(frame, [500, 550], [0, 1], {
-              easing: Easing.bezier(0.16, 1, 0.3, 1),
-              extrapolateLeft: "clamp",
-              extrapolateRight: "clamp",
-            }),
-          }}
-        >
-          LLM 组织电力证据 · 专家作出判断
-        </div>
-      </div>
-
-      <Sequence
-        from={scaleFrame(720)}
-        durationInFrames={scaleFrame(220)}
-        premountFor={30}
-      >
-        <ScreenEvidenceFrame
-          src="shared/recordings/10-assistant-result.mp4"
-          kind="video"
-          label="真实系统证据 · 电力领域跨论文分析"
-          durationInFrames={scaleFrame(220)}
-          trimBeforeSeconds={0}
-          style={{
-            position: "absolute",
-            left: 165,
-            right: 165,
-            top: 238,
-            bottom: 174,
-          }}
-          mediaScale={1.42}
-          mediaX={-250}
-          mediaY={8}
-          objectPosition="right center"
-          brandPatch
-        />
-      </Sequence>
     </SceneFrame>
   );
 };

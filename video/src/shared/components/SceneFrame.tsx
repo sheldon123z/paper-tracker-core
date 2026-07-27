@@ -57,10 +57,6 @@ export const SceneFrame: React.FC<{
               extrapolateLeft: "clamp",
               extrapolateRight: "clamp",
             }),
-            translate: `0 ${interpolate(frame, [8, 28], [18, 0], {
-              extrapolateLeft: "clamp",
-              extrapolateRight: "clamp",
-            })}px`,
           }}
         >
           <div

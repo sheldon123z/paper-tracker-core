@@ -1,0 +1,22 @@
+{
+  "reviewMode": false,
+  "mastering": {
+    "schemaVersion": 1,
+    "outputDurationInFrames": 7022,
+    "renderPropsSha256": "48671B68B8B021F74705FC4C87E6CD3C236F2426E957ABB2AF26DEEB97EFAB6B",
+    "sourceTimeline": "src/videos/innovation-explainer/data/timeline.json",
+    "sourceTimelineSha256": "0BBF7717218771CEEBFDC6BFF8E866400D840994A022351CB695A2C06A0906DE",
+    "sourceFingerprintRoots": [
+      "package-lock.json",
+      "remotion.config.ts",
+      "src/Root.tsx",
+      "src/index.css",
+      "src/index.ts",
+      "src/shared",
+      "src/videos/innovation-explainer"
+    ],
+    "sourceFingerprintSha256": "E546450DFEE0330F3C3F36E241B1FE468A1DB7C80CB8B8A5EEFAEDBD70F0C7B0",
+    "pictureMasterSha256": "040D0E0E1C193618355DA71264109E1B03B768EC67A3AB2CF1FCD2FE2A426570",
+    "videoStreamSha256": "1D7C9FDE716CB9A84B21CDD4836CC3120D78581D23EF96423491D84B555F1669"
+  }
+}

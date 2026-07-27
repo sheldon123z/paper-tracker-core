@@ -24,15 +24,36 @@ if (-not (Test-Path -LiteralPath $assetRoot -PathType Container)) {
 }
 
 if ($Video -eq "innovation") {
+  $authorizationPath = Join-Path $projectRoot "render-props\innovation-tts-authorization.json"
+  if (-not (Test-Path -LiteralPath $authorizationPath -PathType Leaf)) {
+    throw "Formal innovation render is locked until explicit TTS approval is recorded. Use render-review.ps1 during review."
+  }
+
+  $authorization = Get-Content -Raw -Encoding UTF8 -LiteralPath $authorizationPath | ConvertFrom-Json
+  if ($authorization.authorized -ne $true) {
+    throw "Formal innovation render is locked: TTS authorization is not true."
+  }
+
+  $captionPath = Join-Path $projectRoot "src\videos\innovation-explainer\data\captions.json"
+  $captionHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $captionPath).Hash
+  $approvedHash = [string]$authorization.captionSha256
+  if ([string]::IsNullOrWhiteSpace($approvedHash) -or $captionHash -ne $approvedHash.ToUpperInvariant()) {
+    throw "Formal innovation render is locked: captions changed after approval."
+  }
+}
+
+if ($Video -eq "innovation") {
   $assetFolder = "innovation-explainer"
   $composition = "PaperTrackerInnovationExplainer"
   $baseName = "paper-tracker-innovation-explainer-2k"
   $timelinePath = Join-Path $projectRoot "src\videos\innovation-explainer\data\timeline.json"
+  $compositionProps = Join-Path $projectRoot "render-props\innovation-final.json"
 } else {
   $assetFolder = "workflow-explainer"
   $composition = "PaperTrackerWorkflowExplainer"
   $baseName = "paper-tracker-workflow-explainer-2k"
   $timelinePath = Join-Path $projectRoot "src\videos\workflow-explainer\data\timeline.json"
+  $compositionProps = Join-Path $projectRoot "render-props\workflow.json"
 }
 
 $timeline = Get-Content -Raw -Encoding UTF8 -LiteralPath $timelinePath | ConvertFrom-Json
@@ -74,6 +95,7 @@ try {
     --crf=14 `
     --pixel-format=yuv420p `
     --color-space=bt709 `
+    --props=$compositionProps `
     --concurrency=2
   if ($LASTEXITCODE -ne 0) {
     throw "$composition raw render failed."

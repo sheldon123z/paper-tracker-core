@@ -25,13 +25,24 @@ if ($Video -eq "innovation") {
   $assetFolder = "innovation-explainer"
   $composition = "PaperTrackerInnovationExplainer"
   $timelinePath = Join-Path $projectRoot "src\videos\innovation-explainer\data\timeline.json"
+  $compositionProps = Join-Path $projectRoot "render-props\innovation-review.json"
 } else {
   $assetFolder = "workflow-explainer"
   $composition = "PaperTrackerWorkflowExplainer"
   $timelinePath = Join-Path $projectRoot "src\videos\workflow-explainer\data\timeline.json"
+  $compositionProps = Join-Path $projectRoot "render-props\workflow.json"
 }
 
-$outputDir = Join-Path $assetRoot "$assetFolder\qa\stills"
+$outputDir = if ($Video -eq "innovation") {
+  Join-Path $projectRoot "output\review-stills\innovation"
+} else {
+  Join-Path $assetRoot "$assetFolder\qa\stills"
+}
+$renderScale = if ($Video -eq "innovation") {
+  "1.3333333333333333"
+} else {
+  "0.5"
+}
 $timeline = Get-Content -Raw -Encoding UTF8 -LiteralPath $timelinePath | ConvertFrom-Json
 $scenes = @($timeline.scenes)
 
@@ -46,7 +57,11 @@ New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
 
 Push-Location $projectRoot
 try {
-  & node scripts/verify-assets.mjs --video $Video
+  $verifyArguments = @("scripts/verify-assets.mjs", "--video", $Video)
+  if ($Video -eq "innovation") {
+    $verifyArguments += "--review"
+  }
+  & node @verifyArguments
   if ($LASTEXITCODE -ne 0) {
     throw "Render asset validation failed."
   }
@@ -67,7 +82,8 @@ try {
 
     & npx.cmd remotion still src/index.ts $composition $target `
       --frame=$frame `
-      --scale=0.5 `
+      --scale=$renderScale `
+      --props=$compositionProps `
       --log=error
     if ($LASTEXITCODE -ne 0) {
       throw "$composition still render failed for $($scene.id)."
