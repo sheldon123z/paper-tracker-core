@@ -50,6 +50,8 @@ A full-stack local research paper tracking system with RSS ingestion, AI-powered
 
 ### 1. Environment Setup
 
+Development requires Python 3.12 and Node.js 22 or newer.
+
 ```bash
 cp .env.example .env
 ```
@@ -64,20 +66,25 @@ python -c "import secrets; print(secrets.token_urlsafe(64))"
 ### 2. Start Backend
 
 ```bash
-cd backend
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r backend/requirements-dev.txt
+cd backend
 python main.py
 ```
 
 API: `http://localhost:5002`
 
+Each Git worktree owns its root `.venv` and its own frontend/Copilot
+`node_modules`. On Windows, `start.bat --setup-only` creates or synchronizes
+them without starting services. See
+[`docs/python-environments.md`](docs/python-environments.md).
+
 ### 3. Start Frontend
 
 ```bash
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 
@@ -88,6 +95,10 @@ UI: `http://localhost:3457`
 ```bash
 ./start.sh
 ```
+
+On macOS and Linux, `start.sh` uses only the current worktree's root `.venv`,
+synchronizes its Node dependencies from the committed lockfiles, and refuses
+to reuse ports owned by another process or worktree.
 
 ## Development Workflow
 

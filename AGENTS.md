@@ -65,9 +65,9 @@ Paper Tracker Core is a local-first full-stack academic paper tracking system wi
 ### Backend (FastAPI)
 
 ```bash
-cd backend
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r backend/requirements-dev.txt
+cd backend
 python main.py                    # Starts uvicorn on port 5002 with reload
 ```
 

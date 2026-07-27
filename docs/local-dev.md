@@ -66,7 +66,7 @@ rm .git/hooks/pre-commit .git/hooks/pre-push
 - `pytest`（`pip install pytest`）
 - `node` / `npm`（前端构建与测试）
 
-推荐激活 `backend/.venv` 虚拟环境后再开发。
+推荐激活当前 worktree 根目录下的 `.venv` 后再开发。
 
 ## CI 配套要求
 

@@ -15,13 +15,13 @@ jobs:
         include:
           - os: macos-14
             platform: macos-arm64
-            pkg_target: node18-macos-arm64
+            pkg_target: node20-macos-arm64
           - os: macos-13
             platform: macos-x64
-            pkg_target: node18-macos-x64
+            pkg_target: node20-macos-x64
           - os: windows-latest
             platform: windows-x64
-            pkg_target: node18-win-x64
+            pkg_target: node20-win-x64
 
     runs-on: ${{ matrix.os }}
 
@@ -32,45 +32,43 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
           cache: pip
           cache-dependency-path: backend/requirements.txt
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '22'
           cache: npm
           cache-dependency-path: |
             frontend/package-lock.json
             copilot-runtime/package-lock.json
 
       # ---------- Frontend ----------
-      # 注意: .env.packaging → .env.production.local 的拷贝需按平台分叉，
-      #       Windows runner 没有 cp 命令，原写法会导致 windows-latest 失败。
-      - name: Stage packaging env (Unix)
-        if: runner.os != 'Windows'
+      - name: Stage packaging env
         working-directory: frontend
-        run: cp .env.packaging .env.production.local
-
-      - name: Stage packaging env (Windows)
-        if: runner.os == 'Windows'
-        working-directory: frontend
-        run: Copy-Item .env.packaging .env.production.local
+        shell: pwsh
+        run: Copy-Item -LiteralPath .env.packaging -Destination .env.production.local -Force
 
       - name: Build frontend
         working-directory: frontend
         run: |
           npm ci
           npm run build
-          rm -f .env.production.local
+
+      - name: Clean packaging env
+        if: always()
+        working-directory: frontend
+        shell: pwsh
+        run: Remove-Item -LiteralPath .env.production.local -Force -ErrorAction SilentlyContinue
 
       # ---------- CopilotRuntime ----------
       - name: Bundle CopilotRuntime
         working-directory: copilot-runtime
         run: |
           npm ci
-          npx esbuild server.js --bundle --platform=node --target=node18 --outfile=dist/server.cjs --format=cjs
+          npx esbuild server.js --bundle --platform=node --target=node20 --outfile=dist/server.cjs --format=cjs
 
       - name: Package CopilotRuntime binary
         working-directory: copilot-runtime
@@ -84,13 +82,14 @@ jobs:
           pip install pyinstaller
 
       - name: Create .env.example
+        shell: pwsh
         run: |
-          cat > .env.example << 'EOF'
-          # PaperTrackerPro Configuration
-          # ENCRYPTION_KEY=
-          # DEEPSEEK_API_KEY=
-          # OPENAI_API_KEY=
-          EOF
+          @(
+            '# PaperTrackerPro Configuration'
+            '# ENCRYPTION_KEY='
+            '# DEEPSEEK_API_KEY='
+            '# OPENAI_API_KEY='
+          ) | Set-Content -LiteralPath .env.example -Encoding utf8NoBOM
 
       - name: Build with PyInstaller
         run: pyinstaller paper_tracker.spec --noconfirm
@@ -109,13 +108,14 @@ jobs:
           Copy-Item .env.example dist/PaperTrackerPro/
 
       - name: Create README
+        shell: pwsh
         run: |
-          cat > dist/PaperTrackerPro/README.txt << 'EOF'
-          PaperTrackerPro - Academic Paper Tracking System
-          1. Edit .env file and add your API keys
-          2. Run PaperTrackerPro to start
-          3. Browser opens at http://localhost:5002
-          EOF
+          @(
+            'PaperTrackerPro - Academic Paper Tracking System'
+            '1. Edit .env file and add your API keys'
+            '2. Run PaperTrackerPro to start'
+            '3. Browser opens at http://localhost:5002'
+          ) | Set-Content -LiteralPath dist/PaperTrackerPro/README.txt -Encoding utf8NoBOM
 
       # ---------- Package ----------
       - name: Package (Unix)

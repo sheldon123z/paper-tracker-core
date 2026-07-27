@@ -5,7 +5,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 BACKEND_ROOT = ROOT / "backend"
-VENV_LIB = BACKEND_ROOT / ".venv" / "lib"
+VENV_LIB = ROOT / ".venv" / "lib"
 
 for path in (ROOT, BACKEND_ROOT):
     if str(path) not in sys.path:

@@ -17,7 +17,7 @@ fi
 # ruff 可能不在 PATH（未激活 venv）—做一次探测并给出清晰提示
 if ! command -v ruff >/dev/null 2>&1; then
   echo "⚠️  未找到 ruff，请先安装:  pip install ruff" >&2
-  echo "   或激活 backend 虚拟环境: source backend/.venv/bin/activate" >&2
+  echo "   或激活当前 worktree 虚拟环境: source .venv/bin/activate" >&2
   exit 1
 fi
 

@@ -9,7 +9,7 @@ dev:                    ## 启动所有开发服务
 	bash start.sh
 
 backend:                ## 仅启动后端
-	cd backend && .venv.bak/bin/python main.py
+	cd backend && ../.venv/bin/python main.py
 
 frontend:               ## 仅启动前端
 	cd frontend && npm run dev
