@@ -423,7 +423,7 @@ def _json_from_model(value: str) -> dict[str, Any]:
     return json.loads(stripped[start:end + 1])
 
 
-def _resolve_pdf_import_llm(db: Session):
+def _resolve_pdf_import_llm(db: Session, config_id: int | None = None):
     """Prefer the project's enabled model, even when no default is selected.
 
     The settings page can contain a single healthy model without marking it as
@@ -431,6 +431,9 @@ def _resolve_pdf_import_llm(db: Session):
     configuration. Environment fallbacks remain limited to genuinely local
     providers so an undeclared remote model is never selected implicitly.
     """
+    if config_id is not None:
+        return resolve_llm_config(db, config_id), True
+
     configured = (
         db.query(LLMConfig)
         .filter(LLMConfig.is_enabled.is_(True))
@@ -472,10 +475,16 @@ def _coerce_model_field(field_name: str, value: Any):
     return _clean_author_text(normalized) if field_name == "authors" else normalized
 
 
-async def enrich_with_local_llm(db: Session, extraction: OfflineExtraction) -> OfflineExtraction:
+async def enrich_with_local_llm(
+    db: Session,
+    extraction: OfflineExtraction,
+    config_id: int | None = None,
+) -> OfflineExtraction:
     try:
-        resolved, explicitly_configured = _resolve_pdf_import_llm(db)
+        resolved, explicitly_configured = _resolve_pdf_import_llm(db, config_id)
     except Exception as exc:
+        if config_id is not None:
+            raise ValueError(f"选择的 LLM 配置不可用：{str(exc)[:160]}") from exc
         extraction.warnings.append(f"项目模型配置不可用，已使用离线规则结果：{str(exc)[:160]}")
         return extraction
     if not resolved.is_local and not explicitly_configured:

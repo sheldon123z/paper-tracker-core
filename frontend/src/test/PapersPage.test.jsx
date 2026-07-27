@@ -22,25 +22,36 @@ describe('PapersPage batch actions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     viewportMock.isMobile = true
-    apiMock.get.mockImplementation((url) => Promise.resolve(url === '/api/tags'
-      ? { data: [{ id: 1, name: '大语言模型', color: '#ef4444' }, { id: 2, name: '检索增强', color: '#22c55e' }] }
-      : {
-          data: {
-            items: [
-              {
-                id: 42,
-                title: 'A Paper to Delete',
-                authors: 'Alice Example',
-                relevance: 8,
-                published_date: '2026-07-10T00:00:00Z',
-                is_read: false,
-                is_favorited: false,
-                tags: '大语言模型, 检索增强',
-              },
-            ],
-            meta: { total: 1, page: 1, size: 20 },
-          },
-        }))
+    apiMock.get.mockImplementation((url) => {
+      if (url === '/api/tags') {
+        return Promise.resolve({ data: [{ id: 1, name: '大语言模型', color: '#ef4444' }, { id: 2, name: '检索增强', color: '#22c55e' }] })
+      }
+      if (url === '/api/llm-configs/brief') {
+        return Promise.resolve({
+          data: [
+            { id: 11, label: '默认模型', provider: 'openai', provider_label: 'OpenAI', is_default: true, is_local: false },
+            { id: 12, label: '批量导入模型', provider: 'openai_compatible', provider_label: 'OpenAI 兼容', is_default: false, is_local: true },
+          ],
+        })
+      }
+      return Promise.resolve({
+        data: {
+          items: [
+            {
+              id: 42,
+              title: 'A Paper to Delete',
+              authors: 'Alice Example',
+              relevance: 8,
+              published_date: '2026-07-10T00:00:00Z',
+              is_read: false,
+              is_favorited: false,
+              tags: '大语言模型, 检索增强',
+            },
+          ],
+          meta: { total: 1, page: 1, size: 20 },
+        },
+      })
+    })
     apiMock.post.mockResolvedValue({ data: { affected: 1 } })
   })
 
@@ -177,7 +188,9 @@ describe('PapersPage batch actions', () => {
     fireEvent.change(screen.getByLabelText('选择包含 PDF 论文的目录'), { target: { files: [pdf, secondPdf, ignored] } })
 
     expect(screen.getAllByText(/已选择 2 个 PDF，忽略 1 个非 PDF 文件/).length).toBeGreaterThan(0)
-    fireEvent.click(screen.getByRole('button', { name: '开始识别' }))
+    const analyzeButton = screen.getByRole('button', { name: '开始识别' })
+    await waitFor(() => expect(analyzeButton).toBeEnabled())
+    fireEvent.click(analyzeButton)
     await waitFor(() => expect(screen.getAllByText('待复核')).toHaveLength(2))
     expect(screen.getAllByText('中文')).toHaveLength(2)
 
@@ -202,6 +215,44 @@ describe('PapersPage batch actions', () => {
     expect(screen.getAllByText(/已选择 2 个 PDF/).length).toBeGreaterThan(0)
     expect(screen.getByText('First Paper.pdf')).toBeInTheDocument()
     expect(screen.getByText('Second Paper.pdf')).toBeInTheDocument()
+  })
+
+  it('uses the model selected for this batch when analyzing PDFs', async () => {
+    apiMock.post.mockImplementation((url, body) => {
+      if (url === '/api/papers/import/pdf/analyze') {
+        return Promise.resolve({
+          data: {
+            filename: body.get('file').name,
+            content_hash: 'c'.repeat(64),
+            language: 'en',
+            metadata: { title: 'Selected Model Paper', authors: 'Alice Example' },
+            confidence: { title: 'high' },
+            warnings: [],
+            duplicate: null,
+          },
+        })
+      }
+      return Promise.resolve({ data: { affected: 1 } })
+    })
+
+    render(<PapersPage />)
+    await screen.findByText('A Paper to Delete')
+    fireEvent.click(screen.getByRole('button', { name: '批量导入 PDF' }))
+
+    const modelSelect = await screen.findByLabelText('本次识别模型')
+    fireEvent.click(modelSelect)
+    fireEvent.click(await screen.findByRole('option', { name: /批量导入模型/ }))
+
+    const pdf = new File(['%PDF-selected'], 'Selected Model.pdf', { type: 'application/pdf' })
+    fireEvent.change(screen.getByLabelText('选择一个或多个 PDF 论文文件'), { target: { files: [pdf] } })
+    const analyzeButton = screen.getByRole('button', { name: '开始识别' })
+    await waitFor(() => expect(analyzeButton).toBeEnabled())
+    fireEvent.click(analyzeButton)
+
+    await waitFor(() => {
+      const analyzeCall = apiMock.post.mock.calls.find(([url]) => url === '/api/papers/import/pdf/analyze')
+      expect(analyzeCall?.[1].get('llm_config_id')).toBe('12')
+    })
   })
 
   it('allows recognized papers to be imported after the remaining analysis is aborted', async () => {
@@ -243,7 +294,9 @@ describe('PapersPage batch actions', () => {
     fireEvent.change(screen.getByLabelText('选择包含 PDF 论文的目录'), {
       target: { files: [firstPdf, secondPdf] },
     })
-    fireEvent.click(screen.getByRole('button', { name: '开始识别' }))
+    const analyzeButton = screen.getByRole('button', { name: '开始识别' })
+    await waitFor(() => expect(analyzeButton).toBeEnabled())
+    fireEvent.click(analyzeButton)
 
     const abortButton = await screen.findByRole('button', { name: '中止识别' })
     await waitFor(() => {

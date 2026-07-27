@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import io
 import json
 import tempfile
@@ -13,6 +14,7 @@ from unittest.mock import AsyncMock, patch
 from backend.app.auth.dependencies import get_current_user
 from backend.app.database import Base, get_db
 from backend.app.models import LLMConfig, Paper, PaperFile
+from backend.app.routes import pdf_import as pdf_import_module
 from backend.app.schemas import PdfImportMetadata
 from backend.app.services.pdf_import_service import (
     OfflineExtraction,
@@ -24,6 +26,7 @@ from backend.app.services.pdf_import_service import (
     _ocr_pdf,
     _orient_image_for_ocr,
     _resolve_pdf_import_llm,
+    _resource_tessdata_dir,
     detect_language,
     duplicate_payload,
     find_duplicate,
@@ -34,6 +37,7 @@ from backend.app.services.pdf_import_service import (
     resolve_tesseract,
 )
 from backend.tests.support import make_fake_user, make_test_session_factory, patched_env
+from fastapi import HTTPException
 from pypdf import PdfWriter
 from starlette.testclient import TestClient
 
@@ -68,6 +72,31 @@ class PdfImportServiceTests(unittest.TestCase):
         self.assertEqual(normalize_title("全角：ＡＩ 论文！"), normalize_title("全角:AI论文"))
         self.assertEqual(normalize_doi("https://doi.org/10.1000/Test."), "10.1000/test")
         self.assertEqual(normalize_arxiv_id("arXiv:2401.12345v2"), "2401.12345")
+
+    def test_pdf_reader_stops_when_stream_exceeds_file_limit(self):
+        class ChunkedUpload:
+            filename = "oversized.pdf"
+            content_type = "application/pdf"
+
+            def __init__(self):
+                self.chunks = [b"%PDF-", b"1234", b"ignored"]
+                self.requested_sizes = []
+
+            async def read(self, size=-1):
+                self.requested_sizes.append(size)
+                return self.chunks.pop(0)
+
+        upload = ChunkedUpload()
+        with (
+            patch.object(pdf_import_module, "MAX_FILE_SIZE", 8),
+            patch.object(pdf_import_module, "PDF_READ_CHUNK_SIZE", 5),
+            self.assertRaises(HTTPException) as ctx,
+        ):
+            asyncio.run(pdf_import_module._read_pdf(upload))
+
+        self.assertEqual(ctx.exception.status_code, 413)
+        self.assertEqual(upload.requested_sizes, [5, 5])
+        self.assertEqual(upload.chunks, [b"ignored"])
 
     def test_publication_date_wins_over_received_date(self):
         english = "Received 2 January 2025\nPublished 14 July 2026"
@@ -121,6 +150,34 @@ Body text.
         self.assertTrue(explicitly_configured)
         resolver.assert_called_once_with(self.db, config.id)
 
+    def test_pdf_import_uses_explicitly_selected_model(self):
+        configs = [
+            LLMConfig(
+                provider="openai_compatible",
+                display_name=f"Project model {index}",
+                api_key_encrypted="placeholder",
+                model_name=f"project-model-{index}",
+                base_url="https://llm.example/v1",
+                is_local=False,
+                is_enabled=True,
+                is_default=index == 0,
+                health_status="ok",
+            )
+            for index in range(2)
+        ]
+        self.db.add_all(configs)
+        self.db.commit()
+
+        with patch(
+            "backend.app.services.pdf_import_service.resolve_llm_config",
+            return_value="resolved-selected-model",
+        ) as resolver:
+            resolved, explicitly_configured = _resolve_pdf_import_llm(self.db, configs[1].id)
+
+        self.assertEqual(resolved, "resolved-selected-model")
+        self.assertTrue(explicitly_configured)
+        resolver.assert_called_once_with(self.db, configs[1].id)
+
     def test_model_author_arrays_are_normalized(self):
         self.assertEqual(
             _coerce_model_field(
@@ -135,16 +192,27 @@ Body text.
         )
 
     def test_bundled_ocr_resources_include_chinese_and_english(self):
-        command, tessdata, warnings = resolve_tesseract()
-        self.assertIsNotNone(command)
-        self.assertIsNotNone(tessdata)
-        self.assertEqual(warnings, [])
+        tessdata = _resource_tessdata_dir()
+        self.assertTrue(tessdata.is_dir())
         self.assertTrue((tessdata / "eng.traineddata").is_file())
         self.assertTrue((tessdata / "chi_sim.traineddata").is_file())
         self.assertTrue((tessdata / "osd.traineddata").is_file())
 
+    def test_missing_optional_tesseract_degrades_with_warning(self):
+        with (
+            patched_env(TESSERACT_CMD=""),
+            patch("backend.app.services.pdf_import_service.shutil.which", return_value=None),
+            patch.object(Path, "is_file", return_value=False),
+        ):
+            command, tessdata, warnings = resolve_tesseract()
+        self.assertIsNone(command)
+        self.assertIsNone(tessdata)
+        self.assertTrue(warnings)
+
     def test_real_bilingual_ocr_smoke(self):
-        from pathlib import Path
+        command, tessdata, _ = resolve_tesseract()
+        if not command or not tessdata:
+            self.skipTest("Tesseract executable or language data is unavailable")
 
         font_path = Path(r"C:\Windows\Fonts\msyh.ttc")
         if not font_path.is_file():
@@ -179,7 +247,7 @@ Body text.
         oriented, rotation, warning = _orient_image_for_ocr(
             original,
             FakeTesseract,
-            resolve_tesseract()[1],
+            _resource_tessdata_dir(),
         )
         self.assertEqual(rotation, 90)
         self.assertIsNone(warning)
@@ -273,6 +341,28 @@ class PdfImportRouteTests(unittest.TestCase):
         self.assertEqual(data["language"], "zh")
         self.assertEqual(data["metadata"]["title"], "中文论文标题")
         self.assertEqual(self.db.query(Paper).count(), 0)
+
+    def test_analyze_forwards_selected_llm_config(self):
+        extraction = OfflineExtraction(
+            metadata={"title": "Selected Model Paper", "authors": "Alice Example"},
+            confidence={"title": "high"},
+            language="en",
+            text="Selected model body",
+        )
+        enrich = AsyncMock(return_value=extraction)
+        with patch(
+            "backend.app.routes.pdf_import.extract_pdf_offline", return_value=extraction,
+        ), patch(
+            "backend.app.routes.pdf_import.enrich_with_local_llm", new=enrich,
+        ):
+            response = self.client().post(
+                "/api/papers/import/pdf/analyze",
+                files={"file": ("selected.pdf", blank_pdf(), "application/pdf")},
+                data={"visibility": "public", "llm_config_id": "17"},
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        enrich.assert_awaited_once_with(self.db, extraction, 17)
 
     def test_analyze_accepts_pdf_larger_than_agui_body_limit(self):
         extraction = OfflineExtraction(

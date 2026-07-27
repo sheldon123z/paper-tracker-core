@@ -3,7 +3,7 @@ import useStore from '../../store'
 
 const STATUS_DOT = { ok: '#22c55e', error: '#ef4444', unknown: '#94a3b8', testing: '#eab308' }
 
-export default function ModelSelector() {
+export default function ModelSelector({ ariaLabel = '选择大模型' }) {
   const selectedModelId = useStore((s) => s.selectedModelId)
   const selectedModelMeta = useStore((s) => s.selectedModelMeta)
   const llmCatalog = useStore((s) => s.llmCatalog)
@@ -75,6 +75,7 @@ export default function ModelSelector() {
       {/* Trigger */}
       <button
         type="button"
+        aria-label={ariaLabel}
         onClick={() => { setOpen(!open); setTimeout(() => inputRef.current?.focus(), 50) }}
         className="w-full flex items-center justify-between rounded border px-2 py-1 text-xs outline-none cursor-pointer"
         style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-secondary)' }}

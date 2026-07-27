@@ -42,6 +42,7 @@ function _persistTabs(tabs, activeTabId) {
 }
 
 let _llmCatalogRequest = null
+let _llmCatalogRequestToken = 0
 let _fileOpenRequestSequence = 0
 
 const useStore = create((set, get) => ({
@@ -191,25 +192,42 @@ const useStore = create((set, get) => ({
       }
     }),
 
-  refreshLlmCatalog: async () => {
-    if (_llmCatalogRequest) return _llmCatalogRequest
+  refreshLlmCatalog: async (options = {}) => {
+    const force = Boolean(options?.force)
+    if (_llmCatalogRequest && !force) return _llmCatalogRequest
 
-    _llmCatalogRequest = api.get('/api/llm-configs/brief').then((response) => {
+    const requestToken = ++_llmCatalogRequestToken
+    const request = api.get('/api/llm-configs/brief').then((response) => {
       const catalog = response.data || []
-      get().setLlmCatalog(catalog)
+      if (requestToken === _llmCatalogRequestToken) get().setLlmCatalog(catalog)
       return catalog
     })
+    _llmCatalogRequest = request
 
     try {
-      return await _llmCatalogRequest
+      return await request
     } finally {
-      _llmCatalogRequest = null
+      if (_llmCatalogRequest === request) _llmCatalogRequest = null
     }
   },
 
   // Assistant session ID (forwarded to backend via CopilotKit properties)
   assistantSessionId: null,
   setAssistantSessionId: (id) => set({ assistantSessionId: id }),
+  assistantPaperId: null,
+  setAssistantPaperId: (paperId) => set({
+    assistantPaperId:
+      paperId !== null && paperId !== undefined && Number.isFinite(Number(paperId))
+        ? Number(paperId)
+        : null,
+  }),
+  clearAssistantPaperId: (paperId) => set((state) => (
+    paperId === null
+      || paperId === undefined
+      || state.assistantPaperId === Number(paperId)
+      ? { assistantPaperId: null }
+      : {}
+  )),
   paperAssistantSessionIds: {},
   setPaperAssistantSessionId: (paperId, sessionId) => set((state) => ({
     paperAssistantSessionIds: {

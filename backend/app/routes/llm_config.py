@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import LLMConfig
+from ..models import LLMBudgetConfig, LLMConfig, LLMUsageLog
 from ..schemas import (
     LLMConfigBatchAction,
     LLMConfigBrief,
@@ -36,6 +36,28 @@ router = APIRouter(
     tags=["llm-configs"],
     dependencies=[Depends(require_llm_config_access)],
 )
+
+
+def _delete_configs(db: Session, configs: list[LLMConfig]) -> int:
+    """Delete configs without losing historical usage records.
+
+    Usage logs keep their provider/model snapshot and only lose the deleted
+    foreign-key reference. Config-specific budgets have no meaning after their
+    model is removed, so they are deleted with the config.
+    """
+    config_ids = [config.id for config in configs]
+    if not config_ids:
+        return 0
+    db.query(LLMUsageLog).filter(LLMUsageLog.config_id.in_(config_ids)).update(
+        {LLMUsageLog.config_id: None},
+        synchronize_session=False,
+    )
+    db.query(LLMBudgetConfig).filter(LLMBudgetConfig.config_id.in_(config_ids)).delete(
+        synchronize_session=False,
+    )
+    for config in configs:
+        db.delete(config)
+    return len(configs)
 
 
 @router.get("", response_model=list[LLMConfigOut])
@@ -219,7 +241,7 @@ def delete_llm_config(config_id: int, db: Session = Depends(get_db)):
     if not config:
         raise HTTPException(status_code=404, detail="LLM config not found")
 
-    db.delete(config)
+    _delete_configs(db, [config])
     db.commit()
     return {"message": "LLM config deleted", "config_id": config_id}
 
@@ -333,8 +355,7 @@ def batch_action_llm_configs(payload: LLMConfigBatchAction, db: Session = Depend
         for c in configs:
             c.is_pinned = False
     elif action == "delete":
-        for c in configs:
-            db.delete(c)
+        _delete_configs(db, configs)
     else:
         raise HTTPException(status_code=400, detail=f"不支持的操作: {action}")
 
@@ -389,7 +410,7 @@ def import_llm_configs(payload: dict, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="No configs to import")
 
     if mode == "replace":
-        db.query(LLMConfig).delete()
+        _delete_configs(db, db.query(LLMConfig).all())
 
     imported = 0
     for item in items:

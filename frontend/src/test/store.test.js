@@ -77,6 +77,7 @@ describe('Zustand Store', () => {
       const state = useStore.getState()
 
       expect(state.globalChatOpen).toBe(false)
+      expect(state.assistantPaperId).toBeNull()
       expect(state.paperAssistantSessionIds).toEqual({})
     })
   })
@@ -492,6 +493,26 @@ describe('Zustand Store', () => {
       setAssistantSessionId('assistant-session-1')
 
       expect(useStore.getState().assistantSessionId).toBe('assistant-session-1')
+    })
+
+    it('forced catalog refresh ignores an older in-flight response', async () => {
+      const api = (await import('../api')).default
+      let resolveOld
+      let resolveFresh
+      api.get
+        .mockImplementationOnce(() => new Promise((resolve) => { resolveOld = resolve }))
+        .mockImplementationOnce(() => new Promise((resolve) => { resolveFresh = resolve }))
+
+      const firstRefresh = useStore.getState().refreshLlmCatalog()
+      const forcedRefresh = useStore.getState().refreshLlmCatalog({ force: true })
+
+      resolveFresh({ data: [{ id: 2, label: 'Fresh model', is_default: true }] })
+      await forcedRefresh
+      resolveOld({ data: [{ id: 1, label: 'Stale model', is_default: true }] })
+      await firstRefresh
+
+      expect(api.get).toHaveBeenCalledTimes(2)
+      expect(useStore.getState().llmCatalog.map((item) => item.id)).toEqual([2])
     })
 
     it('keeps assistant selections isolated by paper ID', () => {

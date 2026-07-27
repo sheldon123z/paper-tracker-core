@@ -1,5 +1,6 @@
 import { startTransition, useEffect, useMemo, useState } from 'react'
 import api from '../../api'
+import useStore from '../../store'
 import { Button, Card, useToast } from '../ui'
 import ConfigEditForm from './ConfigEditForm'
 import LLMBatchActions from './LLMBatchActions'
@@ -68,6 +69,7 @@ export default function LLMSection() {
   const [batchTesting, setBatchTesting] = useState(false)
   const [compareOpen, setCompareOpen] = useState(false)
   const { addToast } = useToast()
+  const refreshLlmCatalog = useStore((state) => state.refreshLlmCatalog)
 
   const providerMap = useMemo(
     () => Object.fromEntries(providerOptions.map((p) => [p.key, p])),
@@ -88,6 +90,15 @@ export default function LLMSection() {
       const r = await api.get('/api/llm-configs/providers')
       if (Array.isArray(r.data) && r.data.length > 0) startTransition(() => setProviderOptions(r.data))
     } catch { /* keep fallback */ }
+  }
+
+  const reloadModelData = async () => {
+    await loadConfigs()
+    try {
+      await refreshLlmCatalog({ force: true })
+    } catch {
+      addToast({ type: 'warning', message: '配置已保存，但模型下拉列表刷新失败，请稍后重试' })
+    }
   }
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -152,7 +163,7 @@ export default function LLMSection() {
         addToast({ type: 'success', message: 'LLM 配置已创建' })
       }
       resetForm()
-      await loadConfigs()
+      await reloadModelData()
     } catch (err) {
       const message = err instanceof SyntaxError
         ? 'extra_headers / extra_body 必须是有效 JSON 对象'
@@ -182,7 +193,7 @@ export default function LLMSection() {
   const handleDelete = async (id) => {
     try {
       await api.delete(`/api/llm-configs/${id}`)
-      await loadConfigs()
+      await reloadModelData()
       addToast({ type: 'success', message: '已删除' })
     } catch (err) {
       addToast({ type: 'error', message: err.response?.data?.detail || '删除失败' })
@@ -194,18 +205,18 @@ export default function LLMSection() {
     try {
       const r = await api.post(`/api/llm-configs/${id}/test`)
       setTestResult((c) => ({ ...c, [id]: r.data }))
-      await loadConfigs()
+      await reloadModelData()
     } catch (err) {
       const d = err.response?.data || {}
       setTestResult((c) => ({ ...c, [id]: { status: d.status || 'error', message: d.message || d.detail || '连接失败' } }))
-      await loadConfigs()
+      await reloadModelData()
     }
   }
 
   const handleTogglePin = async (cfg) => {
     try {
       await api.patch(`/api/llm-configs/${cfg.id}`, { is_pinned: !cfg.is_pinned })
-      await loadConfigs()
+      await reloadModelData()
     } catch (err) {
       addToast({ type: 'error', message: '操作失败' })
     }
@@ -215,7 +226,7 @@ export default function LLMSection() {
     try {
       await api.patch(`/api/llm-configs/${cfg.id}`, { is_default: true })
       addToast({ type: 'success', message: `已将 ${cfg.display_name || cfg.model_name} 设为默认模型` })
-      await loadConfigs()
+      await reloadModelData()
     } catch (err) {
       addToast({ type: 'error', message: err.response?.data?.detail || '设置默认模型失败' })
     }
@@ -227,7 +238,7 @@ export default function LLMSection() {
       const r = await api.post('/api/llm-configs/batch-test')
       const d = r.data
       addToast({ type: d.failed > 0 ? 'warning' : 'success', message: `测试完成: ${d.success} 成功, ${d.failed} 失败` })
-      await loadConfigs()
+      await reloadModelData()
     } catch (err) {
       addToast({ type: 'error', message: '批量测试失败' })
     } finally { setBatchTesting(false) }
@@ -240,7 +251,7 @@ export default function LLMSection() {
       addToast({ type: 'success', message: `已${action === 'enable' ? '启用' : action === 'disable' ? '禁用' : action === 'delete' ? '删除' : action === 'pin' ? '置顶' : '取消置顶'} ${selectedIds.size} 个配置` })
       setSelectedIds(new Set())
       setSelectionMode(false)
-      await loadConfigs()
+      await reloadModelData()
     } catch (err) {
       addToast({ type: 'error', message: err.response?.data?.detail || '操作失败' })
     }
@@ -282,7 +293,7 @@ export default function LLMSection() {
               try {
                 const text = await file.text(); const data = JSON.parse(text)
                 await api.post('/api/llm-configs/import', { ...data, mode: 'merge' })
-                addToast({ type: 'success', message: '导入完成' }); await loadConfigs()
+                addToast({ type: 'success', message: '导入完成' }); await reloadModelData()
               } catch { addToast({ type: 'error', message: '导入失败' }) }
             }
             input.click()

@@ -9,6 +9,7 @@ import api from '../../api'
 import useStore from '../../store'
 import AssistantSessionToolbar from '../copilot/AssistantSessionToolbar'
 import { SINGLE_COPY_MESSAGE_VIEW } from '../copilot/CustomAssistantMessage'
+import ModelSelector from '../copilot/ModelSelector'
 import useAssistantSessionHistory from '../copilot/useAssistantSessionHistory'
 import useAssistantSessions from '../copilot/useAssistantSessions'
 import { PAPER_LABELS } from '../copilot/chatLabels'
@@ -161,6 +162,8 @@ function ContextControlBar() {
 
 export default function AIChatPanel({ paper, onClose }) {
   const [suggestions, setSuggestions] = useState([])
+  const setAssistantPaperId = useStore((state) => state.setAssistantPaperId)
+  const clearAssistantPaperId = useStore((state) => state.clearAssistantPaperId)
   const sessionsEnabled = Boolean(paper?.id)
   const {
     currentSessionId,
@@ -171,6 +174,12 @@ export default function AIChatPanel({ paper, onClose }) {
     selectSession,
   } = useAssistantSessions({ enabled: sessionsEnabled, paperId: paper?.id })
   useAssistantSessionHistory(currentSessionId, sessionsEnabled && sessionReady)
+
+  useEffect(() => {
+    if (!paper?.id) return undefined
+    setAssistantPaperId(paper.id)
+    return () => clearAssistantPaperId(paper.id)
+  }, [clearAssistantPaperId, paper?.id, setAssistantPaperId])
 
   useEffect(() => {
     api
@@ -207,6 +216,17 @@ export default function AIChatPanel({ paper, onClose }) {
           onNewSession={newSession}
           onSelectSession={selectSession}
         />
+      </div>
+      <div
+        className="flex flex-shrink-0 items-center gap-3 border-b px-3 py-2"
+        style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-secondary)' }}
+      >
+        <span className="whitespace-nowrap text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
+          AI 论文助手模型
+        </span>
+        <div className="min-w-0 flex-1">
+          <ModelSelector ariaLabel="选择 AI 论文助手模型" />
+        </div>
       </div>
       <ContextControlBar />
 

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import api from '../../api'
 import { Badge, Button, Input, Modal, Select } from '../ui'
@@ -134,6 +134,10 @@ export default function PdfBatchImportModal({ isOpen, onClose, user, departments
   const [ignoredCount, setIgnoredCount] = useState(0)
   const [visibility, setVisibility] = useState('public')
   const [departmentId, setDepartmentId] = useState('')
+  const [llmConfigs, setLlmConfigs] = useState([])
+  const [llmConfigId, setLlmConfigId] = useState('')
+  const [llmConfigsLoading, setLlmConfigsLoading] = useState(false)
+  const [llmConfigsError, setLlmConfigsError] = useState('')
   const [analyzing, setAnalyzing] = useState(false)
   const [importing, setImporting] = useState(false)
   const [announcement, setAnnouncement] = useState('')
@@ -145,6 +149,38 @@ export default function PdfBatchImportModal({ isOpen, onClose, user, departments
   const failedCount = entries.filter((entry) => ['failed', 'import_failed'].includes(entry.status)).length
   const canUseScope = user?.role !== 'manager' || visibility === 'public' || departmentId
   const canImport = readyEntries.length > 0 && readyEntries.every((entry) => entry.metadata?.title?.trim()) && canUseScope
+  const modelSelectionLocked = entries.some((entry) => (
+    entry.analysis || ['analyzing', 'ready', 'abandoned', 'importing', 'success', 'import_failed'].includes(entry.status)
+  ))
+
+  useEffect(() => {
+    if (!isOpen) return undefined
+
+    let cancelled = false
+    setLlmConfigsLoading(true)
+    setLlmConfigsError('')
+    api.get('/api/llm-configs/brief')
+      .then((response) => {
+        if (cancelled) return
+        const configs = Array.isArray(response.data) ? response.data : []
+        setLlmConfigs(configs)
+        const preferred = configs.find((config) => config.is_default) || configs[0]
+        setLlmConfigId(preferred ? String(preferred.id) : '')
+      })
+      .catch((error) => {
+        if (cancelled) return
+        setLlmConfigs([])
+        setLlmConfigId('')
+        setLlmConfigsError(errorMessage(error, 'LLM 配置加载失败，将使用自动选择或离线规则'))
+      })
+      .finally(() => {
+        if (!cancelled) setLlmConfigsLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [isOpen])
 
   const progress = useMemo(() => {
     if (analyzing) return `${entries.filter((entry) => ['ready', 'failed'].includes(entry.status)).length}/${entries.length} 已识别`
@@ -173,6 +209,8 @@ export default function PdfBatchImportModal({ isOpen, onClose, user, departments
     setIgnoredCount(0)
     setVisibility('public')
     setDepartmentId('')
+    setLlmConfigId('')
+    setLlmConfigsError('')
     setAnnouncement('')
     if (directoryInputRef.current) directoryInputRef.current.value = ''
     if (fileInputRef.current) fileInputRef.current.value = ''
@@ -216,6 +254,7 @@ export default function PdfBatchImportModal({ isOpen, onClose, user, departments
     const scope = requestScope(user, visibility, departmentId)
     if (scope.visibility) form.append('visibility', scope.visibility)
     if (scope.department_id) form.append('department_id', String(scope.department_id))
+    if (llmConfigId) form.append('llm_config_id', llmConfigId)
     try {
       const response = await api.post('/api/papers/import/pdf/analyze', form, { timeout: 180000, signal })
       updateEntry(entry.id, {
@@ -353,7 +392,7 @@ export default function PdfBatchImportModal({ isOpen, onClose, user, departments
         <Button variant="secondary" onClick={abortAnalysis}>中止识别</Button>
       )}
       {!analyzing && entries.some((entry) => entry.status === 'queued') && (
-        <Button loading={analyzing} disabled={busy || entries.length === 0 || !canUseScope} onClick={analyzeAll}>开始识别</Button>
+        <Button loading={analyzing} disabled={busy || llmConfigsLoading || entries.length === 0 || !canUseScope} onClick={analyzeAll}>开始识别</Button>
       )}
       {!analyzing && !entries.some((entry) => entry.status === 'queued') && canImport && (
         <Button loading={importing} disabled={busy} onClick={importAll}>确认导入 {readyEntries.length} 篇</Button>
@@ -402,6 +441,27 @@ export default function PdfBatchImportModal({ isOpen, onClose, user, departments
           {entries.length > 0 && (
             <p className="mt-3 text-xs text-secondary">已选择 {entries.length} 个 PDF{ignoredCount ? `，忽略 ${ignoredCount} 个非 PDF 文件` : ''}</p>
           )}
+        </div>
+
+        <div className="rounded-2xl border p-4 surface-divider" style={{ backgroundColor: 'var(--bg-secondary)' }}>
+          <Select
+            label="本次识别模型"
+            value={llmConfigId}
+            onChange={setLlmConfigId}
+            disabled={busy || llmConfigsLoading || modelSelectionLocked}
+            options={[
+              { value: '', label: llmConfigsLoading ? '正在加载可用模型…' : '自动选择可用模型' },
+              ...llmConfigs.map((config) => ({
+                value: String(config.id),
+                label: `${config.label}${config.is_default ? '（默认）' : ''}${config.is_local ? ' · 本地' : ''}`,
+              })),
+            ]}
+          />
+          <p className={`mt-2 text-xs ${llmConfigsError ? 'text-danger' : 'text-secondary'}`} role={llmConfigsError ? 'alert' : undefined}>
+            {llmConfigsError || (modelSelectionLocked
+              ? '识别已开始，本批次将继续使用已选模型。'
+              : '该选择只影响本次 PDF 元数据识别，不会修改系统默认模型。')}
+          </p>
         </div>
 
         {user?.role === 'manager' ? (

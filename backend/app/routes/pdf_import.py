@@ -17,7 +17,13 @@ from ..models import Paper, PaperFile
 from ..schemas import PdfImportAnalyzeOut, PdfImportCommitOut, PdfImportMetadata
 from ..services.access_control import normalize_new_scope, paper_response, require_writable
 from ..services.cache import cache
-from ..services.file_storage import delete_file, read_file, save_file, validate_upload
+from ..services.file_storage import (
+    MAX_FILE_SIZE,
+    delete_file,
+    read_file,
+    save_file,
+    validate_upload,
+)
 from ..services.pdf_import_service import (
     duplicate_payload,
     enrich_with_local_llm,
@@ -37,17 +43,27 @@ router = APIRouter(
     dependencies=[Depends(get_current_user)],
 )
 
+PDF_READ_CHUNK_SIZE = 1024 * 1024
+
 
 async def _read_pdf(file: UploadFile) -> tuple[str, bytes]:
     filename = Path(file.filename or "unnamed.pdf").name
-    content = await file.read()
+    content = bytearray()
+    while chunk := await file.read(PDF_READ_CHUNK_SIZE):
+        if len(content) + len(chunk) > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=413,
+                detail=f"文件过大，上限为 {MAX_FILE_SIZE // (1024 * 1024)} MB",
+            )
+        content.extend(chunk)
+    payload = bytes(content)
     try:
-        validate_upload(filename, file.content_type or "application/pdf", len(content))
+        validate_upload(filename, file.content_type or "application/pdf", len(payload))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    if Path(filename).suffix.lower() != ".pdf" or not content.startswith(b"%PDF-"):
+    if Path(filename).suffix.lower() != ".pdf" or not payload.startswith(b"%PDF-"):
         raise HTTPException(status_code=400, detail="仅支持有效的 PDF 文件")
-    return filename, content
+    return filename, payload
 
 
 @router.post("/analyze", response_model=PdfImportAnalyzeOut)
@@ -55,16 +71,21 @@ async def analyze_pdf(
     file: UploadFile = File(...),
     visibility: str | None = Form(default=None),
     department_id: int | None = Form(default=None),
+    llm_config_id: int | None = Form(default=None),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    """Extract one PDF and optionally enrich it with the selected enabled LLM config."""
     filename, content = await _read_pdf(file)
     resolved_visibility, resolved_department = normalize_new_scope(user, visibility, department_id)
     try:
         extraction = extract_pdf_offline(content, filename)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    extraction = await enrich_with_local_llm(db, extraction)
+    try:
+        extraction = await enrich_with_local_llm(db, extraction, llm_config_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     try:
         metadata = finalize_metadata(PdfImportMetadata.model_validate(extraction.metadata))
     except ValidationError as exc:

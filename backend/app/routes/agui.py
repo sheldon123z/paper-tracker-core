@@ -207,6 +207,17 @@ def _normalize_assistant_session_id(props: dict, thread_id: str) -> str:
     )
 
 
+def _assistant_requested_paper_id(props: dict):
+    """Resolve the explicit assistant surface while preserving legacy clients."""
+    assistant_scope = props.get("assistantScope")
+    if assistant_scope == "global":
+        return None
+    requested_paper_id = props.get("paperId")
+    if assistant_scope == "paper" and requested_paper_id in (None, ""):
+        raise HTTPException(status_code=400, detail="paperId is required for paper assistant scope")
+    return requested_paper_id
+
+
 def _resolve_assistant_session(
     db: Session,
     user: User,
@@ -407,7 +418,7 @@ async def assistant_agent(request: Request, user: User = Depends(get_current_use
         user,
         session_id,
         messages,
-        props.get("paperId"),
+        _assistant_requested_paper_id(props),
     )
     paper_context = _build_paper_context(db, paper, user, props) if paper else None
     user_content = last_user_content(messages)

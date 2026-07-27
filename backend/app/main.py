@@ -45,6 +45,7 @@ from .services.audit import write_audit_event
 from .services.checkpointer import close_checkpointer, open_checkpointer
 from .services.db_backup import perform_backup, schedule_backups
 from .services.db_migrations import migrate_database_schema, migrate_llm_config_rows
+from .services.file_storage import MAX_FILE_SIZE
 from .services.scheduler import get_scheduler, init_scheduler, shutdown_scheduler
 from .services.seed import (
     ensure_new_skills,
@@ -129,6 +130,17 @@ async def audit_authenticated_api_requests(request: Request, call_next):
 # Body size limit middleware — streaming byte count (not just Content-Length)
 # ---------------------------------------------------------------------------
 GENERAL_MAX_BODY_SIZE = int(os.getenv("MAX_BODY_SIZE", str(10 * 1024 * 1024)))  # 10 MB default
+PDF_IMPORT_MULTIPART_OVERHEAD = 1024 * 1024
+PDF_IMPORT_MAX_BODY_SIZE = MAX_FILE_SIZE + PDF_IMPORT_MULTIPART_OVERHEAD
+_PDF_IMPORT_PATHS = {
+    "/api/papers/import/pdf/analyze",
+    "/api/papers/import/pdf/commit",
+}
+
+
+def is_pdf_import_endpoint(path: str, method: str) -> bool:
+    """Return whether a request is a bounded PDF-import upload."""
+    return method == "POST" and path in _PDF_IMPORT_PATHS
 
 # Paths that are exempt from body size limits (e.g. file uploads with their own checks)
 # 收紧豁免规则，仅精确匹配上传路由
@@ -136,14 +148,6 @@ def is_upload_endpoint(path: str, method: str) -> bool:
     """Check if the request is an upload endpoint that should be exempt from body size limits."""
     # 仅豁免 POST 请求到 /api/papers/{paper_id}/files（文件上传）
     if method == "POST":
-        # PDF import performs its own 100 MB validation after reading the
-        # multipart upload. Applying the general request limit here would
-        # reject most papers before the route can validate them.
-        if path in {
-            "/api/papers/import/pdf/analyze",
-            "/api/papers/import/pdf/commit",
-        }:
-            return True
         # 匹配 /api/papers/1/files 或 /api/papers/123/files/ 格式
         import re
         if re.match(r"^/api/papers/[1-9]\d*/files/?$", path):
@@ -161,17 +165,23 @@ async def limit_request_body(request: Request, call_next):
     """
     path = request.url.path
 
-    # Skip for exempt paths (file uploads handled separately) and safe methods
+    # Skip for fully exempt paths (uploads handled separately) and safe methods.
     if request.method in ("GET", "HEAD", "OPTIONS", "DELETE"):
         return await call_next(request)
     if is_upload_endpoint(path, request.method):
         return await call_next(request)
 
+    body_limit = (
+        PDF_IMPORT_MAX_BODY_SIZE
+        if is_pdf_import_endpoint(path, request.method)
+        else GENERAL_MAX_BODY_SIZE
+    )
+
     # 1) Fast-reject via Content-Length header (if present)
     content_length = request.headers.get("content-length")
     if content_length is not None:
         try:
-            if int(content_length) > GENERAL_MAX_BODY_SIZE:
+            if int(content_length) > body_limit:
                 return PlainTextResponse("Request body too large", status_code=413)
         except ValueError:
             pass
@@ -187,7 +197,7 @@ async def limit_request_body(request: Request, call_next):
         if message.get("type") == "http.request":
             body = message.get("body", b"")
             received += len(body)
-            if received > GENERAL_MAX_BODY_SIZE:
+            if received > body_limit:
                 raise HTTPException(status_code=413, detail="Request body too large")
         return message
 
