@@ -2,8 +2,8 @@
 
 ## 环境要求
 
-- Python 3.11+
-- Node.js 18+
+- Python 3.12
+- Node.js 22+
 - SQLite 3
 
 ## 首次设置
@@ -16,19 +16,18 @@ git clone <repo-url> && cd paper-tracker-core
 cp .env.example .env
 # 编辑 .env，填入 ENCRYPTION_KEY 和所需的 LLM API Key
 
-# 3. 安装后端依赖
-cd backend
+# 3. 安装后端依赖（当前 worktree 根目录的 .venv）
 python -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r backend/requirements-dev.txt
 
 # 4. 安装前端依赖
-cd ../frontend
-npm install
+cd frontend
+npm ci
 
 # 5. 安装 CopilotRuntime 依赖
 cd ../copilot-runtime
-npm install
+npm ci
 
 # 6. 启动所有服务
 cd ..
@@ -106,9 +105,10 @@ docs: 更新 API 文档
 
 每次 PR 和 push 到 main 会自动运行：
 
-1. **Backend Lint** — Ruff 代码风格检查
-2. **Backend Syntax** — Python 语法验证
-3. **Frontend Build** — 前端构建验证
+1. **Backend Lint/Test** — Ruff 与后端测试
+2. **Frontend Test/Build** — 前端测试和构建
+3. **CopilotRuntime Bundle** — Node 20 目标的服务打包检查
+4. **Video Source** — Remotion lint、类型检查及不依赖外部素材的时间轴校验
 
 本地预检: `make lint`
 

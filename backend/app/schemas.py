@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from typing import Any
 
-from pydantic import BaseModel, Field, field_serializer
+from pydantic import BaseModel, Field, field_serializer, field_validator
 
 
 class FeedBase(BaseModel):
@@ -113,6 +113,42 @@ class PaperPatch(BaseModel):
     pdf_url: str | None = None
     visibility: str | None = None
     department_id: int | None = None
+
+
+class PdfImportMetadata(BaseModel):
+    title: str = Field(min_length=1, max_length=512)
+    authors: str = Field(default="", max_length=512)
+    abstract: str = ""
+    ai_summary: str | None = None
+    published_date: datetime | None = None
+    category: str = Field(default="Uncategorized", max_length=128)
+    doi: str | None = Field(default=None, max_length=256)
+    arxiv_id: str | None = Field(default=None, max_length=64)
+
+    @field_validator("title")
+    @classmethod
+    def title_must_not_be_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("论文标题不能为空")
+        return value
+
+
+class PdfImportAnalyzeOut(BaseModel):
+    filename: str
+    content_hash: str
+    language: str
+    metadata: PdfImportMetadata
+    confidence: dict[str, str]
+    warnings: list[str]
+    duplicate: dict[str, Any] | None = None
+
+
+class PdfImportCommitOut(BaseModel):
+    action: str
+    paper: PaperOut
+    attachment_created: bool
+    warnings: list[str] = Field(default_factory=list)
 
 
 class TagOut(BaseModel):
@@ -453,6 +489,7 @@ class PaperFileOut(BaseModel):
     file_type: str
     content_type: str
     file_size: int = 0
+    content_hash: str | None = None
     is_primary: bool = False
     annotations_json: str | None = None
     parse_status: str | None = None

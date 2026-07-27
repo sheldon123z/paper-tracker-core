@@ -1,0 +1,212 @@
+[
+  {
+    "text": "国家电网电研智枢科研智能平台",
+    "startMs": 367,
+    "endMs": 3107,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "在本地离线运行",
+    "startMs": 3107,
+    "endMs": 4757,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "面向论文集中管理、深度阅读和成果沉淀",
+    "startMs": 4757,
+    "endMs": 8457,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "论文导入、分类检索与阅读标注",
+    "startMs": 9900,
+    "endMs": 13390,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "模型分析和成果输出整合在统一工作台",
+    "startMs": 13390,
+    "endMs": 16740,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "让科研资料进入连续、可复用的知识流程",
+    "startMs": 16740,
+    "endMs": 20890,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "面对大量中英文 PDF，可按目录或多文件批量导入",
+    "startMs": 22067,
+    "endMs": 26777,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "系统自动完成文本提取、OCR，以及标题、作者和摘要等元数据识别",
+    "startMs": 26777,
+    "endMs": 32367,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "并支持逐篇复核",
+    "startMs": 32367,
+    "endMs": 34347,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "文件指纹、DOI、文献编号与标准化标题联合判断",
+    "startMs": 34347,
+    "endMs": 39217,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "识别重复内容，减少重复入库和信息覆盖",
+    "startMs": 39217,
+    "endMs": 42997,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "导入后的论文可进入公共论文库或部门私有论文库",
+    "startMs": 44167,
+    "endMs": 48427,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "在授权范围内检索、筛选、收藏并标记阅读状态",
+    "startMs": 48427,
+    "endMs": 52927,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "直接打开 PDF、查看摘要和附件",
+    "startMs": 52927,
+    "endMs": 55907,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "让分散文件逐步沉淀为结构清晰的科研知识资产",
+    "startMs": 55907,
+    "endMs": 62467,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "本地模型可针对当前论文库开展辅助分析",
+    "startMs": 63667,
+    "endMs": 69747,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "围绕单篇论文追问核心方法、贡献与局限",
+    "startMs": 69747,
+    "endMs": 74027,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "针对跨论文问题完成检索、提炼与方法对比",
+    "startMs": 74027,
+    "endMs": 79497,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "归纳研究趋势，并给出后续研究建议",
+    "startMs": 79497,
+    "endMs": 81797,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "会话按论文和任务保存，便于继续追问和回顾",
+    "startMs": 81797,
+    "endMs": 85557,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "平台提供文献调研、趋势分析和论文对比等科研工作流",
+    "startMs": 86733,
+    "endMs": 91803,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "并覆盖研究空白发现和投稿准备",
+    "startMs": 91803,
+    "endMs": 94853,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "检索、筛选、分析和报告合成分阶段呈现",
+    "startMs": 94853,
+    "endMs": 101273,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "最终成果可导出为 Markdown、Word 或 PDF",
+    "startMs": 101273,
+    "endMs": 105143,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "系统同时提供部门、账号和会话管理",
+    "startMs": 106333,
+    "endMs": 109633,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "以及操作审计和使用统计",
+    "startMs": 109633,
+    "endMs": 111673,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "让全过程可管理、可查询、可追溯",
+    "startMs": 111673,
+    "endMs": 116733,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "国家电网电研智枢科研智能平台",
+    "startMs": 117867,
+    "endMs": 120567,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "让论文知识在本地持续积累",
+    "startMs": 120567,
+    "endMs": 122927,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "让研究更有序，让成果更容易复用",
+    "startMs": 122927,
+    "endMs": 126247,
+    "timestampMs": null,
+    "confidence": null
+  }
+]

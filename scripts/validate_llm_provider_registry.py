@@ -16,8 +16,8 @@ ROOT = Path(__file__).resolve().parents[1]
 BACKEND_ROOT = ROOT / "backend"
 PY_VERSION = f"python{sys.version_info.major}.{sys.version_info.minor}"
 SITE_PACKAGES = [
-    BACKEND_ROOT / ".venv" / "lib" / PY_VERSION / "site-packages",
-    BACKEND_ROOT / ".venv" / "Lib" / "site-packages",
+    ROOT / ".venv" / "lib" / PY_VERSION / "site-packages",
+    ROOT / ".venv" / "Lib" / "site-packages",
 ]
 for path in (str(ROOT), str(BACKEND_ROOT)):
     if path not in sys.path:
@@ -240,10 +240,16 @@ def check_admin_access_guard() -> None:
     from fastapi import HTTPException
     from backend.app.security import require_llm_config_access
 
-    loopback_request = types.SimpleNamespace(client=types.SimpleNamespace(host="127.0.0.1"))
-    remote_request = types.SimpleNamespace(client=types.SimpleNamespace(host="203.0.113.10"))
+    loopback_request = types.SimpleNamespace(
+        client=types.SimpleNamespace(host="127.0.0.1"),
+        cookies={},
+    )
+    remote_request = types.SimpleNamespace(
+        client=types.SimpleNamespace(host="203.0.113.10"),
+        cookies={},
+    )
 
-    with patched_env(LLM_CONFIG_ADMIN_TOKEN=None, LLM_CONFIG_TRUST_LOOPBACK_ONLY="true"):
+    with patched_env(LLM_CONFIG_ADMIN_TOKEN=None, LLM_CONFIG_TRUST_LAN="false"):
         require_llm_config_access(loopback_request, authorization=None, x_llm_admin_token=None)
         try:
             require_llm_config_access(remote_request, authorization=None, x_llm_admin_token=None)

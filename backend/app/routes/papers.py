@@ -3,6 +3,7 @@ import hashlib
 import json as json_lib
 import logging
 from datetime import UTC, datetime
+from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
@@ -62,6 +63,10 @@ def list_papers(
     size: int = Query(default=20, ge=1, le=100),
     library_scope: str | None = Query(default=None, pattern="^(public|department)$"),
     department_id: int | None = Query(default=None),
+    sort_by: Literal[
+        "published_date", "created_at", "title", "authors", "category", "source", "relevance"
+    ] = Query(default="published_date"),
+    sort_dir: Literal["asc", "desc"] = Query(default="desc"),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -81,6 +86,8 @@ def list_papers(
         "size": size,
         "library_scope": library_scope,
         "department_id": department_id,
+        "sort_by": sort_by,
+        "sort_dir": sort_dir,
         "user_id": user.id,
         "user_department_id": getattr(user, "department_id", None),
     }
@@ -147,8 +154,25 @@ def list_papers(
             raise HTTPException(status_code=400, detail="Invalid date_to format, use ISO 8601") from None
 
     total = query.count()
+    sort_columns = {
+        "published_date": Paper.published_date,
+        "created_at": Paper.created_at,
+        "title": func.lower(Paper.title),
+        "authors": func.lower(Paper.authors),
+        "category": func.lower(Paper.category),
+        "source": func.lower(Paper.source),
+        "relevance": Paper.relevance,
+    }
+    primary_sort = sort_columns[sort_by]
+    primary_order = primary_sort.asc() if sort_dir == "asc" else primary_sort.desc()
+    if sort_by == "published_date":
+        primary_order = primary_order.nullslast()
+    tie_direction = Paper.id.asc() if sort_dir == "asc" else Paper.id.desc()
     items = (
-        query.order_by(Paper.published_date.desc(), Paper.created_at.desc()).offset((page - 1) * size).limit(size).all()
+        query.order_by(primary_order, tie_direction)
+        .offset((page - 1) * size)
+        .limit(size)
+        .all()
     )
 
     result = PaperListResponse(

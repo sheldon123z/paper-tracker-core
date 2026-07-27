@@ -20,6 +20,25 @@ function ResizeHandle({ onMouseDown }) {
   )
 }
 
+function PanelToggle({ active, label, onClick }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+      style={{
+        borderColor: active ? 'var(--accent)' : 'var(--border)',
+        backgroundColor: active ? 'var(--accent-light)' : 'var(--bg-primary)',
+        color: active ? 'var(--accent)' : 'var(--text-secondary)',
+      }}
+    >
+      <span aria-hidden="true">{active ? '−' : '+'}</span>
+      {label}
+    </button>
+  )
+}
+
 export default function PaperTabView({ paperId }) {
   const [paper, setPaper] = useState(null)
   const [notes, setNotes] = useState('')
@@ -28,10 +47,13 @@ export default function PaperTabView({ paperId }) {
   const [tagsSaved, setTagsSaved] = useState(false)
   const [availableTags, setAvailableTags] = useState([])
   const [chatWidth, setChatWidth] = useState(420)
+  const [infoOpen, setInfoOpen] = useState(true)
+  const [chatOpen, setChatOpen] = useState(true)
   const [viewerOpen, setViewerOpen] = useState(false)
   const [files, setFiles] = useState([])
   const [abstractTranslating, setAbstractTranslating] = useState(false)
-  const [infoPanelWidth, setInfoPanelWidth] = useState(0)
+  const [infoPanelWidth, setInfoPanelWidth] = useState(360)
+  const [containerWidth, setContainerWidth] = useState(1200)
   const [isAnimating, setIsAnimating] = useState(false)
 
   const isMobile = useIsMobile()
@@ -41,29 +63,26 @@ export default function PaperTabView({ paperId }) {
   const containerRef = useRef(null)
   const containerWidthRef = useRef(0)
   const isDragging = useRef(false)
+  const consumedFileOpenRequestRef = useRef(null)
 
   const tabs = useStore((s) => s.tabs)
   const selectedModelId = useStore((s) => s.selectedModelId)
   const currentTab = tabs.find((t) => t.id === paperId)
   const initialFileId = currentTab?._initialFileId || null
+  const fileOpenRequestId = currentTab?._fileOpenRequestId || (initialFileId ? `legacy:${initialFileId}` : null)
 
-  // Auto-open viewer if tab has initialFileId
+  // Every file click carries a request id, so closing and reopening the same
+  // attachment is still observed as a new action.
   useEffect(() => {
-    if (initialFileId && files.length > 0) {
-      setViewerOpen(true)
-    }
-  }, [initialFileId, files])
-
-  // Clear _initialFileId from tab after consuming it
-  useEffect(() => {
-    if (initialFileId && viewerOpen) {
-      const { tabs: currentTabs } = useStore.getState()
-      const newTabs = currentTabs.map((t) =>
-        t.id === paperId ? { ...t, _initialFileId: null } : t
-      )
-      useStore.setState({ tabs: newTabs })
-    }
-  }, [viewerOpen, initialFileId, paperId])
+    if (
+      !fileOpenRequestId
+      || consumedFileOpenRequestRef.current === fileOpenRequestId
+      || !files.some((file) => file.id === initialFileId)
+    ) return
+    consumedFileOpenRequestRef.current = fileOpenRequestId
+    if (isMobile) setMobileViewerOpen(true)
+    else setViewerOpen(true)
+  }, [fileOpenRequestId, files, initialFileId, isMobile])
 
   // Measure container width with ResizeObserver
   useEffect(() => {
@@ -71,6 +90,7 @@ export default function PaperTabView({ paperId }) {
     if (!el) return
     const ro = new ResizeObserver(([entry]) => {
       containerWidthRef.current = entry.contentRect.width
+      setContainerWidth(entry.contentRect.width)
     })
     ro.observe(el)
     return () => ro.disconnect()
@@ -109,7 +129,7 @@ export default function PaperTabView({ paperId }) {
     const onMouseMove = (ev) => {
       if (!isDragging.current) return
       const cw = containerRef.current?.clientWidth || containerWidthRef.current || 1200
-      const maxInfo = cw - chatWidth - 300 - 12
+      const maxInfo = cw - (chatOpen ? chatWidth : 0) - 300 - 12
       const newWidth = Math.max(280, Math.min(maxInfo, startWidth + (ev.clientX - startX)))
       setInfoPanelWidth(newWidth)
     }
@@ -120,7 +140,7 @@ export default function PaperTabView({ paperId }) {
     }
     document.addEventListener('mousemove', onMouseMove)
     document.addEventListener('mouseup', onMouseUp)
-  }, [infoPanelWidth, chatWidth])
+  }, [infoPanelWidth, chatOpen, chatWidth])
 
   // Debounce ref: auto-save notes 1s after user stops typing
   const notesDebounceRef = useRef(null)
@@ -248,8 +268,13 @@ export default function PaperTabView({ paperId }) {
     setTimeout(() => setIsAnimating(false), 350)
   }
 
+  const toggleViewer = () => {
+    if (viewerOpen) closeViewer()
+    else openViewer()
+  }
+
   // Narrow screen check: disable three-panel if too narrow
-  const isNarrow = (containerRef.current?.clientWidth || containerWidthRef.current || 1200) < 768
+  const isNarrow = containerWidth < 768
 
   if (!paper) {
     return (
@@ -553,49 +578,77 @@ export default function PaperTabView({ paperId }) {
 
   // ── Desktop layout ──
   return (
-    <div ref={containerRef} className="flex flex-1 overflow-hidden">
-      {/* Left: Paper Info */}
+    <div ref={containerRef} className="flex min-w-0 flex-1 flex-col overflow-hidden">
       <div
-        className={`overflow-y-auto p-6 flex-shrink-0 ${transitionClass}`}
-        style={{
-          width: showInline ? infoPanelWidth : undefined,
-          flex: showInline ? 'none' : '1',
-          backgroundColor: 'var(--bg-secondary)',
-        }}
+        className="flex flex-shrink-0 items-center gap-2 border-b px-3 py-2"
+        style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-secondary)' }}
+        aria-label="论文工作区面板"
       >
-        <div className={showInline ? 'space-y-4' : 'mx-auto max-w-3xl space-y-4'}>
-          {paperInfoContent}
-        </div>
+        <span className="mr-1 text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
+          显示面板
+        </span>
+        <PanelToggle active={infoOpen} label="基础信息" onClick={() => setInfoOpen((open) => !open)} />
+        <PanelToggle active={viewerOpen} label="PDF 原文" onClick={toggleViewer} />
+        <PanelToggle active={chatOpen} label="论文助手" onClick={() => setChatOpen((open) => !open)} />
       </div>
 
-      {/* Handle1: info ↔ viewer (only in three-panel mode) */}
-      {showInline && <ResizeHandle onMouseDown={handleInfoResize} />}
+      <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+        {/* Left: Paper Info */}
+        {infoOpen && (
+          <div
+            className={`min-w-0 overflow-y-auto p-6 flex-shrink-0 ${transitionClass}`}
+            style={{
+              width: showInline ? infoPanelWidth : undefined,
+              flex: showInline ? 'none' : '1',
+              backgroundColor: 'var(--bg-secondary)',
+            }}
+          >
+            <div className={showInline ? 'space-y-4' : 'mx-auto max-w-3xl space-y-4'}>
+              {paperInfoContent}
+            </div>
+          </div>
+        )}
 
-      {/* Center: Inline File Viewer (only in three-panel mode) */}
-      {showInline && (
-        <div
-          className={`min-w-0 overflow-hidden ${transitionClass}`}
-          style={{ flex: 1 }}
-        >
-          <InlineFileViewer
-            paperId={paperId}
-            files={files}
-            onFilesChange={setFiles}
-            onClose={closeViewer}
-            initialFileId={initialFileId}
-          />
-        </div>
-      )}
+        {/* Handle1: info ↔ viewer */}
+        {showInline && infoOpen && <ResizeHandle onMouseDown={handleInfoResize} />}
 
-      {/* Handle2: (info or viewer) ↔ chat */}
-      <ResizeHandle onMouseDown={handleChatResize} />
+        {/* Center: Inline File Viewer */}
+        {showInline && (
+          <div
+            className={`min-w-0 overflow-hidden ${transitionClass}`}
+            style={{ flex: 1 }}
+          >
+            <InlineFileViewer
+              paperId={paperId}
+              files={files}
+              onFilesChange={setFiles}
+              onClose={closeViewer}
+              initialFileId={initialFileId}
+            />
+          </div>
+        )}
 
-      {/* Right: AI Chat */}
-      <div
-        className={`flex-shrink-0 flex flex-col ${transitionClass}`}
-        style={{ width: chatWidth, backgroundColor: 'var(--bg-primary)' }}
-      >
-        <AIChatPanel paper={paper} />
+        {/* Handle2: visible content ↔ chat */}
+        {chatOpen && (infoOpen || showInline) && <ResizeHandle onMouseDown={handleChatResize} />}
+
+        {/* Right: AI Chat */}
+        {chatOpen && (
+          <div
+            className={`min-w-0 flex-shrink-0 flex flex-col ${transitionClass}`}
+            style={{
+              width: infoOpen || showInline ? chatWidth : '100%',
+              backgroundColor: 'var(--bg-primary)',
+            }}
+          >
+            <AIChatPanel paper={paper} onClose={() => setChatOpen(false)} />
+          </div>
+        )}
+
+        {!infoOpen && !showInline && !chatOpen && (
+          <div className="flex flex-1 items-center justify-center p-6 text-sm" style={{ color: 'var(--text-secondary)' }}>
+            三个面板均已收起，可从上方重新打开。
+          </div>
+        )}
       </div>
     </div>
   )

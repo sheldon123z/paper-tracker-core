@@ -14,18 +14,25 @@ Workflow endpoints have been moved to routes/agui_workflow.py.
 import html
 import json
 import uuid
+from datetime import UTC, datetime
 
 from ag_ui.encoder import EventEncoder
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from ..auth.dependencies import get_current_user
 from ..control_plane.models import User
 from ..database import get_db
 from ..models import ChatMessage, GlobalChatSession, Paper, PaperFile
-from ..services.access_control import get_user_state, get_visible_or_404, is_manager, scope_session
+from ..services.access_control import (
+    get_user_state,
+    get_visible_or_404,
+    is_manager,
+    scope_session,
+    visible_scope,
+)
 from ..services.agui_streaming import (
     emit_llm_config_error,
     emit_paper_validation_error,
@@ -200,6 +207,81 @@ def _normalize_assistant_session_id(props: dict, thread_id: str) -> str:
     )
 
 
+def _assistant_requested_paper_id(props: dict):
+    """Resolve the explicit assistant surface while preserving legacy clients."""
+    assistant_scope = props.get("assistantScope")
+    if assistant_scope == "global":
+        return None
+    requested_paper_id = props.get("paperId")
+    if assistant_scope == "paper" and requested_paper_id in (None, ""):
+        raise HTTPException(status_code=400, detail="paperId is required for paper assistant scope")
+    return requested_paper_id
+
+
+def _resolve_assistant_session(
+    db: Session,
+    user: User,
+    session_id: str,
+    messages: list[dict],
+    requested_paper_id,
+) -> tuple[GlobalChatSession, Paper | None]:
+    """Resolve a session and its durable paper scope without guessing legacy ownership."""
+    paper = None
+    paper_id = None
+    if requested_paper_id not in (None, ""):
+        try:
+            paper_id = int(requested_paper_id)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail="paperId must be an integer") from exc
+        paper = get_visible_or_404(db, Paper, paper_id, user)
+
+    session = db.query(GlobalChatSession).filter(
+        GlobalChatSession.session_id == session_id,
+    ).first()
+    if session is not None:
+        if session.user_id != user.id:
+            raise HTTPException(status_code=409, detail="Session identifier is already in use")
+        if paper_id is not None and session.paper_id != paper_id:
+            raise HTTPException(
+                status_code=409,
+                detail="Assistant session belongs to a different paper",
+            )
+        if paper_id is None and session.paper_id is not None:
+            paper = get_visible_or_404(db, Paper, session.paper_id, user)
+        return session, paper
+
+    title = (last_user_content(messages) or "新会话")[:64]
+    session = GlobalChatSession(
+        session_id=session_id,
+        user_id=user.id,
+        paper_id=paper_id,
+        title=title,
+    )
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+    return session, paper
+
+
+def _require_accessible_assistant_session(
+    db: Session,
+    user: User,
+    session_id: str,
+) -> GlobalChatSession:
+    session = db.query(GlobalChatSession).filter(
+        GlobalChatSession.session_id == session_id,
+    ).first()
+    owns_session = session is not None and (
+        session.user_id == user.id
+        or (is_manager(user) and session.user_id is None)
+    )
+    if not owns_session:
+        raise HTTPException(status_code=404, detail="Assistant session not found")
+    if session.paper_id is not None:
+        get_visible_or_404(db, Paper, session.paper_id, user)
+    return session
+
+
 # ---------------------------------------------------------------------------
 # Paper Agent
 # ---------------------------------------------------------------------------
@@ -330,25 +412,28 @@ async def assistant_agent(request: Request, user: User = Depends(get_current_use
     body = await request.json()
     encoder = _make_encoder(request)
     thread_id, run_id, messages, props = parse_agui_request(body)
+    session_id = _normalize_assistant_session_id(props, thread_id)
+    session, paper = _resolve_assistant_session(
+        db,
+        user,
+        session_id,
+        messages,
+        _assistant_requested_paper_id(props),
+    )
+    paper_context = _build_paper_context(db, paper, user, props) if paper else None
+    user_content = last_user_content(messages)
+    if user_content:
+        session.updated_at = datetime.now(UTC)
+        if session.title in ("新会话", user_content[:64]):
+            update_session_title(db, session, user_content)
+        else:
+            db.commit()
 
     async def stream():
         config_id = props.get("configId")
-        session_id = _normalize_assistant_session_id(props, thread_id)
         msg_id = str(uuid.uuid4())
 
         with RequestTimer(logger, method="POST", path="/api/agui/assistant", endpoint="assistant_agent", session_id=session_id) as timer:
-            session = db.query(GlobalChatSession).filter(
-                GlobalChatSession.session_id == session_id,
-                GlobalChatSession.user_id == user.id,
-            ).first()
-            if not session:
-                if db.query(GlobalChatSession).filter(GlobalChatSession.session_id == session_id).first():
-                    raise HTTPException(status_code=409, detail="Session identifier is already in use")
-                title = (last_user_content(messages) or "新会话")[:64]
-                db.add(GlobalChatSession(session_id=session_id, user_id=user.id, title=title))
-                db.commit()
-                session = db.query(GlobalChatSession).filter(GlobalChatSession.session_id == session_id).first()
-
             resolved, err = _resolve_config_or_error(db, config_id, encoder, thread_id, run_id, msg_id)
             if err is not None:
                 timer.status_code = 400
@@ -364,17 +449,13 @@ async def assistant_agent(request: Request, user: User = Depends(get_current_use
             else:
                 system_prompt = f"{system_prompt}\n\n{tool_descriptions}"
 
-            # The paper detail panel shares the assistant session system with
-            # the floating/full-page assistant. Preserve its active paper and
-            # optional PDF context on every turn in that surface.
-            paper_id = props.get("paperId")
-            if paper_id:
-                paper = db.query(Paper).filter(Paper.id == paper_id).first()
-                if paper:
-                    system_prompt += (
-                        "\n\n## 当前论文上下文\n"
-                        f"{_build_paper_context(db, paper, user, props)}"
-                    )
+            # A paper-bound session keeps its paper context even when it is
+            # reopened from the global assistant, where no paper tab is active.
+            if paper_context:
+                system_prompt += (
+                    "\n\n## 当前论文上下文\n"
+                    f"{paper_context}"
+                )
 
             agent_config = ChatAgentConfig(
                 agent_type="assistant",
@@ -390,14 +471,8 @@ async def assistant_agent(request: Request, user: User = Depends(get_current_use
                 department_id=getattr(user, "department_id", None),
             )
 
-            user_content = last_user_content(messages)
-
             async for line in run_chat_agent(agent_config, messages, encoder, thread_id, run_id, db):
                 yield line
-
-            # Smart session title: update from first user message if still default
-            if session and session.title in ("新会话", user_content[:64] if user_content else ""):
-                update_session_title(db, session, user_content)
             timer.status_code = 200
 
     return StreamingResponse(stream(), media_type=encoder.get_content_type())
@@ -409,25 +484,52 @@ async def assistant_agent(request: Request, user: User = Depends(get_current_use
 
 @router.get("/assistant/sessions")
 def list_assistant_sessions(
+    paper_id: int | None = None,
     limit: int = 20,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """List assistant sessions (session_ids starting with 'ast-')."""
+    """List all accessible assistant sessions, or only one paper's sessions."""
     owner_filter = (
         or_(GlobalChatSession.user_id == user.id, GlobalChatSession.user_id.is_(None))
         if is_manager(user) else GlobalChatSession.user_id == user.id
     )
-    sessions = (
-        db.query(GlobalChatSession)
+    query = (
+        db.query(GlobalChatSession, Paper.title.label("paper_title"))
+        .outerjoin(Paper, Paper.id == GlobalChatSession.paper_id)
         .filter(GlobalChatSession.session_id.like("ast-%"), owner_filter)
-        .order_by(GlobalChatSession.created_at.desc())
+    )
+
+    if paper_id is not None:
+        get_visible_or_404(db, Paper, paper_id, user)
+        query = query.filter(GlobalChatSession.paper_id == paper_id)
+    else:
+        paper_scope = visible_scope(Paper, user)
+        if paper_scope is not True:
+            query = query.filter(or_(GlobalChatSession.paper_id.is_(None), paper_scope))
+
+    sessions = (
+        query
+        .order_by(
+            func.coalesce(
+                GlobalChatSession.updated_at,
+                GlobalChatSession.created_at,
+            ).desc(),
+            GlobalChatSession.id.desc(),
+        )
         .limit(limit)
         .all()
     )
     return [
-        {"session_id": s.session_id, "title": s.title, "created_at": str(s.created_at)}
-        for s in sessions
+        {
+            "session_id": session.session_id,
+            "title": session.title,
+            "paper_id": session.paper_id,
+            "paper_title": paper_title,
+            "created_at": str(session.created_at),
+            "updated_at": str(session.updated_at or session.created_at),
+        }
+        for session, paper_title in sessions
     ]
 
 
@@ -442,9 +544,7 @@ def get_session_messages(
     Tool messages (role='tool') are returned with parsed JSON content
     so the frontend can reconstruct tool call cards.
     """
-    session = db.query(GlobalChatSession).filter(GlobalChatSession.session_id == session_id).first()
-    if session is None or (session.user_id != user.id and not (is_manager(user) and session.user_id is None)):
-        raise HTTPException(status_code=404, detail="Assistant session not found")
+    session = _require_accessible_assistant_session(db, user, session_id)
     messages = (
         db.query(ChatMessage)
         .filter(
@@ -474,11 +574,7 @@ def delete_assistant_session(
     db: Session = Depends(get_db),
 ):
     """Delete an assistant session and all its messages."""
-    session = db.query(GlobalChatSession).filter(GlobalChatSession.session_id == session_id).first()
-    if not session:
-        raise HTTPException(status_code=404, detail="Assistant session not found")
-    if session.user_id != user.id and not (is_manager(user) and session.user_id is None):
-        raise HTTPException(status_code=404, detail="Assistant session not found")
+    session = _require_accessible_assistant_session(db, user, session_id)
 
     deleted = (
         db.query(ChatMessage)

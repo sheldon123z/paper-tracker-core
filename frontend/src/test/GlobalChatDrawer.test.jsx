@@ -38,11 +38,15 @@ import GlobalChatDrawer from '../components/chat/GlobalChatDrawer'
 describe('GlobalChatDrawer session switching', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    useStore.setState({ assistantSessionId: null, globalChatOpen: false })
+    useStore.setState({
+      assistantSessionId: null,
+      paperAssistantSessionIds: {},
+      globalChatOpen: false,
+    })
     mocks.get.mockResolvedValue({
       data: [
         { session_id: 'ast-session-a', title: 'Session A' },
-        { session_id: 'ast-session-b', title: 'Session B' },
+        { session_id: 'ast-session-b', title: 'Session B', paper_id: 61, paper_title: 'MARL Paper' },
       ],
     })
   })
@@ -65,10 +69,11 @@ describe('GlobalChatDrawer session switching', () => {
 
     const picker = screen.getByRole('combobox', { name: '切换聊天记录' })
     await user.click(picker)
-    await user.click(screen.getByRole('option', { name: 'Session B' }))
+    await user.click(screen.getByRole('option', { name: /Session B/ }))
 
     expect(useStore.getState().assistantSessionId).toBe('ast-session-b')
     expect(mocks.history).toHaveBeenLastCalledWith('ast-session-b', true)
+    expect(screen.getByRole('combobox', { name: '切换聊天记录' })).toHaveTextContent('Session B')
   })
 
   it('starts a separate conversation from the drawer header', async () => {

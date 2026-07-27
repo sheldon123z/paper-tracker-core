@@ -1,0 +1,45 @@
+{
+  "name": "paper-tracker-remotion-videos",
+  "version": "1.0.0",
+  "description": "Paper Tracker 系统流程与系统创新性讲解视频",
+  "repository": {},
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "@remotion/captions": "4.0.491",
+    "@remotion/cli": "4.0.491",
+    "@remotion/media": "4.0.491",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "remotion": "4.0.491"
+  },
+  "devDependencies": {
+    "@remotion/eslint-config-flat": "4.0.491",
+    "@types/react": "19.2.7",
+    "@types/web": "0.0.166",
+    "eslint": "9.19.0",
+    "prettier": "3.8.1",
+    "typescript": "5.9.3"
+  },
+  "scripts": {
+    "studio": "remotion studio",
+    "dev": "remotion studio",
+    "build": "remotion bundle",
+    "assets:verify": "node scripts/verify-assets.mjs --video innovation --review && node scripts/verify-assets.mjs --video workflow",
+    "assets:verify:source": "node scripts/verify-assets.mjs --video innovation --review --source-only && node scripts/verify-assets.mjs --video workflow --source-only",
+    "render:innovation": "powershell -ExecutionPolicy Bypass -File scripts/render-video.ps1 -Video innovation",
+    "render:innovation:stills": "powershell -ExecutionPolicy Bypass -File scripts/render-stills.ps1 -Video innovation",
+    "render:innovation:review": "powershell -ExecutionPolicy Bypass -File scripts/render-review.ps1",
+    "render:innovation:voiced": "node scripts/finalize-innovation-video.mjs && node scripts/verify-innovation-video.mjs",
+    "verify:innovation:voiced": "node scripts/verify-innovation-video.mjs",
+    "render:workflow": "powershell -ExecutionPolicy Bypass -File scripts/render-video.ps1 -Video workflow",
+    "render:workflow:stills": "powershell -ExecutionPolicy Bypass -File scripts/render-stills.ps1 -Video workflow",
+    "render:all": "npm run render:innovation && npm run render:workflow",
+    "upgrade": "remotion upgrade",
+    "lint": "eslint src && tsc --noEmit",
+    "check": "npm run lint"
+  },
+  "sideEffects": [
+    "*.css"
+  ]
+}

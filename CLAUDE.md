@@ -61,9 +61,9 @@ Paper Tracker Core is a local-first full-stack academic paper tracking system fo
 ### Backend
 
 ```bash
-cd backend
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r backend/requirements-dev.txt
+cd backend
 python main.py
 ```
 
@@ -150,9 +150,8 @@ Required or important:
 Backend tests:
 
 ```bash
-cd backend
 source .venv/bin/activate
-pytest
+python -m pytest backend/tests
 ```
 
 Frontend build:

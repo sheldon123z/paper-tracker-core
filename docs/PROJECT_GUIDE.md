@@ -35,9 +35,9 @@ Paper Tracker Core 是一个面向学术论文追踪和研究助手的全栈系�
 ### Backend
 
 ```bash
-cd backend
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r backend/requirements-dev.txt
+cd backend
 python main.py
 ```
 

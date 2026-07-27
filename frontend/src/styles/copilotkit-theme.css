@@ -321,13 +321,37 @@ div[class*="credits"] {
   transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease;
 }
 
-.assistant-session-toolbar__option span {
+.assistant-session-toolbar__option-content,
+.assistant-session-toolbar__option-title,
+.assistant-session-toolbar__option-scope {
   min-width: 0;
   overflow: hidden;
-  font-size: 12px;
-  line-height: 1.45;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.assistant-session-toolbar__action:disabled,
+.assistant-session-toolbar__selector:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
+.assistant-session-toolbar__option-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+.assistant-session-toolbar__option-title {
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.assistant-session-toolbar__option-scope {
+  color: var(--text-muted-strong);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.35;
 }
 
 .assistant-session-toolbar__option svg {
@@ -424,6 +448,45 @@ div[class*="credits"] {
 .copilotKitInput:focus-within {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--ring, rgba(59, 130, 246, 0.15));
+}
+
+.assistant-session-loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--text-muted-strong);
+  font-size: 12px;
+}
+
+/* Paper assistant composer: keep quick actions immediately above the input. */
+.paper-chat-layout {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.paper-chat-layout__messages {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.paper-chat-layout__composer {
+  position: relative;
+  z-index: 20;
+  flex: 0 0 auto;
+  background:
+    linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--bg-primary) 94%, transparent) 18%);
+  padding-top: 8px;
+}
+
+.paper-chat-layout__composer [data-testid="copilot-suggestions"] {
+  margin: 0 !important;
+  padding-bottom: 8px !important;
 }
 
 /* CopilotKit v2 suggestion pills are compiled with Tailwind v4 utilities.

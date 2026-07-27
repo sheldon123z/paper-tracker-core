@@ -8,8 +8,9 @@ import {
 import api from '../api'
 import ExpandedPaperFiles from '../components/paper/ExpandedPaperFiles'
 import FilterPanel from '../components/paper/FilterPanel'
+import PdfBatchImportModal from '../components/paper/PdfBatchImportModal'
 import SearchBar from '../components/paper/SearchBar'
-import { Badge, Button, Input, Modal, Select, useToast } from '../components/ui'
+import { Badge, Button, Modal, Select, useToast } from '../components/ui'
 import useIsMobile from '../hooks/useIsMobile'
 import { PAPER_TAGS_UPDATED_EVENT } from '../paperEvents'
 import useStore from '../store'
@@ -112,8 +113,6 @@ export default function PapersPage() {
   const [libraryScope, setLibraryScope] = useState('all')
   const [departments, setDepartments] = useState([])
   const [createOpen, setCreateOpen] = useState(false)
-  const [creating, setCreating] = useState(false)
-  const [newPaper, setNewPaper] = useState({ title: '', authors: '', link: '', abstract: '', visibility: 'public', department_id: '' })
   const { openTab, user } = useStore()
   const { addToast } = useToast()
   const isMobile = useIsMobile()
@@ -294,24 +293,6 @@ export default function PapersPage() {
     } catch {}
   }
 
-  const handleCreatePaper = async () => {
-    setCreating(true)
-    try {
-      const payload = { title: newPaper.title, authors: newPaper.authors, link: newPaper.link || null, abstract: newPaper.abstract }
-      if (user?.role === 'manager') {
-        payload.visibility = newPaper.visibility
-        payload.department_id = newPaper.visibility === 'department' ? Number(newPaper.department_id) : null
-      }
-      await api.post('/api/papers', payload)
-      setNewPaper({ title: '', authors: '', link: '', abstract: '', visibility: 'public', department_id: '' })
-      setCreateOpen(false)
-      await loadPapers(1)
-      addToast({ type: 'success', message: '论文已添加' })
-    } catch (err) {
-      addToast({ type: 'error', message: err.response?.data?.detail || '添加论文失败' })
-    } finally { setCreating(false) }
-  }
-
   // ── TanStack Table columns ──────────────────────────────────
 
   const columns = useMemo(() => [
@@ -470,6 +451,13 @@ export default function PapersPage() {
   // Sorting state synced with server-side sort params
   const [sorting, setSorting] = useState([{ id: 'published_date', desc: true }])
 
+  const toggleColumnSorting = (columnId) => {
+    setSorting((current) => {
+      const active = current[0]
+      return [{ id: columnId, desc: active?.id === columnId ? !active.desc : true }]
+    })
+  }
+
   // Sync TanStack sorting → our sortBy/sortDir → triggers useEffect → reloads data
   useEffect(() => {
     if (sorting.length > 0) {
@@ -510,7 +498,7 @@ export default function PapersPage() {
             </h1>
           </div>
           <div className="flex gap-2">
-            <Button size="sm" onClick={() => setCreateOpen(true)}>新增论文</Button>
+            <Button size="sm" onClick={() => setCreateOpen(true)}>批量导入 PDF</Button>
             <Button variant="secondary" size="sm" onClick={handleExport}>导出 BibTeX</Button>
           </div>
         </div>
@@ -619,13 +607,15 @@ export default function PapersPage() {
                   <th
                     key={header.id}
                     colSpan={header.colSpan}
+                    aria-sort={header.column.getIsSorted() === 'asc' ? 'ascending' : header.column.getIsSorted() === 'desc' ? 'descending' : undefined}
                     className="px-2 py-2.5 border-b text-left font-medium select-none"
                     style={{ borderColor: 'var(--border)', width: header.getSize(), position: 'relative' }}
                   >
                     {header.isPlaceholder ? null : header.column.getCanSort() ? (
                       <button
                         type="button"
-                        onClick={header.column.getToggleSortingHandler()}
+                        onClick={() => toggleColumnSorting(header.column.id)}
+                        aria-label={`${String(header.column.columnDef.header)}，${header.column.getIsSorted() === 'asc' ? '当前升序，切换为降序' : header.column.getIsSorted() === 'desc' ? '当前降序，切换为升序' : '切换为升序'}`}
                         className="flex items-center gap-1 hover:opacity-80 font-medium"
                         style={{ color: header.column.getIsSorted() ? 'var(--accent)' : 'var(--text-secondary)' }}
                       >
@@ -739,18 +729,14 @@ export default function PapersPage() {
       >
         <p>确定删除已选择的 {selected.size} 篇论文？相关附件也会一并删除，此操作不可撤销。</p>
       </Modal>
-      <Modal isOpen={createOpen} onClose={() => !creating && setCreateOpen(false)} title="新增论文" size="lg"
-        actions={<><Button variant="secondary" disabled={creating} onClick={() => setCreateOpen(false)}>取消</Button><Button loading={creating} disabled={!newPaper.title.trim() || (user?.role === 'manager' && newPaper.visibility === 'department' && !newPaper.department_id)} onClick={handleCreatePaper}>保存论文</Button></>}
-      >
-        <div className="space-y-3">
-          <Input label="标题" value={newPaper.title} onChange={(event) => setNewPaper((value) => ({ ...value, title: event.target.value }))} required />
-          <Input label="作者" value={newPaper.authors} onChange={(event) => setNewPaper((value) => ({ ...value, authors: event.target.value }))} />
-          <Input label="论文链接" type="url" value={newPaper.link} onChange={(event) => setNewPaper((value) => ({ ...value, link: event.target.value }))} />
-          <label className="flex flex-col gap-1.5 text-xs font-semibold uppercase tracking-wider text-secondary">摘要<textarea className="input-surface min-h-28 w-full rounded-2xl border px-4 py-3 text-sm font-normal normal-case tracking-normal text-primary outline-none focus:border-accent focus:ring-2 focus:ring-accent/25" value={newPaper.abstract} onChange={(event) => setNewPaper((value) => ({ ...value, abstract: event.target.value }))} /></label>
-          {user?.role === 'manager' && <div className="grid gap-3 sm:grid-cols-2"><Select label="入库范围" value={newPaper.visibility} onChange={(visibility) => setNewPaper((value) => ({ ...value, visibility }))} options={[{ value: 'public', label: '公共数据库' }, { value: 'department', label: '部门私有数据库' }]} />{newPaper.visibility === 'department' && <Select label="所属部门" value={newPaper.department_id} onChange={(department_id) => setNewPaper((value) => ({ ...value, department_id }))} options={[{ value: '', label: '请选择部门' }, ...departments.filter((department) => department.status === 'active').map((department) => ({ value: String(department.id), label: department.name }))]} />}</div>}
-          {user?.role !== 'manager' && <p className="text-xs text-tertiary">新论文将自动保存到你的部门私有数据库。</p>}
-        </div>
-      </Modal>
+      <PdfBatchImportModal
+        isOpen={createOpen}
+        onClose={() => setCreateOpen(false)}
+        user={user}
+        departments={departments}
+        onImported={() => loadPapers(1)}
+        addToast={addToast}
+      />
     </div>
   )
 }

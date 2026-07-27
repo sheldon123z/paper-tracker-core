@@ -1,0 +1,9 @@
+node_modules
+.tools
+dist
+build
+.DS_Store
+.env
+out
+output
+public

@@ -3,19 +3,25 @@ from collections import defaultdict
 
 DEFAULT_KEYWORDS = {
     "llm": 2.0,
+    "大语言模型": 2.0,
     "transformer": 1.5,
+    "变换器": 1.5,
     "retrieval": 1.2,
+    "检索": 1.2,
     "multimodal": 1.0,
+    "多模态": 1.0,
     "agent": 0.8,
+    "智能体": 0.8,
     "benchmark": 0.6,
+    "基准": 0.6,
 }
 
 CATEGORY_KEYWORDS = {
-    "NLP": ["language", "text", "translation", "nlp", "token"],
-    "CV": ["vision", "image", "video", "detection", "segmentation"],
-    "ML Systems": ["system", "inference", "latency", "throughput", "serving"],
-    "LLM": ["llm", "transformer", "prompt", "alignment", "instruction"],
-    "Robotics": ["robot", "control", "manipulation", "trajectory"],
+    "NLP": ["language", "text", "translation", "nlp", "token", "自然语言", "文本", "翻译", "分词"],
+    "CV": ["vision", "image", "video", "detection", "segmentation", "视觉", "图像", "视频", "检测", "分割"],
+    "ML Systems": ["system", "inference", "latency", "throughput", "serving", "系统", "推理", "时延", "吞吐"],
+    "LLM": ["llm", "transformer", "prompt", "alignment", "instruction", "大语言模型", "变换器", "提示词", "对齐", "指令"],
+    "Robotics": ["robot", "control", "manipulation", "trajectory", "机器人", "控制", "操作", "轨迹"],
 }
 
 

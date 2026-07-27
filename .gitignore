@@ -74,7 +74,7 @@ results/
 .omc/
 backend/.omc/
 
-# Conda environment (unused, backend uses .venv.bak/)
+# Conda state (Python dependencies use one worktree-root .venv per worktree)
 .conda/
 
 # Cloudflare Worker (separate deploy)

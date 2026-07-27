@@ -3,6 +3,7 @@
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-width: 0;
 }
 
 .pdf-toolbar {
@@ -17,13 +18,22 @@
 
 .pdf-pages {
   flex: 1;
-  overflow-y: auto;
+  min-width: 0;
+  overflow: auto;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   padding: 16px;
-  gap: 16px;
   background-color: var(--bg-tertiary, #f0f0f0);
+}
+
+.pdf-pages .react-pdf__Document {
+  display: flex;
+  width: max-content;
+  min-width: 100%;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
 }
 
 .pdf-page {
@@ -178,6 +188,10 @@
 
 /* Panel transition for three-panel layout */
 .panel-transition { transition: width 0.3s ease, flex 0.3s ease; }
+
+@media (prefers-reduced-motion: reduce) {
+  .panel-transition { transition: none; }
+}
 
 /* Dark mode adjustments */
 .dark .pdf-pages {
