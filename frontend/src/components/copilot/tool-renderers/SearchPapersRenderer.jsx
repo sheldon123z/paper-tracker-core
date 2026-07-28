@@ -14,15 +14,10 @@ export default function SearchPapersRenderer({ label, status, args, result }) {
 
   const { data } = parseToolResult(result)
 
+  // 搜索无结果时不渲染卡片：助手通常会在正文里说明「没有找到」，
+  // 再叠一张空卡片只会占据版面且信息量为零。
   if (!data || !Array.isArray(data) || data.length === 0) {
-    return (
-      <CardShell>
-        <CardHeader palette={PALETTES.search} icon={<AppIcon name="search" size={15} />} title={label} badge="0 篇" />
-        <div style={{ padding: '20px 16px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: 12 }}>
-          未找到相关论文
-        </div>
-      </CardShell>
-    )
+    return null
   }
 
   // Show search query if available
