@@ -97,6 +97,7 @@ function SortIcon({ direction }) {
 
 export default function PapersPage() {
   const [papers, setPapers] = useState([])
+  const [loadError, setLoadError] = useState('')
   const [meta, setMeta] = useState({ total: 0, page: 1, size: 20 })
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
@@ -148,8 +149,15 @@ export default function PapersPage() {
       setPage(p)
       setSelected(new Set())
       setExpandedData({})
+      setLoadError('')
     } catch (err) {
       console.error('Failed to load papers', err)
+      // 此前这里静默吞掉了错误，页面只显示「暂无数据」，
+      // 让权限或网络故障看起来像是论文库真的为空。
+      const message = err?.response?.data?.detail || '论文加载失败，请稍后重试'
+      setPapers([])
+      setLoadError(message)
+      addToast({ type: 'error', message })
     } finally {
       setLoading(false)
     }
@@ -207,8 +215,13 @@ export default function PapersPage() {
         setMeta(res.data.meta || { total: 0, page: 1, size: 20 })
         setPage(1)
         setSelected(new Set())
+        setLoadError('')
       } catch (err) {
         console.error('Failed to search papers', err)
+        const message = err?.response?.data?.detail || '论文搜索失败，请稍后重试'
+        setPapers([])
+        setLoadError(message)
+        addToast({ type: 'error', message })
       } finally {
         setLoading(false)
       }
@@ -545,7 +558,9 @@ export default function PapersPage() {
               </div>
             ))
           ) : papers.length === 0 ? (
-            <div className="text-center py-12 text-sm" style={{ color: 'var(--text-secondary)' }}>暂无数据</div>
+            <div className="text-center py-12 text-sm" style={{ color: loadError ? 'var(--danger)' : 'var(--text-secondary)' }}>
+              {loadError || '暂无数据'}
+            </div>
           ) : (
             papers.map((p) => (
               <div
@@ -661,8 +676,8 @@ export default function PapersPage() {
               ))
             ) : papers.length === 0 ? (
               <tr>
-                <td colSpan={columns.length} className="px-6 py-12 text-center" style={{ color: 'var(--text-secondary)' }}>
-                  暂无数据
+                <td colSpan={columns.length} className="px-6 py-12 text-center" style={{ color: loadError ? 'var(--danger)' : 'var(--text-secondary)' }}>
+                  {loadError || '暂无数据'}
                 </td>
               </tr>
             ) : (
