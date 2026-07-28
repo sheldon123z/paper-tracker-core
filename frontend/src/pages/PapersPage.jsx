@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import {
   flexRender,
   getCoreRowModel,
@@ -98,6 +98,10 @@ function SortIcon({ direction }) {
 export default function PapersPage() {
   const [papers, setPapers] = useState([])
   const [loadError, setLoadError] = useState('')
+  // 并发守卫：只有最后一次发起的请求可以写入列表状态。
+  // 既避免较早的响应（尤其是失败）覆盖较新的结果，也让同一次初始加载
+  // 被多个 effect 触发时只弹出一条错误提示。
+  const requestIdRef = useRef(0)
   const [meta, setMeta] = useState({ total: 0, page: 1, size: 20 })
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
@@ -130,6 +134,7 @@ export default function PapersPage() {
   // ── Data fetching ────────────────────────────────────────────
 
   const loadPapers = async (p = page) => {
+    const requestId = ++requestIdRef.current
     setLoading(true)
     try {
       const params = {
@@ -144,6 +149,7 @@ export default function PapersPage() {
         ...scopeParams(),
       }
       const res = await api.get('/api/papers', { params })
+      if (requestId !== requestIdRef.current) return
       setPapers(res.data.items || [])
       setMeta(res.data.meta || { total: 0, page: p, size: 20 })
       setPage(p)
@@ -152,6 +158,7 @@ export default function PapersPage() {
       setLoadError('')
     } catch (err) {
       console.error('Failed to load papers', err)
+      if (requestId !== requestIdRef.current) return
       // 此前这里静默吞掉了错误，页面只显示「暂无数据」，
       // 让权限或网络故障看起来像是论文库真的为空。
       const message = err?.response?.data?.detail || '论文加载失败，请稍后重试'
@@ -159,7 +166,7 @@ export default function PapersPage() {
       setLoadError(message)
       addToast({ type: 'error', message })
     } finally {
-      setLoading(false)
+      if (requestId === requestIdRef.current) setLoading(false)
     }
   }
 
@@ -197,6 +204,7 @@ export default function PapersPage() {
   const handleSearch = (params) => {
     setSearchParams(params)
     const load = async () => {
+      const requestId = ++requestIdRef.current
       setLoading(true)
       try {
         const reqParams = {
@@ -211,6 +219,7 @@ export default function PapersPage() {
           ...scopeParams(),
         }
         const res = await api.get('/api/papers', { params: reqParams })
+        if (requestId !== requestIdRef.current) return
         setPapers(res.data.items || [])
         setMeta(res.data.meta || { total: 0, page: 1, size: 20 })
         setPage(1)
@@ -218,12 +227,13 @@ export default function PapersPage() {
         setLoadError('')
       } catch (err) {
         console.error('Failed to search papers', err)
+        if (requestId !== requestIdRef.current) return
         const message = err?.response?.data?.detail || '论文搜索失败，请稍后重试'
         setPapers([])
         setLoadError(message)
         addToast({ type: 'error', message })
       } finally {
-        setLoading(false)
+        if (requestId === requestIdRef.current) setLoading(false)
       }
     }
     load()
