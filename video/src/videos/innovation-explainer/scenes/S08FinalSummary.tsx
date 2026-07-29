@@ -4,11 +4,11 @@ import {
   type GlyphType,
 } from "../../../shared/components/FeatureGlyph";
 import { COLORS, FONT_FAMILY } from "../../../shared/theme";
-import { SYSTEM_NAME } from "../brand";
+import { SERVICE_NAME } from "../brand";
 
 const SUMMARY: { label: string; type: GlyphType }[] = [
   { label: "知识资产", type: "grid" },
-  { label: "智能体协同", type: "model" },
+  { label: "领域大模型", type: "model" },
   { label: "安全治理", type: "governance" },
 ];
 
@@ -65,7 +65,7 @@ export const S08FinalSummary: React.FC<{ durationInFrames: number }> = ({
             fontWeight: 760,
           }}
         >
-          {SYSTEM_NAME}
+          {SERVICE_NAME}
         </div>
         <div
           style={{
@@ -128,7 +128,7 @@ export const S08FinalSummary: React.FC<{ durationInFrames: number }> = ({
           fontWeight: 720,
         }}
       >
-        让智能体助力创新
+        让知识服务助力重大工程技术创新
       </div>
     </AbsoluteFill>
   );

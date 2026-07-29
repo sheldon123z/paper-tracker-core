@@ -6,7 +6,6 @@ import AppIcon from '../ui/AppIcon'
 
 const navItems = [
   { path: '/', label: '仪表盘', icon: 'dashboard', description: '研究概览' },
-  { path: '/feeds', label: '订阅源', icon: 'feeds', description: '采集通道' },
   { path: '/papers', label: '论文库', icon: 'papers', description: '文献总览' },
   { path: '/assistant', label: 'AI 助手', icon: 'assistant', description: '智能检索' },
   { path: '/workflow', label: '科研工作流', icon: 'workflow', description: '自动编排' },
@@ -80,8 +79,10 @@ export default function Sidebar() {
                 </span>
                 <span className="hidden md:inline">Research Grid</span>
               </div>
-              <h1 className="hidden font-display text-[22px] font-semibold text-primary md:block">Paper Tracker Core</h1>
-              <p className="mt-2 hidden text-sm leading-6 text-secondary md:block">
+              <h1 className="hidden text-balance font-display text-[18px] font-semibold leading-7 text-primary md:block">
+                专业领域大模型智能文献检索与知识服务
+              </h1>
+              <p className="mt-2 hidden text-balance text-sm leading-6 text-secondary md:block">
                 科研采集、AI 分析与工作流编排控制台
               </p>
             </div>

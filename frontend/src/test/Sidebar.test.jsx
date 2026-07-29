@@ -68,4 +68,11 @@ describe('Sidebar', () => {
     expect(reopenedSwitch.parentElement).toHaveClass('justify-end')
     expect(sidebarContent).not.toHaveAttribute('hidden')
   })
+
+  it('does not expose the RSS subscriptions entry', () => {
+    renderSidebar()
+
+    expect(screen.queryByRole('link', { name: /订阅源/ })).not.toBeInTheDocument()
+    expect(document.querySelector('a[href="/feeds"]')).not.toBeInTheDocument()
+  })
 })

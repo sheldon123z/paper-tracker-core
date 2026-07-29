@@ -1077,7 +1077,7 @@ async def discussion_agent_node(state: ResearchWorkflowState, *, resolved: Resol
     )
     response = await llm.ainvoke(
         [
-            SystemMessage(content="你是 Paper Tracker Core 的 workflow 助手，负责围绕已有工作流结果回答追问。默认中文。"),
+            SystemMessage(content="你是专业领域大模型智能文献检索与知识服务的 workflow 助手，负责围绕已有工作流结果回答追问。默认中文。"),
             HumanMessage(content=prompt),
         ]
     )

@@ -1,78 +1,78 @@
 {
   "fps": 30,
-  "durationInFrames": 6150,
-  "durationSeconds": 205,
-  "mode": "silent-review",
+  "durationInFrames": 7497,
+  "durationSeconds": 249.9,
+  "mode": "volcengine-tts-voiced",
   "scenes": [
     {
       "id": "scene-intro",
       "startFrame": 0,
-      "durationInFrames": 660,
+      "durationInFrames": 704,
       "startSeconds": 0,
-      "durationSeconds": 22
+      "durationSeconds": 23.466667
+    },
+    {
+      "id": "scene-06",
+      "startFrame": 704,
+      "durationInFrames": 1125,
+      "startSeconds": 23.466667,
+      "durationSeconds": 37.5
     },
     {
       "id": "scene-00",
-      "startFrame": 660,
-      "durationInFrames": 420,
-      "startSeconds": 22,
-      "durationSeconds": 14
+      "startFrame": 1829,
+      "durationInFrames": 494,
+      "startSeconds": 60.966667,
+      "durationSeconds": 16.466667
     },
     {
       "id": "scene-01",
-      "startFrame": 1080,
+      "startFrame": 2323,
       "durationInFrames": 420,
-      "startSeconds": 36,
+      "startSeconds": 77.433333,
       "durationSeconds": 14
     },
     {
       "id": "scene-02",
-      "startFrame": 1500,
-      "durationInFrames": 600,
-      "startSeconds": 50,
-      "durationSeconds": 20
+      "startFrame": 2743,
+      "durationInFrames": 660,
+      "startSeconds": 91.433333,
+      "durationSeconds": 22
     },
     {
       "id": "scene-04",
-      "startFrame": 2100,
-      "durationInFrames": 900,
-      "startSeconds": 70,
-      "durationSeconds": 30
+      "startFrame": 3403,
+      "durationInFrames": 970,
+      "startSeconds": 113.433333,
+      "durationSeconds": 32.333333
     },
     {
       "id": "scene-architecture",
-      "startFrame": 3000,
-      "durationInFrames": 900,
-      "startSeconds": 100,
-      "durationSeconds": 30
+      "startFrame": 4373,
+      "durationInFrames": 1189,
+      "startSeconds": 145.766667,
+      "durationSeconds": 39.633333
     },
     {
       "id": "scene-03",
-      "startFrame": 3900,
-      "durationInFrames": 780,
-      "startSeconds": 130,
-      "durationSeconds": 26
-    },
-    {
-      "id": "scene-06",
-      "startFrame": 4680,
-      "durationInFrames": 780,
-      "startSeconds": 156,
-      "durationSeconds": 26
+      "startFrame": 5562,
+      "durationInFrames": 820,
+      "startSeconds": 185.4,
+      "durationSeconds": 27.333333
     },
     {
       "id": "scene-07",
-      "startFrame": 5460,
-      "durationInFrames": 510,
-      "startSeconds": 182,
-      "durationSeconds": 17
+      "startFrame": 6382,
+      "durationInFrames": 923,
+      "startSeconds": 212.733333,
+      "durationSeconds": 30.766667
     },
     {
       "id": "scene-outro",
-      "startFrame": 5970,
-      "durationInFrames": 180,
-      "startSeconds": 199,
-      "durationSeconds": 6
+      "startFrame": 7305,
+      "durationInFrames": 192,
+      "startSeconds": 243.5,
+      "durationSeconds": 6.4
     }
   ]
 }

@@ -128,8 +128,9 @@
   font-weight: 400;
   line-height: 1.6;
   color: var(--login-text-mid);
-  max-width: 480px;
+  max-width: min(680px, 100%);
   margin-bottom: 48px;
+  text-wrap: pretty;
 }
 
 /* ---- Floating Data Chips ---- */
@@ -279,33 +280,40 @@
 /* ---- Brand Header ---- */
 .login-brand {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
+  gap: 16px;
   margin-bottom: 28px;
 }
 
 .login-brand-left {
   display: flex;
-  align-items: center;
+  min-width: 0;
+  flex: 1;
+  align-items: flex-start;
   gap: 12px;
 }
 
 .login-brand-logo {
   width: 32px;
   height: 32px;
+  flex-shrink: 0;
   position: relative;
 }
 
 .login-brand-name {
-  font-family: 'Orbitron', monospace;
-  font-size: 13px;
+  font-family: 'Exo 2', system-ui, sans-serif;
+  font-size: 14px;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  line-height: 1.55;
+  letter-spacing: 0.04em;
+  text-wrap: balance;
   color: var(--login-text-high);
 }
 
 .login-status-capsule {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 6px;
   padding: 5px 12px;

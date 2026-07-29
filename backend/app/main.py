@@ -84,7 +84,7 @@ tags_metadata = [
 ]
 
 app = FastAPI(
-    title="Paper Tracker Core API",
+    title="专业领域大模型智能文献检索与知识服务 API",
     version="2.0.0",
     description="学术论文追踪系统 API — 支持 RSS 聚合、AI 分析、多阶段科研工作流",
     openapi_tags=tags_metadata,

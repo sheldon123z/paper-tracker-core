@@ -30,14 +30,14 @@ _MCP_INSTRUCTIONS = (
 
 try:
     # mcp >= 1.10 重命名了 description -> instructions
-    mcp = FastMCP("Paper Tracker Core", instructions=_MCP_INSTRUCTIONS)
+    mcp = FastMCP("专业领域大模型智能文献检索与知识服务", instructions=_MCP_INSTRUCTIONS)
 except TypeError:
     try:
         # mcp < 1.10 仍使用 description
-        mcp = FastMCP("Paper Tracker Core", description=_MCP_INSTRUCTIONS)
+        mcp = FastMCP("专业领域大模型智能文献检索与知识服务", description=_MCP_INSTRUCTIONS)
     except TypeError:
         # 极旧版本只接受 name
-        mcp = FastMCP("Paper Tracker Core")
+        mcp = FastMCP("专业领域大模型智能文献检索与知识服务")
 
 
 # ---------------------------------------------------------------------------
@@ -89,7 +89,7 @@ def _format_paper(p: dict) -> str:
 
 @mcp.tool()
 async def search_papers(query: str, page: int = 1, size: int = 20) -> str:
-    """Search papers by keyword in the Paper Tracker library.
+    """Search papers by keyword in the 专业领域大模型智能文献检索与知识服务 library.
 
     Searches across title, authors, abstract, and notes.
 
@@ -144,7 +144,7 @@ async def get_paper(paper_id: int) -> str:
 
 @mcp.tool()
 async def get_stats(period: int = 30) -> str:
-    """Get research statistics from the Paper Tracker library.
+    """Get research statistics from the 专业领域大模型智能文献检索与知识服务 library.
 
     Returns paper counts, category distribution, source distribution,
     and a timeline of paper additions.
@@ -161,7 +161,7 @@ async def get_stats(period: int = 30) -> str:
 
     s = resp.json()
     lines = [
-        "=== Paper Tracker Statistics ===",
+        "=== 专业领域大模型智能文献检索与知识服务统计 ===",
         f"Total papers: {s.get('total_papers', 0)}",
         f"Unread: {s.get('unread_papers', 0)}",
         f"Favorited: {s.get('favorited_papers', 0)}",

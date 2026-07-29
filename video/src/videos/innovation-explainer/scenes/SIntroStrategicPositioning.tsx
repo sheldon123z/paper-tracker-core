@@ -4,7 +4,7 @@ import {
   type GlyphType,
 } from "../../../shared/components/FeatureGlyph";
 import { COLORS, FONT_FAMILY } from "../../../shared/theme";
-import { SYSTEM_NAME } from "../brand";
+import { SERVICE_NAME } from "../brand";
 
 const RESEARCH_SIGNALS: {
   label: string;
@@ -13,8 +13,8 @@ const RESEARCH_SIGNALS: {
   accent: string;
 }[] = [
   {
-    label: "课题更复杂",
-    detail: "新能源并网与系统稳定",
+    label: "问题更复杂",
+    detail: "复杂工况与关键装备",
     type: "grid",
     accent: COLORS.blue,
   },
@@ -25,20 +25,20 @@ const RESEARCH_SIGNALS: {
     accent: COLORS.amber,
   },
   {
-    label: "创新节奏更快",
-    detail: "持续研判与快速验证",
+    label: "研判节奏更快",
+    detail: "持续分析与快速验证",
     type: "workflow",
     accent: COLORS.cyan,
   },
 ];
 
-const PLATFORM_VALUES: {
+const SERVICE_VALUES: {
   label: string;
   type: GlyphType;
   accent: string;
 }[] = [
   { label: "领域知识资产", type: "library", accent: COLORS.blue },
-  { label: "科研智能体", type: "model", accent: COLORS.cyan },
+  { label: "专业领域大模型", type: "model", accent: COLORS.cyan },
   { label: "专家在环", type: "person", accent: COLORS.amber },
 ];
 
@@ -85,7 +85,7 @@ const ResearchContext: React.FC<{ frame: number }> = ({ frame }) => {
             letterSpacing: 8,
           }}
         >
-          NEW POWER SYSTEM · 新型电力系统
+          MAJOR ENGINEERING · 重大工程技术
         </div>
         <div
           style={{
@@ -95,7 +95,7 @@ const ResearchContext: React.FC<{ frame: number }> = ({ frame }) => {
             fontWeight: 800,
           }}
         >
-          电力科研进入新的创新阶段
+          重大工程技术攻关进入新阶段
         </div>
         <div
           style={{
@@ -106,7 +106,7 @@ const ResearchContext: React.FC<{ frame: number }> = ({ frame }) => {
             fontWeight: 560,
           }}
         >
-          科研问题、知识规模与协同复杂度同步提升
+          工程问题、知识规模与协同复杂度同步提升
         </div>
       </div>
 
@@ -186,7 +186,7 @@ const ResearchContext: React.FC<{ frame: number }> = ({ frame }) => {
   );
 };
 
-const PlatformPositioning: React.FC<{
+const ServicePositioning: React.FC<{
   frame: number;
   durationInFrames: number;
 }> = ({ frame, durationInFrames }) => {
@@ -238,7 +238,7 @@ const PlatformPositioning: React.FC<{
             letterSpacing: 7,
           }}
         >
-          {SYSTEM_NAME}
+          {SERVICE_NAME}
         </div>
         <div
           style={{
@@ -248,8 +248,8 @@ const PlatformPositioning: React.FC<{
             fontWeight: 800,
           }}
         >
-          <div>自主执行 · 主动推进</div>
-          <div>可信可控的智能化科研支撑</div>
+          <div>领域大模型 · 智能体工作流</div>
+          <div>可信可控的专业知识服务</div>
         </div>
         <div
           style={{
@@ -260,7 +260,7 @@ const PlatformPositioning: React.FC<{
             fontWeight: 560,
           }}
         >
-          以领域知识资产为基础，以科研智能体为核心
+          面向重大工程技术，连接知识资产与专家判断
         </div>
       </div>
 
@@ -279,7 +279,7 @@ const PlatformPositioning: React.FC<{
           border: `1px solid ${COLORS.line}`,
         }}
       >
-        {PLATFORM_VALUES.map((item) => (
+        {SERVICE_VALUES.map((item) => (
           <div
             key={item.label}
             style={{
@@ -310,7 +310,7 @@ export const SIntroStrategicPositioning: React.FC<{
   return (
     <AbsoluteFill>
       <ResearchContext frame={frame} />
-      <PlatformPositioning frame={frame} durationInFrames={durationInFrames} />
+      <ServicePositioning frame={frame} durationInFrames={durationInFrames} />
     </AbsoluteFill>
   );
 };

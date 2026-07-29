@@ -856,7 +856,7 @@ export const S06SafeGovernance: React.FC<{ durationInFrames: number }> = ({
   return (
     <SceneFrame
       durationInFrames={durationInFrames}
-      eyebrow="07 · SECURITY BY DESIGN"
+      eyebrow="01 · SECURITY BY DESIGN"
       title="安全内生：本地闭环与可信治理"
     >
       <PersistentPermissionPage

@@ -95,8 +95,8 @@ export const S00ResearchPain: React.FC<{ durationInFrames: number }> = ({
   return (
     <SceneFrame
       durationInFrames={durationInFrames}
-      eyebrow="01 · RESEARCH FRICTION"
-      title="资料分散，让科研时间耗在重复调研"
+      eyebrow="02 · RESEARCH FRICTION"
+      title="资料分散，让工程研究时间耗在重复调研"
     >
       <div
         style={{
@@ -114,14 +114,14 @@ export const S00ResearchPain: React.FC<{ durationInFrames: number }> = ({
         <PainPanel
           eyebrow="PAPER GROWTH"
           title="论文与方向持续增加"
-          detail="电网稳定、新能源消纳、运行控制等研究资料不断增长，查找范围也随之扩大。"
+          detail="关键装备、复杂工况、协同控制等专业资料不断增长，查找范围也随之扩大。"
           type="document"
           accent={COLORS.blue}
         />
         <PainPanel
           eyebrow="REPETITIVE WORK"
           title="整理工作反复发生"
-          detail="科研人员重复查找、摘录、对比和汇总，结论又散落在文件夹、笔记与临时报告中。"
+          detail="工程技术人员重复查找、摘录、对比和汇总，结论又散落在文件夹、笔记与临时报告中。"
           type="person"
           accent={COLORS.amber}
         />

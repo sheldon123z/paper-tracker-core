@@ -109,36 +109,9 @@ function RecentPaperRow({ paper }) {
   )
 }
 
-function SchedulerStatusBadge({ status }) {
-  if (!status) return null
-  const running = status.running
-  return (
-    <div
-      className="glass-panel glass-medium panel-outline rounded-glass border p-4 flex items-center gap-3"
-      style={{ borderColor: 'var(--glass-stroke)' }}
-    >
-      <div
-        className="w-2.5 h-2.5 rounded-full shrink-0"
-        style={{ backgroundColor: running ? '#10b981' : '#9ca3af' }}
-      />
-      <div>
-        <p className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>
-          调度器 {running ? '运行中' : '已停止'}
-        </p>
-        {status.jobs?.length > 0 && (
-          <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-            {status.jobs.length} 个任务
-          </p>
-        )}
-      </div>
-    </div>
-  )
-}
-
 export default function Dashboard() {
   const [stats, setStats] = useState(null)
   const [recentPapers, setRecentPapers] = useState([])
-  const [schedulerStatus, setSchedulerStatus] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -148,14 +121,9 @@ export default function Dashboard() {
         .get('/api/papers', { params: { page: 1, size: 5 } })
         .then((r) => r.data?.items?.slice(0, 5) || [])
         .catch(() => []),
-      api
-        .get('/api/scheduler/status')
-        .then((r) => r.data)
-        .catch(() => null),
-    ]).then(([s, papers, scheduler]) => {
+    ]).then(([s, papers]) => {
       setStats(s)
       setRecentPapers(papers)
-      setSchedulerStatus(scheduler)
       setLoading(false)
     })
   }, [])
@@ -186,11 +154,8 @@ export default function Dashboard() {
             仪表盘
           </h1>
           <p className="mt-2 text-sm text-muted-strong">
-            监测论文摄取、阅读优先级与近阶段研究热度变化。
+            查看本地论文、阅读优先级与近阶段研究热度变化。
           </p>
-        </div>
-        <div className="hidden sm:block">
-          {schedulerStatus && <SchedulerStatusBadge status={schedulerStatus} />}
         </div>
       </div>
 

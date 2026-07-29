@@ -202,7 +202,7 @@ const ImportEvidence: React.FC<{ frame: number }> = ({ frame }) => {
           fontWeight: 760,
         }}
       >
-        真实系统页面 · {reviewOpacity > 0.5 ? "去重与复核" : "本地解析 / OCR"}
+        真实服务页面 · {reviewOpacity > 0.5 ? "去重与复核" : "本地解析 / OCR"}
       </div>
 
       <div
@@ -422,7 +422,7 @@ const LibraryEvidence: React.FC<{
               letterSpacing: 1.6,
             }}
           >
-            真实系统页面
+            真实服务页面
           </div>
           <div style={{ fontSize: 30, fontWeight: 810 }}>{title}</div>
           <div style={{ color: COLORS.muted, fontSize: 20 }}>{detail}</div>
@@ -494,8 +494,8 @@ export const S02KnowledgeAssets: React.FC<{ durationInFrames: number }> = ({
   return (
     <SceneFrame
       durationInFrames={durationInFrames}
-      eyebrow="03 · DOMAIN KNOWLEDGE ASSET"
-      title="一次整理，沉淀电力科研知识资产"
+      eyebrow="04 · DOMAIN KNOWLEDGE ASSET"
+      title="一次整理，沉淀专业领域知识资产"
     >
       <ProcessSchematic frame={frame} />
       <LibraryEvidence

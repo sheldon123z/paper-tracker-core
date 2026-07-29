@@ -111,7 +111,7 @@ export default function LoginForm() {
           <div className="login-brand-logo">
             <LogoMark />
           </div>
-          <span className="login-brand-name">Paper Tracker</span>
+          <span className="login-brand-name">专业领域大模型智能文献检索与知识服务</span>
         </div>
         <div className="login-status-capsule">
           <span className="login-status-dot" />

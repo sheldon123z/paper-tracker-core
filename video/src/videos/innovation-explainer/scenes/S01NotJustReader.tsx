@@ -5,7 +5,7 @@ import {
 } from "../../../shared/components/FeatureGlyph";
 import { SceneFrame } from "../../../shared/components/SceneFrame";
 import { COLORS, FONT_FAMILY } from "../../../shared/theme";
-import { SYSTEM_NAME } from "../brand";
+import { SERVICE_NAME } from "../brand";
 
 const PositionCard: React.FC<{
   label: string;
@@ -117,8 +117,8 @@ export const S01NotJustReader: React.FC<{ durationInFrames: number }> = ({
   return (
     <SceneFrame
       durationInFrames={durationInFrames}
-      eyebrow="02 · FROM READING TO RESEARCH"
-      title="从阅读单篇论文，到研究一个电网问题"
+      eyebrow="03 · FROM READING TO RESEARCH"
+      title="从阅读单篇论文，到研究一个工程技术问题"
     >
       <div
         style={{
@@ -152,10 +152,10 @@ export const S01NotJustReader: React.FC<{ durationInFrames: number }> = ({
           →
         </div>
         <PositionCard
-          label={SYSTEM_NAME}
-          title="以科研问题为中心"
-          items={["汇聚授权论文库", "组织跨论文证据", "沉淀分析与成果"]}
-          conclusion="同一研究上下文持续积累与复用"
+          label={SERVICE_NAME}
+          title="以工程问题为中心"
+          items={["汇聚授权专业文献", "组织跨论文证据", "沉淀分析与成果"]}
+          conclusion="同一工程研究上下文持续积累与复用"
           type="workflow"
           accent={COLORS.cyan}
         />

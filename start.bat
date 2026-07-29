@@ -37,8 +37,8 @@ if errorlevel 1 (
     exit /b 1
 )
 
-start "Paper Tracker Backend" /min /d "%~dp0backend" "%PYTHON_EXE%" -m uvicorn app.main:app --host 0.0.0.0 --port 5002
-start "Paper Tracker Copilot" /min /d "%~dp0copilot-runtime" node.exe server.js
-start "Paper Tracker Frontend" /min /d "%~dp0frontend" cmd.exe /c npm.cmd run dev
+start "专业领域大模型智能文献检索与知识服务 - 后端" /min /d "%~dp0backend" "%PYTHON_EXE%" -m uvicorn app.main:app --host 0.0.0.0 --port 5002
+start "专业领域大模型智能文献检索与知识服务 - 智能助手" /min /d "%~dp0copilot-runtime" node.exe server.js
+start "专业领域大模型智能文献检索与知识服务 - 前端" /min /d "%~dp0frontend" cmd.exe /c npm.cmd run dev
 
 start "" http://localhost:3457

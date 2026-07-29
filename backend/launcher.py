@@ -158,7 +158,7 @@ def main():
 
     # 4. Start FastAPI (blocking)
     import uvicorn
-    print("[Launcher] Starting PaperTrackerPro backend on port 5002...")
+    print("[Launcher] 正在启动专业领域大模型智能文献检索与知识服务后端，端口 5002...")
     uvicorn.run("app.main:app", host="0.0.0.0", port=5002, log_level="info")
 
 

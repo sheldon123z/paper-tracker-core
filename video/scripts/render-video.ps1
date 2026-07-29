@@ -7,6 +7,18 @@ param(
 $ErrorActionPreference = "Stop"
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
+$portableNodeDir = [System.IO.Path]::GetFullPath(
+  (Join-Path $projectRoot "..\..\.runtime\node")
+)
+if (
+  $null -eq (Get-Command node -ErrorAction SilentlyContinue) -or
+  $null -eq (Get-Command npx.cmd -ErrorAction SilentlyContinue)
+) {
+  if (-not (Test-Path -LiteralPath (Join-Path $portableNodeDir "node.exe") -PathType Leaf)) {
+    throw "Node.js was not found. Run scripts/setup-node-env.ps1 first."
+  }
+  $env:Path = $portableNodeDir + [System.IO.Path]::PathSeparator + $env:Path
+}
 $assetSetting = if ([string]::IsNullOrWhiteSpace($env:VIDEO_ASSETS_DIR)) {
   "..\..\video-assets"
 } else {
@@ -34,11 +46,10 @@ if ($Video -eq "innovation") {
     throw "Formal innovation render is locked: TTS authorization is not true."
   }
 
-  $captionPath = Join-Path $projectRoot "src\videos\innovation-explainer\data\captions.json"
-  $captionHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $captionPath).Hash
-  $approvedHash = [string]$authorization.captionSha256
-  if ([string]::IsNullOrWhiteSpace($approvedHash) -or $captionHash -ne $approvedHash.ToUpperInvariant()) {
-    throw "Formal innovation render is locked: captions changed after approval."
+  $narrationVerifier = Join-Path $projectRoot "scripts\generate-volcengine-narration.mjs"
+  & node $narrationVerifier --verify
+  if ($LASTEXITCODE -ne 0) {
+    throw "Formal innovation render is locked: narration authorization or media verification failed."
   }
 }
 

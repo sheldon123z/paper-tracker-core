@@ -10,7 +10,7 @@
  *     now the single render path for both restored and live messages.
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { CopilotChat } from '@copilotkit/react-core/v2'
 
@@ -38,9 +38,33 @@ function healthBadgeVariant(status) {
   }
 }
 
+function createAssistantSessionId() {
+  const suffix = globalThis.crypto?.randomUUID?.()
+    || `${Date.now()}-${Math.random().toString(16).slice(2)}`
+  return `ast-${suffix}`
+}
+
+function localAssistantSession(sessionId) {
+  return {
+    session_id: sessionId,
+    title: '新会话',
+    paper_id: null,
+    paper_title: null,
+  }
+}
+
+function mergeAssistantSessions(previous, persisted) {
+  const persistedIds = new Set(persisted.map((session) => session.session_id))
+  return [
+    ...previous.filter((session) => !persistedIds.has(session.session_id)),
+    ...persisted,
+  ]
+}
+
 export default function AssistantPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [sessions, setSessions] = useState([])
+  const automaticSessionCreationPending = useRef(false)
   const selectedModelMeta = useStore((state) => state.selectedModelMeta)
   const isMobile = useIsMobile()
 
@@ -58,13 +82,40 @@ export default function AssistantPage() {
     setAssistantSessionId(id)
   }, [setSearchParams, setAssistantSessionId])
 
-  useAssistantSessionHistory(currentSessionId)
+  const newSession = useCallback(() => {
+    const id = createAssistantSessionId()
+    setSessions((prev) => [
+      localAssistantSession(id),
+      ...prev.filter((session) => session.session_id !== id),
+    ])
+    setCurrentSessionId(id)
+  }, [setCurrentSessionId])
+
+  // Direct navigation enters /assistant without a session query parameter.
+  // Allocate a unique local session before rendering the composer so the first
+  // submitted message can never fall back to the shared "assistant-default".
+  // The backend persists this session lazily when that first message is sent.
+  useEffect(() => {
+    if (currentSessionId) {
+      automaticSessionCreationPending.current = false
+      return
+    }
+    if (automaticSessionCreationPending.current) return
+
+    automaticSessionCreationPending.current = true
+    newSession()
+  }, [currentSessionId, newSession])
+
+  useAssistantSessionHistory(currentSessionId, Boolean(currentSessionId))
 
   // Load sessions list
   useEffect(() => {
     api
       .get('/api/agui/assistant/sessions')
-      .then((res) => setSessions(res.data))
+      .then((res) => {
+        const persisted = Array.isArray(res.data) ? res.data : []
+        setSessions((previous) => mergeAssistantSessions(previous, persisted))
+      })
       .catch(() => {})
   }, [])
 
@@ -72,12 +123,6 @@ export default function AssistantPage() {
   useEffect(() => {
     setAssistantSessionId(currentSessionId)
   }, [currentSessionId, setAssistantSessionId])
-
-  const newSession = useCallback(() => {
-    const id = 'ast-' + crypto.randomUUID()
-    setSessions((prev) => [{ session_id: id, title: '新会话', paper_id: null, paper_title: null }, ...prev])
-    setCurrentSessionId(id)
-  }, [setCurrentSessionId])
 
   const loadSession = useCallback((sessionId) => {
     if (sessionId === currentSessionId) return
@@ -221,17 +266,21 @@ export default function AssistantPage() {
           className="assistant-live-chat is-fullscreen"
           style={isMobile ? { flex: 1, position: 'relative', minHeight: 0 } : undefined}
         >
-          <CopilotChat
-            key={`assistant-chat-${currentSessionId || 'default'}`}
-            agentId="assistantAgent"
-            threadId={currentSessionId || 'assistant-default'}
-            messageView={SINGLE_COPY_MESSAGE_VIEW}
-            labels={{
-              ...ASSISTANT_LABELS,
-              welcomeMessageText: '你好！我是你的论文研究助手，可以搜索论文、分析研究趋势和管理文献。',
-            }}
-            className="h-full"
-          />
+          {currentSessionId ? (
+            <CopilotChat
+              key={`assistant-chat-${currentSessionId}`}
+              agentId="assistantAgent"
+              threadId={currentSessionId}
+              messageView={SINGLE_COPY_MESSAGE_VIEW}
+              labels={{
+                ...ASSISTANT_LABELS,
+                welcomeMessageText: '你好！我是你的论文研究助手，可以搜索论文、分析研究趋势和管理文献。',
+              }}
+              className="h-full"
+            />
+          ) : (
+            <div className="assistant-chat-loading" role="status">正在创建会话…</div>
+          )}
         </div>
       </div>
     </div>

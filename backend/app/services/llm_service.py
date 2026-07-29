@@ -40,7 +40,7 @@ _FALLBACK_PROMPTS = {
         "You are a research assistant with access to a library of academic papers. "
         "Use the provided paper index to answer questions. Respond in Chinese unless asked otherwise."
     ),
-    "assistant": "你是 Paper Tracker Core 的论文研究助手。默认中文回复。",
+    "assistant": "你是论文研究助手。默认中文回复。",
 }
 
 _prompt_cache: dict[str, str] = {}
