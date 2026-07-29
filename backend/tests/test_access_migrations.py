@@ -82,25 +82,36 @@ class AccessMigrationTests(unittest.TestCase):
                 engine.dispose()
 
     def _control_engine_with_users(self, temp_dir, rows):
+        """rows 为 (id, role[, status[, department_id]])，status 默认 active。"""
         database_path = Path(temp_dir) / "control_plane.db"
         engine = create_engine(f"sqlite:///{database_path}")
         with engine.begin() as connection:
             connection.execute(
                 text(
-                    "CREATE TABLE departments (id INTEGER PRIMARY KEY, code TEXT, name TEXT, status TEXT, created_at DATETIME, updated_at DATETIME)"
+                    "CREATE TABLE departments (id INTEGER PRIMARY KEY, code TEXT, name TEXT, "
+                    "status TEXT, created_at DATETIME, updated_at DATETIME)"
                 )
             )
-            connection.execute(text("CREATE TABLE users (id INTEGER PRIMARY KEY, role TEXT)"))
+            connection.execute(
+                text("CREATE TABLE users (id INTEGER PRIMARY KEY, role TEXT, status TEXT, department_id INTEGER)")
+            )
             connection.execute(text("CREATE TABLE user_sessions (id INTEGER PRIMARY KEY, user_id INTEGER)"))
             connection.execute(
                 text(
-                    "CREATE TABLE audit_events (id INTEGER PRIMARY KEY, actor_user_id INTEGER, department_id INTEGER, created_at DATETIME)"
+                    "CREATE TABLE audit_events (id INTEGER PRIMARY KEY, actor_user_id INTEGER, "
+                    "department_id INTEGER, created_at DATETIME)"
                 )
             )
-            for user_id, role in rows:
+            for row in rows:
+                user_id, role = row[0], row[1]
+                status = row[2] if len(row) > 2 else "active"
+                department_id = row[3] if len(row) > 3 else None
                 connection.execute(
-                    text("INSERT INTO users (id, role) VALUES (:id, :role)"),
-                    {"id": user_id, "role": role},
+                    text(
+                        "INSERT INTO users (id, role, status, department_id) "
+                        "VALUES (:id, :role, :status, :department_id)"
+                    ),
+                    {"id": user_id, "role": role, "status": status, "department_id": department_id},
                 )
         return engine
 
@@ -135,6 +146,49 @@ class AccessMigrationTests(unittest.TestCase):
             try:
                 migrate_control_schema(engine)
                 self.assertEqual(self._roles(engine), {})
+            finally:
+                engine.dispose()
+
+    def test_bootstrap_ignores_disabled_manager_and_promotes_an_active_account(self):
+        # 停用的 manager 无法通过 get_current_user，不能算作实例仍可管理。
+        with tempfile.TemporaryDirectory() as temp_dir:
+            engine = self._control_engine_with_users(temp_dir, [(1, "manager", "disabled"), (2, "user", "active")])
+            try:
+                migrate_control_schema(engine)
+                self.assertEqual(self._roles(engine), {1: "manager", 2: "manager"})
+            finally:
+                engine.dispose()
+
+    def test_bootstrap_skips_disabled_candidates(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            engine = self._control_engine_with_users(
+                temp_dir, [(1, "user", "disabled"), (3, "user", "active"), (5, "user", "active")]
+            )
+            try:
+                migrate_control_schema(engine)
+                self.assertEqual(self._roles(engine), {1: "user", 3: "manager", 5: "user"})
+            finally:
+                engine.dispose()
+
+    def test_bootstrap_does_nothing_when_every_account_is_disabled(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            engine = self._control_engine_with_users(temp_dir, [(1, "user", "disabled"), (2, "user", "pending")])
+            try:
+                migrate_control_schema(engine)
+                self.assertEqual(self._roles(engine), {1: "user", 2: "user"})
+            finally:
+                engine.dispose()
+
+    def test_bootstrap_clears_department_of_the_promoted_manager(self):
+        # 与 admin 接口一致：manager 不隶属部门，否则审计事件会被错误归属。
+        with tempfile.TemporaryDirectory() as temp_dir:
+            engine = self._control_engine_with_users(temp_dir, [(1, "user", "active", 7)])
+            try:
+                migrate_control_schema(engine)
+                with engine.connect() as connection:
+                    row = connection.execute(text("SELECT role, department_id FROM users WHERE id = 1")).first()
+                self.assertEqual(row.role, "manager")
+                self.assertIsNone(row.department_id)
             finally:
                 engine.dispose()
 

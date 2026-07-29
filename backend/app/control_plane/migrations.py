@@ -20,26 +20,35 @@ _SESSION_COLUMNS = {
 }
 
 
-def _ensure_manager_exists(conn) -> None:
-    """保证库中至少有一个 manager，避免出现无人可解锁的死锁。
+def _ensure_manager_exists(conn, *, has_status: bool) -> None:
+    """保证库中至少有一个可登录的 manager，避免出现无人可解锁的死锁。
 
     公开注册默认关闭，账号由 manager 开设，而新账号的 role 默认是 user。
-    一旦库中一个 manager 都不存在，/api/admin/* 会被 require_manager 全部拒绝，
-    于是无法创建部门、无法分派角色；同时 visible_scope 对未分配部门的账号一律
-    抛 403，论文库对所有人恒为空。这种状态无法从产品内部恢复。
+    一旦库中一个可用的 manager 都不存在，/api/admin/* 会被 require_manager 全部
+    拒绝，于是无法创建部门、无法分派角色；同时 visible_scope 对未分配部门的账号
+    一律抛 403，论文库对所有人恒为空。这种状态无法从产品内部恢复。
 
-    这里把最早创建的账号（自增主键最小者）提升为 manager 作为兜底引导。
-    仅在完全没有 manager 时触发，已有 manager 或表为空时不做任何改动。
+    判定与挑选都只认 status='active' 的账号：get_current_user 会拒绝已停用的账号，
+    因此留着一个停用的 manager 并不能让实例恢复可管理，提升一个停用账号同样无效。
+    仅在不存在可用 manager 时触发；已有可用 manager 或无可提升账号时不做任何改动。
     """
-    if conn.execute(text("SELECT 1 FROM users WHERE role='manager' LIMIT 1")).first():
+    active_only = " AND status = 'active'" if has_status else ""
+    if conn.execute(text(f"SELECT 1 FROM users WHERE role = 'manager'{active_only} LIMIT 1")).first():
         return
-    first_user = conn.execute(text("SELECT id FROM users ORDER BY id LIMIT 1")).first()
-    if first_user is None:
+    candidate_filter = " WHERE status = 'active'" if has_status else ""
+    candidate = conn.execute(text(f"SELECT id FROM users{candidate_filter} ORDER BY id LIMIT 1")).first()
+    if candidate is None:
         return
-    conn.execute(text("UPDATE users SET role='manager' WHERE id=:id"), {"id": first_user[0]})
+    # 一并清空部门归属，与 admin 接口的 manager 语义保持一致（创建 manager 与改判
+    # 为 manager 都会置空 department_id）。否则 write_audit_event 会把这个 manager
+    # 的全局管理动作错误归属到它此前所属的部门。
+    conn.execute(
+        text("UPDATE users SET role = 'manager', department_id = NULL WHERE id = :id"),
+        {"id": candidate[0]},
+    )
     logger.warning(
-        "No manager account exists; promoted user id=%s to manager to keep the instance administrable",
-        first_user[0],
+        "No active manager account exists; promoted user id=%s to manager to keep the instance administrable",
+        candidate[0],
     )
 
 
@@ -66,7 +75,7 @@ def migrate_control_schema(engine: Engine) -> None:
                     conn.execute(text(f"ALTER TABLE users ADD COLUMN {name} {ddl}"))
             conn.execute(text("UPDATE users SET role='manager' WHERE role IN ('super_admin','admin')"))
             # 必须在 legacy 角色映射之后判断，否则会把已是管理员的账号当成缺失。
-            _ensure_manager_exists(conn)
+            _ensure_manager_exists(conn, has_status="status" in cols)
             if "usage_level" in cols:
                 conn.execute(text("ALTER TABLE users DROP COLUMN usage_level"))
 
