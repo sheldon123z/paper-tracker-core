@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -81,7 +82,7 @@ class AccessMigrationTests(unittest.TestCase):
             finally:
                 engine.dispose()
 
-    def _control_engine_with_users(self, temp_dir, rows):
+    def _control_engine_with_users(self, temp_dir, rows, full_audit_table=True):
         """rows 为 (id, role[, status[, department_id]])，status 默认 active。"""
         database_path = Path(temp_dir) / "control_plane.db"
         engine = create_engine(f"sqlite:///{database_path}")
@@ -96,12 +97,23 @@ class AccessMigrationTests(unittest.TestCase):
                 text("CREATE TABLE users (id INTEGER PRIMARY KEY, role TEXT, status TEXT, department_id INTEGER)")
             )
             connection.execute(text("CREATE TABLE user_sessions (id INTEGER PRIMARY KEY, user_id INTEGER)"))
-            connection.execute(
-                text(
-                    "CREATE TABLE audit_events (id INTEGER PRIMARY KEY, actor_user_id INTEGER, "
-                    "department_id INTEGER, created_at DATETIME)"
+            if full_audit_table:
+                connection.execute(
+                    text(
+                        "CREATE TABLE audit_events (id INTEGER PRIMARY KEY, actor_user_id INTEGER, "
+                        "subject_user_id INTEGER, department_id INTEGER, event_type TEXT NOT NULL, "
+                        "outcome TEXT NOT NULL, resource_type TEXT, resource_id TEXT, "
+                        "metadata_json TEXT NOT NULL, created_at DATETIME NOT NULL)"
+                    )
                 )
-            )
+            else:
+                # 历史库上审计表结构可能不完整，此时应跳过审计写入而不是中断迁移。
+                connection.execute(
+                    text(
+                        "CREATE TABLE audit_events (id INTEGER PRIMARY KEY, actor_user_id INTEGER, "
+                        "department_id INTEGER, created_at DATETIME)"
+                    )
+                )
             for row in rows:
                 user_id, role = row[0], row[1]
                 status = row[2] if len(row) > 2 else "active"
@@ -128,6 +140,10 @@ class AccessMigrationTests(unittest.TestCase):
                 self.assertEqual(self._roles(engine), {2: "manager", 5: "user", 9: "user"})
                 migrate_control_schema(engine)
                 self.assertEqual(self._roles(engine), {2: "manager", 5: "user", 9: "user"})
+                # 第二次迁移已存在可用 manager，不应再提升，也不应重复留下审计事件。
+                with engine.connect() as connection:
+                    events = connection.execute(text("SELECT COUNT(*) FROM audit_events")).scalar_one()
+                self.assertEqual(events, 1)
             finally:
                 engine.dispose()
 
@@ -189,6 +205,38 @@ class AccessMigrationTests(unittest.TestCase):
                     row = connection.execute(text("SELECT role, department_id FROM users WHERE id = 1")).first()
                 self.assertEqual(row.role, "manager")
                 self.assertIsNone(row.department_id)
+            finally:
+                engine.dispose()
+
+    def test_bootstrap_records_an_audit_event_for_the_promotion(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            engine = self._control_engine_with_users(temp_dir, [(4, "user", "active")])
+            try:
+                migrate_control_schema(engine)
+                with engine.connect() as connection:
+                    row = connection.execute(
+                        text(
+                            "SELECT actor_user_id, subject_user_id, event_type, outcome, "
+                            "resource_type, resource_id, metadata_json FROM audit_events"
+                        )
+                    ).first()
+                self.assertIsNotNone(row)
+                self.assertIsNone(row.actor_user_id)  # 系统行为，无操作者
+                self.assertEqual(row.subject_user_id, 4)
+                self.assertEqual(row.event_type, "admin.user.auto_promoted")
+                self.assertEqual(row.outcome, "success")
+                self.assertEqual(row.resource_type, "user")
+                self.assertEqual(row.resource_id, "4")
+                self.assertEqual(json.loads(row.metadata_json)["reason"], "no_active_manager")
+            finally:
+                engine.dispose()
+
+    def test_bootstrap_still_promotes_when_audit_table_lacks_columns(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            engine = self._control_engine_with_users(temp_dir, [(4, "user", "active")], full_audit_table=False)
+            try:
+                migrate_control_schema(engine)
+                self.assertEqual(self._roles(engine), {4: "manager"})
             finally:
                 engine.dispose()
 
