@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import case, func
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 
 from ..auth.dependencies import get_current_user, require_manager
@@ -417,7 +417,9 @@ def list_audit(
 ):
     query = db.query(AuditEvent)
     if user_id is not None:
-        query = query.filter(AuditEvent.actor_user_id == user_id)
+        # 系统事件（如迁移中的自动提权）没有 actor，只有 subject。按账号检索时一并
+        # 命中 subject_user_id，否则这类记录无法通过任何账号筛选到。
+        query = query.filter(or_(AuditEvent.actor_user_id == user_id, AuditEvent.subject_user_id == user_id))
     if department_id is not None:
         query = query.filter(AuditEvent.department_id == department_id)
     if event_type:
