@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 from backend.app.control_plane.database import ControlBase
 from backend.app.control_plane.models import AuditEvent, Department, User, UserSession
-from backend.app.routes.admin import UserCreate, create_user, delete_user
+from backend.app.routes.admin import UserCreate, create_user, delete_user, list_audit
 from fastapi import HTTPException
 from pydantic import ValidationError
 from sqlalchemy import create_engine
@@ -38,12 +38,14 @@ class AdminAccessTests(unittest.TestCase):
         self.db.add_all([self.manager, self.user, self.department])
         self.db.commit()
         for number in range(2):
-            self.db.add(UserSession(
-                user_id=self.user.id,
-                session_key=f"session-{number}",
-                refresh_token_hash=f"refresh-{number}",
-                expires_at=datetime.now(UTC) + timedelta(days=1),
-            ))
+            self.db.add(
+                UserSession(
+                    user_id=self.user.id,
+                    session_key=f"session-{number}",
+                    refresh_token_hash=f"refresh-{number}",
+                    expires_at=datetime.now(UTC) + timedelta(days=1),
+                )
+            )
         self.db.commit()
 
     def tearDown(self):
@@ -60,13 +62,56 @@ class AdminAccessTests(unittest.TestCase):
             state=SimpleNamespace(session_key="manager-session"),
         )
 
+    def test_audit_account_filter_matches_system_events_by_subject(self):
+        # 迁移中的自动提权没有 actor，只有 subject。若账号筛选仅匹配 actor_user_id，
+        # 这类记录将无法通过任何账号被检索到。
+        self.db.add(
+            AuditEvent(
+                actor_user_id=None,
+                subject_user_id=self.user.id,
+                event_type="admin.user.auto_promoted",
+                outcome="success",
+                resource_type="user",
+                resource_id=str(self.user.id),
+                metadata_json="{}",
+            )
+        )
+        self.db.commit()
+
+        result = list_audit(page=1, size=50, user_id=self.user.id, db=self.db)
+
+        self.assertEqual(result["meta"]["total"], 1)
+        self.assertEqual(result["items"][0]["event_type"], "admin.user.auto_promoted")
+        self.assertEqual(result["items"][0]["subject_user_id"], self.user.id)
+        self.assertIsNone(result["items"][0]["actor_user_id"])
+
+    def test_audit_account_filter_still_matches_actor(self):
+        self.db.add(
+            AuditEvent(
+                actor_user_id=self.manager.id,
+                subject_user_id=self.user.id,
+                event_type="admin.user.updated",
+                outcome="success",
+                metadata_json="{}",
+            )
+        )
+        self.db.commit()
+
+        by_actor = list_audit(page=1, size=50, user_id=self.manager.id, db=self.db)
+        unrelated = list_audit(page=1, size=50, user_id=self.department.id + 9000, db=self.db)
+
+        self.assertEqual(by_actor["meta"]["total"], 1)
+        self.assertEqual(unrelated["meta"]["total"], 0)
+
     def test_manager_can_delete_account_and_all_sessions(self):
         deleted_user_id = self.user.id
-        self.db.add(AuditEvent(
-            actor_user_id=deleted_user_id,
-            event_type="api.request",
-            outcome="success",
-        ))
+        self.db.add(
+            AuditEvent(
+                actor_user_id=deleted_user_id,
+                event_type="api.request",
+                outcome="success",
+            )
+        )
         self.db.commit()
 
         result = delete_user(deleted_user_id, self.request(), self.manager, self.db)
@@ -74,15 +119,24 @@ class AdminAccessTests(unittest.TestCase):
         self.assertEqual(result["user_id"], deleted_user_id)
         self.assertIsNone(self.db.query(User).filter(User.id == deleted_user_id).first())
         self.assertEqual(
-            self.db.query(UserSession).filter(UserSession.user_id == deleted_user_id).count(), 0,
+            self.db.query(UserSession).filter(UserSession.user_id == deleted_user_id).count(),
+            0,
         )
-        historical_event = self.db.query(AuditEvent).filter(
-            AuditEvent.event_type == "api.request",
-        ).one()
+        historical_event = (
+            self.db.query(AuditEvent)
+            .filter(
+                AuditEvent.event_type == "api.request",
+            )
+            .one()
+        )
         self.assertIsNone(historical_event.actor_user_id)
-        deletion_event = self.db.query(AuditEvent).filter(
-            AuditEvent.event_type == "admin.user.deleted",
-        ).one()
+        deletion_event = (
+            self.db.query(AuditEvent)
+            .filter(
+                AuditEvent.event_type == "admin.user.deleted",
+            )
+            .one()
+        )
         self.assertEqual(deletion_event.actor_user_id, self.manager.id)
         self.assertEqual(deletion_event.subject_user_id, deleted_user_id)
 

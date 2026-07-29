@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -15,7 +16,11 @@ class AccessMigrationTests(unittest.TestCase):
             engine = create_engine(f"sqlite:///{database_path}")
             try:
                 with engine.begin() as connection:
-                    connection.execute(text("CREATE TABLE papers (id INTEGER PRIMARY KEY, title TEXT, source TEXT, category TEXT, created_at DATETIME, published_date DATETIME, relevance REAL)"))
+                    connection.execute(
+                        text(
+                            "CREATE TABLE papers (id INTEGER PRIMARY KEY, title TEXT, source TEXT, category TEXT, created_at DATETIME, published_date DATETIME, relevance REAL)"
+                        )
+                    )
                     connection.execute(text("CREATE TABLE feeds (id INTEGER PRIMARY KEY)"))
                     connection.execute(text("CREATE TABLE tags (id INTEGER PRIMARY KEY)"))
                 migrate_database_schema(engine)
@@ -38,20 +43,36 @@ class AccessMigrationTests(unittest.TestCase):
             engine = create_engine(f"sqlite:///{database_path}")
             try:
                 with engine.begin() as connection:
-                    connection.execute(text("CREATE TABLE departments (id INTEGER PRIMARY KEY, code TEXT, name TEXT, status TEXT, created_at DATETIME, updated_at DATETIME)"))
-                    connection.execute(text("CREATE TABLE users (id INTEGER PRIMARY KEY, role TEXT, usage_level VARCHAR(8))"))
-                    connection.execute(text("INSERT INTO users (id, role, usage_level) VALUES (1, 'admin', NULL), (2, 'user', 'A')"))
+                    connection.execute(
+                        text(
+                            "CREATE TABLE departments (id INTEGER PRIMARY KEY, code TEXT, name TEXT, status TEXT, created_at DATETIME, updated_at DATETIME)"
+                        )
+                    )
+                    connection.execute(
+                        text("CREATE TABLE users (id INTEGER PRIMARY KEY, role TEXT, usage_level VARCHAR(8))")
+                    )
+                    connection.execute(
+                        text("INSERT INTO users (id, role, usage_level) VALUES (1, 'admin', NULL), (2, 'user', 'A')")
+                    )
                     connection.execute(text("CREATE TABLE user_sessions (id INTEGER PRIMARY KEY, user_id INTEGER)"))
                     connection.execute(text("INSERT INTO user_sessions (id, user_id) VALUES (1, 1)"))
-                    connection.execute(text("CREATE TABLE audit_events (id INTEGER PRIMARY KEY, actor_user_id INTEGER, department_id INTEGER, created_at DATETIME)"))
+                    connection.execute(
+                        text(
+                            "CREATE TABLE audit_events (id INTEGER PRIMARY KEY, actor_user_id INTEGER, department_id INTEGER, created_at DATETIME)"
+                        )
+                    )
                 migrate_control_schema(engine)
                 with engine.connect() as connection:
-                    first_key = connection.execute(text("SELECT session_key FROM user_sessions WHERE id=1")).scalar_one()
+                    first_key = connection.execute(
+                        text("SELECT session_key FROM user_sessions WHERE id=1")
+                    ).scalar_one()
                 migrate_control_schema(engine)
 
                 with engine.connect() as connection:
                     roles = {row.id: row.role for row in connection.execute(text("SELECT id, role FROM users"))}
-                    second_key = connection.execute(text("SELECT session_key FROM user_sessions WHERE id=1")).scalar_one()
+                    second_key = connection.execute(
+                        text("SELECT session_key FROM user_sessions WHERE id=1")
+                    ).scalar_one()
                 self.assertEqual(roles, {1: "manager", 2: "user"})
                 self.assertNotIn("usage_level", {column["name"] for column in inspect(engine).get_columns("users")})
                 self.assertEqual(first_key, second_key)
@@ -61,27 +82,189 @@ class AccessMigrationTests(unittest.TestCase):
             finally:
                 engine.dispose()
 
+    def _control_engine_with_users(self, temp_dir, rows, full_audit_table=True):
+        """rows 为 (id, role[, status[, department_id]])，status 默认 active。"""
+        database_path = Path(temp_dir) / "control_plane.db"
+        engine = create_engine(f"sqlite:///{database_path}")
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "CREATE TABLE departments (id INTEGER PRIMARY KEY, code TEXT, name TEXT, "
+                    "status TEXT, created_at DATETIME, updated_at DATETIME)"
+                )
+            )
+            connection.execute(
+                text("CREATE TABLE users (id INTEGER PRIMARY KEY, role TEXT, status TEXT, department_id INTEGER)")
+            )
+            connection.execute(text("CREATE TABLE user_sessions (id INTEGER PRIMARY KEY, user_id INTEGER)"))
+            if full_audit_table:
+                connection.execute(
+                    text(
+                        "CREATE TABLE audit_events (id INTEGER PRIMARY KEY, actor_user_id INTEGER, "
+                        "subject_user_id INTEGER, department_id INTEGER, event_type TEXT NOT NULL, "
+                        "outcome TEXT NOT NULL, resource_type TEXT, resource_id TEXT, "
+                        "metadata_json TEXT NOT NULL, created_at DATETIME NOT NULL)"
+                    )
+                )
+            else:
+                # 历史库上审计表结构可能不完整，此时应跳过审计写入而不是中断迁移。
+                connection.execute(
+                    text(
+                        "CREATE TABLE audit_events (id INTEGER PRIMARY KEY, actor_user_id INTEGER, "
+                        "department_id INTEGER, created_at DATETIME)"
+                    )
+                )
+            for row in rows:
+                user_id, role = row[0], row[1]
+                status = row[2] if len(row) > 2 else "active"
+                department_id = row[3] if len(row) > 3 else None
+                connection.execute(
+                    text(
+                        "INSERT INTO users (id, role, status, department_id) "
+                        "VALUES (:id, :role, :status, :department_id)"
+                    ),
+                    {"id": user_id, "role": role, "status": status, "department_id": department_id},
+                )
+        return engine
+
+    def _roles(self, engine):
+        with engine.connect() as connection:
+            return {row.id: row.role for row in connection.execute(text("SELECT id, role FROM users"))}
+
+    def test_bootstrap_promotes_earliest_account_when_no_manager_exists(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # 乱序插入，确认挑选依据是主键顺序（即创建顺序）而非插入顺序。
+            engine = self._control_engine_with_users(temp_dir, [(5, "user"), (2, "user"), (9, "user")])
+            try:
+                migrate_control_schema(engine)
+                self.assertEqual(self._roles(engine), {2: "manager", 5: "user", 9: "user"})
+                migrate_control_schema(engine)
+                self.assertEqual(self._roles(engine), {2: "manager", 5: "user", 9: "user"})
+                # 第二次迁移已存在可用 manager，不应再提升，也不应重复留下审计事件。
+                with engine.connect() as connection:
+                    events = connection.execute(text("SELECT COUNT(*) FROM audit_events")).scalar_one()
+                self.assertEqual(events, 1)
+            finally:
+                engine.dispose()
+
+    def test_bootstrap_leaves_roles_untouched_when_a_manager_exists(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            engine = self._control_engine_with_users(temp_dir, [(1, "user"), (2, "manager")])
+            try:
+                migrate_control_schema(engine)
+                self.assertEqual(self._roles(engine), {1: "user", 2: "manager"})
+            finally:
+                engine.dispose()
+
+    def test_bootstrap_tolerates_empty_user_table(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            engine = self._control_engine_with_users(temp_dir, [])
+            try:
+                migrate_control_schema(engine)
+                self.assertEqual(self._roles(engine), {})
+            finally:
+                engine.dispose()
+
+    def test_bootstrap_ignores_disabled_manager_and_promotes_an_active_account(self):
+        # 停用的 manager 无法通过 get_current_user，不能算作实例仍可管理。
+        with tempfile.TemporaryDirectory() as temp_dir:
+            engine = self._control_engine_with_users(temp_dir, [(1, "manager", "disabled"), (2, "user", "active")])
+            try:
+                migrate_control_schema(engine)
+                self.assertEqual(self._roles(engine), {1: "manager", 2: "manager"})
+            finally:
+                engine.dispose()
+
+    def test_bootstrap_skips_disabled_candidates(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            engine = self._control_engine_with_users(
+                temp_dir, [(1, "user", "disabled"), (3, "user", "active"), (5, "user", "active")]
+            )
+            try:
+                migrate_control_schema(engine)
+                self.assertEqual(self._roles(engine), {1: "user", 3: "manager", 5: "user"})
+            finally:
+                engine.dispose()
+
+    def test_bootstrap_does_nothing_when_every_account_is_disabled(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            engine = self._control_engine_with_users(temp_dir, [(1, "user", "disabled"), (2, "user", "pending")])
+            try:
+                migrate_control_schema(engine)
+                self.assertEqual(self._roles(engine), {1: "user", 2: "user"})
+            finally:
+                engine.dispose()
+
+    def test_bootstrap_clears_department_of_the_promoted_manager(self):
+        # 与 admin 接口一致：manager 不隶属部门，否则审计事件会被错误归属。
+        with tempfile.TemporaryDirectory() as temp_dir:
+            engine = self._control_engine_with_users(temp_dir, [(1, "user", "active", 7)])
+            try:
+                migrate_control_schema(engine)
+                with engine.connect() as connection:
+                    row = connection.execute(text("SELECT role, department_id FROM users WHERE id = 1")).first()
+                self.assertEqual(row.role, "manager")
+                self.assertIsNone(row.department_id)
+            finally:
+                engine.dispose()
+
+    def test_bootstrap_records_an_audit_event_for_the_promotion(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            engine = self._control_engine_with_users(temp_dir, [(4, "user", "active")])
+            try:
+                migrate_control_schema(engine)
+                with engine.connect() as connection:
+                    row = connection.execute(
+                        text(
+                            "SELECT actor_user_id, subject_user_id, event_type, outcome, "
+                            "resource_type, resource_id, metadata_json FROM audit_events"
+                        )
+                    ).first()
+                self.assertIsNotNone(row)
+                self.assertIsNone(row.actor_user_id)  # 系统行为，无操作者
+                self.assertEqual(row.subject_user_id, 4)
+                self.assertEqual(row.event_type, "admin.user.auto_promoted")
+                self.assertEqual(row.outcome, "success")
+                self.assertEqual(row.resource_type, "user")
+                self.assertEqual(row.resource_id, "4")
+                self.assertEqual(json.loads(row.metadata_json)["reason"], "no_active_manager")
+            finally:
+                engine.dispose()
+
+    def test_bootstrap_still_promotes_when_audit_table_lacks_columns(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            engine = self._control_engine_with_users(temp_dir, [(4, "user", "active")], full_audit_table=False)
+            try:
+                migrate_control_schema(engine)
+                self.assertEqual(self._roles(engine), {4: "manager"})
+            finally:
+                engine.dispose()
+
     def test_tag_migration_replaces_global_name_uniqueness_with_scope_uniqueness(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             database_path = Path(temp_dir) / "paper_tracker.db"
             engine = create_engine(f"sqlite:///{database_path}")
             try:
                 with engine.begin() as connection:
-                    connection.execute(text("""
+                    connection.execute(
+                        text("""
                         CREATE TABLE tags (
                             id INTEGER PRIMARY KEY,
                             name VARCHAR(64) NOT NULL UNIQUE,
                             color VARCHAR(16),
                             updated_at DATETIME
                         )
-                    """))
-                    connection.execute(text("""
+                    """)
+                    )
+                    connection.execute(
+                        text("""
                         CREATE TABLE paper_tags (
                             id INTEGER PRIMARY KEY,
                             paper_id INTEGER NOT NULL,
                             tag_id INTEGER NOT NULL REFERENCES tags(id)
                         )
-                    """))
+                    """)
+                    )
                     connection.execute(text("INSERT INTO tags (id, name) VALUES (1, 'shared')"))
                     connection.execute(text("INSERT INTO paper_tags (id, paper_id, tag_id) VALUES (1, 10, 1)"))
 
@@ -89,28 +272,32 @@ class AccessMigrationTests(unittest.TestCase):
                 migrate_database_schema(engine)
 
                 with engine.begin() as connection:
-                    connection.execute(text("""
+                    connection.execute(
+                        text("""
                         INSERT INTO tags (id, name, visibility, department_id)
                         VALUES (2, 'shared', 'department', 1),
                                (3, 'shared', 'department', 2)
-                    """))
-                    association = connection.execute(
-                        text("SELECT paper_id, tag_id FROM paper_tags WHERE id=1")
-                    ).one()
+                    """)
+                    )
+                    association = connection.execute(text("SELECT paper_id, tag_id FROM paper_tags WHERE id=1")).one()
                 self.assertEqual(tuple(association), (10, 1))
 
                 with self.assertRaises(IntegrityError):
                     with engine.begin() as connection:
-                        connection.execute(text("""
+                        connection.execute(
+                            text("""
                             INSERT INTO tags (id, name, visibility, department_id)
                             VALUES (4, 'shared', 'public', NULL)
-                        """))
+                        """)
+                        )
                 with self.assertRaises(IntegrityError):
                     with engine.begin() as connection:
-                        connection.execute(text("""
+                        connection.execute(
+                            text("""
                             INSERT INTO tags (id, name, visibility, department_id)
                             VALUES (5, 'shared', 'department', 1)
-                        """))
+                        """)
+                        )
             finally:
                 engine.dispose()
 
@@ -120,14 +307,17 @@ class AccessMigrationTests(unittest.TestCase):
             engine = create_engine(f"sqlite:///{database_path}")
             try:
                 with engine.begin() as connection:
-                    connection.execute(text("""
+                    connection.execute(
+                        text("""
                         CREATE TABLE feeds (
                             id INTEGER PRIMARY KEY,
                             name VARCHAR(255) NOT NULL,
                             url VARCHAR(1024) NOT NULL UNIQUE
                         )
-                    """))
-                    connection.execute(text("""
+                    """)
+                    )
+                    connection.execute(
+                        text("""
                         CREATE TABLE papers (
                             id INTEGER PRIMARY KEY,
                             title VARCHAR(512) NOT NULL,
@@ -139,8 +329,10 @@ class AccessMigrationTests(unittest.TestCase):
                             relevance REAL,
                             source_feed_id INTEGER REFERENCES feeds(id)
                         )
-                    """))
-                    connection.execute(text("""
+                    """)
+                    )
+                    connection.execute(
+                        text("""
                         CREATE TABLE paper_files (
                             id INTEGER PRIMARY KEY,
                             paper_id INTEGER NOT NULL REFERENCES papers(id),
@@ -149,49 +341,54 @@ class AccessMigrationTests(unittest.TestCase):
                             file_type TEXT,
                             content_type TEXT
                         )
-                    """))
-                    connection.execute(text(
-                        "INSERT INTO feeds (id, name, url) VALUES (1, 'public', 'https://feed')"
-                    ))
-                    connection.execute(text(
-                        "INSERT INTO papers (id, title, link, source_feed_id) "
-                        "VALUES (1, 'public', 'https://paper', 1)"
-                    ))
-                    connection.execute(text(
-                        "INSERT INTO paper_files (id, paper_id) VALUES (1, 1)"
-                    ))
+                    """)
+                    )
+                    connection.execute(text("INSERT INTO feeds (id, name, url) VALUES (1, 'public', 'https://feed')"))
+                    connection.execute(
+                        text(
+                            "INSERT INTO papers (id, title, link, source_feed_id) "
+                            "VALUES (1, 'public', 'https://paper', 1)"
+                        )
+                    )
+                    connection.execute(text("INSERT INTO paper_files (id, paper_id) VALUES (1, 1)"))
 
                 migrate_database_schema(engine)
                 migrate_database_schema(engine)
 
                 with engine.begin() as connection:
-                    connection.execute(text("""
+                    connection.execute(
+                        text("""
                         INSERT INTO feeds (id, name, url, visibility, department_id)
                         VALUES (2, 'department one', 'https://feed', 'department', 1),
                                (3, 'department two', 'https://feed', 'department', 2)
-                    """))
-                    connection.execute(text("""
+                    """)
+                    )
+                    connection.execute(
+                        text("""
                         INSERT INTO papers (id, title, link, visibility, department_id)
                         VALUES (2, 'department one', 'https://paper', 'department', 1),
                                (3, 'department two', 'https://paper', 'department', 2)
-                    """))
-                    linked_file = connection.execute(
-                        text("SELECT paper_id FROM paper_files WHERE id=1")
-                    ).scalar_one()
+                    """)
+                    )
+                    linked_file = connection.execute(text("SELECT paper_id FROM paper_files WHERE id=1")).scalar_one()
                 self.assertEqual(linked_file, 1)
 
                 with self.assertRaises(IntegrityError):
                     with engine.begin() as connection:
-                        connection.execute(text("""
+                        connection.execute(
+                            text("""
                             INSERT INTO papers (id, title, link, visibility, department_id)
                             VALUES (4, 'duplicate', 'https://paper', 'department', 1)
-                        """))
+                        """)
+                        )
                 with self.assertRaises(IntegrityError):
                     with engine.begin() as connection:
-                        connection.execute(text("""
+                        connection.execute(
+                            text("""
                             INSERT INTO feeds (id, name, url, visibility, department_id)
                             VALUES (4, 'duplicate', 'https://feed', 'public', NULL)
-                        """))
+                        """)
+                        )
             finally:
                 engine.dispose()
 
