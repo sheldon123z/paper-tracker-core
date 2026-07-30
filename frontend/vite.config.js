@@ -2,6 +2,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { nodePolyfills } from 'vite-plugin-node-polyfills'
+import { DEV_API_PROXY } from './vite/devProxy.js'
 import { replaceExternalFontUrls } from './vite/offlineAssets.js'
 
 export default defineConfig({
@@ -51,12 +52,7 @@ export default defineConfig({
   server: {
     port: 3457,
     host: '0.0.0.0',
-    proxy: {
-      '/api/copilotkit': {
-        target: 'http://localhost:4100',
-        changeOrigin: true,
-      },
-    },
+    proxy: DEV_API_PROXY,
     fs: {
       allow: ['..'],
     },
