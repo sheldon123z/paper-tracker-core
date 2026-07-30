@@ -117,6 +117,29 @@ try {
     $newOfflineEnvScript = Join-Path $testScripts "New-OfflineEnv.ps1"
     . $commonScript
 
+    $stagingTestBundle = Join-Path $testRoot (
+        "deep\bundle\destination\package"
+    )
+    [void](New-Item -ItemType Directory `
+        -Path (Split-Path -Parent $stagingTestBundle) -Force)
+    $stagingSelection = New-OfflineStagingDirectory `
+        -BundleRoot $stagingTestBundle
+    $stagingVolume = [System.IO.Path]::GetPathRoot($stagingSelection.Path)
+    if (
+        -not (Test-Path -LiteralPath $stagingSelection.Path -PathType Container) -or
+        $stagingSelection.Prefix -cne ".ptb-" -or
+        -not [string]::Equals(
+            $stagingVolume,
+            [System.IO.Path]::GetPathRoot($stagingTestBundle),
+            [System.StringComparison]::OrdinalIgnoreCase
+        ) -or
+        $stagingSelection.Path.Length -ge
+            ((Split-Path -Parent $stagingTestBundle).Length + 38)
+    ) {
+        throw "Staging directory selection was not short, writable, and same-volume."
+    }
+    [System.IO.Directory]::Delete($stagingSelection.Path)
+
     $nonSeededRoot = Join-Path $testRoot "layout-nonseeded\package"
     [void](New-Item -ItemType Directory -Path $nonSeededRoot -Force)
     [System.IO.File]::WriteAllText(

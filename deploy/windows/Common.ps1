@@ -87,6 +87,82 @@ function Get-OfflineBundleLayout {
     }
 }
 
+function New-OfflineStagingDirectory {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$BundleRoot
+    )
+
+    $resolvedBundle = Resolve-OfflinePath -Path $BundleRoot
+    $bundleParent = Split-Path -Parent $resolvedBundle
+    $volumeRoot = [System.IO.Path]::GetPathRoot($resolvedBundle)
+    $candidateParents = @()
+    $current = $bundleParent
+    while ($current) {
+        if ($current -notin $candidateParents) {
+            $candidateParents += $current
+        }
+        if ([string]::Equals(
+            $current,
+            $volumeRoot,
+            [System.StringComparison]::OrdinalIgnoreCase
+        )) {
+            break
+        }
+        $parent = Split-Path -Parent $current
+        if (-not $parent -or $parent -eq $current) {
+            break
+        }
+        $current = $parent
+    }
+
+    $prefix = ".ptb-"
+    foreach ($candidateParent in @(
+        $candidateParents | Sort-Object { $_.Length }
+    )) {
+        try {
+            $parentItem = Get-Item -LiteralPath $candidateParent -Force `
+                -ErrorAction Stop
+            if (
+                -not $parentItem.PSIsContainer -or
+                ($parentItem.Attributes -band
+                    [System.IO.FileAttributes]::ReparsePoint) -ne 0
+            ) {
+                continue
+            }
+        }
+        catch {
+            continue
+        }
+
+        for ($attempt = 0; $attempt -lt 3; $attempt++) {
+            $leaf = "$prefix$([Guid]::NewGuid().ToString('N'))"
+            $path = Join-Path $candidateParent $leaf
+            try {
+                [void](New-Item -ItemType Directory -Path $path `
+                    -ErrorAction Stop)
+                return [pscustomobject]@{
+                    Path = [System.IO.Path]::GetFullPath($path)
+                    Parent = [System.IO.Path]::GetFullPath($candidateParent)
+                    Prefix = $prefix
+                }
+            }
+            catch {
+                if (Test-Path -LiteralPath $path) {
+                    continue
+                }
+                break
+            }
+        }
+    }
+
+    throw (
+        "Could not create a writable same-volume staging directory for " +
+        "'$resolvedBundle'. Choose an output path beneath a writable local " +
+        "NTFS directory."
+    )
+}
+
 function Assert-PathWithin {
     param(
         [Parameter(Mandatory = $true)]

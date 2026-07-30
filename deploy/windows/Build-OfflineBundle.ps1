@@ -203,15 +203,10 @@ Assert-DockerLinux
 
 $bundleParent = Split-Path -Parent $bundleRoot
 [void](New-Item -ItemType Directory -Path $bundleParent -Force)
-$stagingParent = [System.IO.Path]::GetPathRoot($bundleRoot)
-$stagingPrefix = ".ptb-"
-# Keep the temporary root deliberately short. Scientific attachment names can
-# otherwise exceed the Windows PowerShell 5.1 MAX_PATH limit before the final
-# directory is atomically moved into place.
-$stagingRoot = Join-Path $stagingParent (
-    "$stagingPrefix$([Guid]::NewGuid().ToString('N'))"
-)
-[void](New-Item -ItemType Directory -Path $stagingRoot)
+$staging = New-OfflineStagingDirectory -BundleRoot $bundleRoot
+$stagingRoot = $staging.Path
+$stagingParent = $staging.Parent
+$stagingPrefix = $staging.Prefix
 
 try {
     Protect-OfflineSensitiveDirectory -Path $stagingRoot
@@ -226,6 +221,28 @@ try {
         $sourceBefore = @(Get-OfflineTreeSnapshot -Path $resolvedDataImport)
         $sourceCopyRelative = "src"
         $sourceCopyRoot = Join-Path $stagingRoot $sourceCopyRelative
+        $maximumSnapshotPathLength = (
+            $sourceBefore |
+            ForEach-Object {
+                (
+                    Join-Path $sourceCopyRoot (
+                        ([string]$_.path).Replace(
+                            "/",
+                            [System.IO.Path]::DirectorySeparatorChar
+                        )
+                    )
+                ).Length
+            } |
+            Measure-Object -Maximum
+        ).Maximum
+        if ([long]$maximumSnapshotPathLength -gt 259) {
+            throw (
+                "The shortest writable staging path still exceeds the " +
+                "Windows PowerShell 5.1 path limit for this data set " +
+                "($maximumSnapshotPathLength characters). Choose a shorter " +
+                "bundle output location."
+            )
+        }
         [void](New-Item -ItemType Directory -Path $sourceCopyRoot)
         Get-ChildItem -LiteralPath $resolvedDataImport -Force | ForEach-Object {
             Copy-Item -LiteralPath $_.FullName -Destination $sourceCopyRoot -Recurse -Force
