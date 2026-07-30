@@ -22,7 +22,7 @@ services:
       context: .
       dockerfile: deploy/gateway/Dockerfile
       args:
-        VITE_API_BASE_URL: /
+        VITE_API_BASE_URL: ""
         VITE_COPILOT_RUNTIME_URL: /api/copilotkit
         VITE_OFFLINE_MODE: "true"
         VITE_ALLOW_PUBLIC_REGISTRATION: "1"
