@@ -51,6 +51,94 @@ function Assert-PathWithin {
     return $resolvedPath
 }
 
+function Resolve-OfflineManifestPath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RelativePath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Root
+    )
+
+    if (
+        [string]::IsNullOrWhiteSpace($RelativePath) -or
+        [System.IO.Path]::IsPathRooted($RelativePath) -or
+        $RelativePath.StartsWith("\\") -or
+        $RelativePath.Contains(":") -or
+        $RelativePath.IndexOfAny([char[]]@("`0", "`r", "`n")) -ge 0
+    ) {
+        throw "Manifest path is not a safe relative path: $RelativePath"
+    }
+    $segments = @($RelativePath.Replace("\", "/").Split("/"))
+    if (
+        $segments.Count -eq 0 -or
+        @($segments | Where-Object { -not $_ -or $_ -in @(".", "..") }).Count -gt 0
+    ) {
+        throw "Manifest path contains an unsafe segment: $RelativePath"
+    }
+
+    $resolvedRoot = Resolve-OfflinePath -Path $Root
+    $resolvedPath = Assert-PathWithin `
+        -Path (Join-Path $resolvedRoot ($segments -join [System.IO.Path]::DirectorySeparatorChar)) `
+        -Root $resolvedRoot
+
+    $current = $resolvedRoot
+    foreach ($segment in $segments) {
+        if (Test-Path -LiteralPath $current) {
+            $item = Get-Item -LiteralPath $current -Force
+            if (
+                ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0
+            ) {
+                throw "Manifest path traverses a reparse point: $RelativePath"
+            }
+        }
+        $current = Join-Path $current $segment
+    }
+    if (Test-Path -LiteralPath $current) {
+        $item = Get-Item -LiteralPath $current -Force
+        if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw "Manifest path resolves to a reparse point: $RelativePath"
+        }
+    }
+
+    return $resolvedPath
+}
+
+function Assert-OfflineLocalPathNoReparse {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    $resolved = Resolve-OfflinePath -Path $Path
+    if ($resolved.StartsWith("\\", [System.StringComparison]::Ordinal)) {
+        throw "Sensitive runtime paths must be on a local Windows volume: $resolved"
+    }
+    $pathRoot = [System.IO.Path]::GetPathRoot($resolved)
+    $relative = $resolved.Substring($pathRoot.Length).TrimStart(
+        [System.IO.Path]::DirectorySeparatorChar,
+        [System.IO.Path]::AltDirectorySeparatorChar
+    )
+    if ($relative.Contains(":")) {
+        throw "Sensitive runtime paths must not use alternate data streams: $resolved"
+    }
+
+    $current = $pathRoot
+    foreach ($segment in @(
+        $relative.Replace("\", "/").Split("/") | Where-Object { $_ }
+    )) {
+        $current = Join-Path $current $segment
+        if (-not (Test-Path -LiteralPath $current)) {
+            continue
+        }
+        $item = Get-Item -LiteralPath $current -Force
+        if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw "Sensitive runtime path traverses a reparse point: $current"
+        }
+    }
+    return $resolved
+}
+
 function Write-Utf8NoBom {
     param(
         [Parameter(Mandatory = $true)]
@@ -72,6 +160,13 @@ function Protect-OfflineSecretFile {
     )
 
     $resolved = Resolve-OfflinePath -Path $Path
+    $item = Get-Item -LiteralPath $resolved -Force
+    if (
+        $item.PSIsContainer -or
+        ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0
+    ) {
+        throw "Secret path must be a real file, not a directory or reparse point: $resolved"
+    }
     try {
         Assert-OfflineSecretAcl -Path $resolved
         return
@@ -82,13 +177,8 @@ function Protect-OfflineSecretFile {
 
     try {
         $currentIdentity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
-        $acl = Get-Acl -LiteralPath $resolved
+        $acl = New-Object System.Security.AccessControl.FileSecurity
         $acl.SetAccessRuleProtection($true, $false)
-        $acl.SetOwner($currentIdentity.User)
-
-        foreach ($rule in @($acl.Access)) {
-            $acl.PurgeAccessRules($rule.IdentityReference)
-        }
 
         $fullControl = [System.Security.AccessControl.FileSystemRights]::FullControl
         $allow = [System.Security.AccessControl.AccessControlType]::Allow
@@ -105,11 +195,123 @@ function Protect-OfflineSecretFile {
             )
             [void]$acl.AddAccessRule($rule)
         }
-        Set-Acl -LiteralPath $resolved -AclObject $acl
+        [System.IO.File]::SetAccessControl($resolved, $acl)
     }
     catch {
-        Write-Warning "Could not restrict ACLs on '$resolved': $($_.Exception.Message)"
+        throw "Could not restrict ACLs on '$resolved': $($_.Exception.Message)"
     }
+}
+
+function Protect-OfflineSensitiveDirectory {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    $resolved = Resolve-OfflinePath -Path $Path
+    if (-not (Test-Path -LiteralPath $resolved -PathType Container)) {
+        throw "Sensitive directory not found: $resolved"
+    }
+    $directoryItem = Get-Item -LiteralPath $resolved -Force
+    if (
+        -not $directoryItem.PSIsContainer -or
+        ($directoryItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0
+    ) {
+        throw "Sensitive directory must not be a reparse point: $resolved"
+    }
+
+    $currentIdentity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+    $acl = New-Object System.Security.AccessControl.DirectorySecurity
+    $acl.SetAccessRuleProtection($true, $false)
+
+    $fullControl = [System.Security.AccessControl.FileSystemRights]::FullControl
+    $allow = [System.Security.AccessControl.AccessControlType]::Allow
+    $inheritance = (
+        [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor
+        [System.Security.AccessControl.InheritanceFlags]::ObjectInherit
+    )
+    $propagation = [System.Security.AccessControl.PropagationFlags]::None
+    foreach ($sidValue in @(
+        $currentIdentity.User.Value,
+        "S-1-5-18",
+        "S-1-5-32-544"
+    )) {
+        $sid = New-Object System.Security.Principal.SecurityIdentifier($sidValue)
+        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+            $sid,
+            $fullControl,
+            $inheritance,
+            $propagation,
+            $allow
+        )
+        [void]$acl.AddAccessRule($rule)
+    }
+    [System.IO.Directory]::SetAccessControl($resolved, $acl)
+    Assert-OfflineSecretAcl -Path $resolved
+}
+
+function Get-OfflineNoReparseTreeItems {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    $resolved = Resolve-OfflinePath -Path $Path
+    $rootItem = Get-Item -LiteralPath $resolved -Force
+    if (
+        -not $rootItem.PSIsContainer -or
+        ($rootItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0
+    ) {
+        throw "Sensitive tree root must be a real directory: $resolved"
+    }
+
+    $items = New-Object System.Collections.ArrayList
+    $pending = New-Object System.Collections.Stack
+    $pending.Push($rootItem)
+    while ($pending.Count -gt 0) {
+        $directory = $pending.Pop()
+        foreach ($child in @(
+            Get-ChildItem -LiteralPath $directory.FullName -Force
+        )) {
+            if (
+                ($child.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0
+            ) {
+                throw "Sensitive tree contains a reparse point: $($child.FullName)"
+            }
+            [void]$items.Add($child)
+            if ($child.PSIsContainer) {
+                $pending.Push($child)
+            }
+        }
+    }
+    return @($items)
+}
+
+function Protect-OfflineSensitiveTree {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    $resolved = Resolve-OfflinePath -Path $Path
+    # Enumerate one directory level at a time, rejecting a child before it can
+    # ever be traversed. Never use Get-ChildItem -Recurse on untrusted media.
+    $treeItems = @(Get-OfflineNoReparseTreeItems -Path $resolved)
+    Protect-OfflineSensitiveDirectory -Path $resolved
+    $directories = @(
+        $treeItems | Where-Object { $_.PSIsContainer } |
+        Sort-Object { $_.FullName.Length }
+    )
+    foreach ($directory in $directories) {
+        Protect-OfflineSensitiveDirectory -Path $directory.FullName
+    }
+    foreach ($file in @($treeItems | Where-Object { -not $_.PSIsContainer })) {
+        Protect-OfflineSecretFile -Path $file.FullName
+        Assert-OfflineSecretAcl -Path $file.FullName
+    }
+    # Re-walk after ACL application so a concurrent path replacement is
+    # detected before any sensitive bundle content is consumed.
+    [void](Get-OfflineNoReparseTreeItems -Path $resolved)
 }
 
 function Assert-OfflineSecretAcl {
@@ -127,6 +329,14 @@ function Assert-OfflineSecretAcl {
             "S-1-5-32-544"
         )
         $acl = Get-Acl -LiteralPath $resolved
+        $ownerSid = (
+            New-Object System.Security.Principal.NTAccount($acl.Owner)
+        ).Translate(
+            [System.Security.Principal.SecurityIdentifier]
+        ).Value
+        if ($ownerSid -notin $allowedSids) {
+            throw "Unexpected owner identity: $ownerSid"
+        }
         if (-not $acl.AreAccessRulesProtected) {
             throw "ACL inheritance is enabled."
         }
@@ -227,6 +437,113 @@ function Read-OfflineEnvFile {
         $values[$key] = $value
     }
 
+    return $values
+}
+
+function Assert-OfflineFernetKeyFormat {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Value,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Context
+    )
+
+    if ($Value -cnotmatch "^[A-Za-z0-9_-]{43}=$") {
+        throw "$Context must be a 44-character Fernet key."
+    }
+    try {
+        $decoded = [Convert]::FromBase64String(
+            $Value.Replace("-", "+").Replace("_", "/")
+        )
+    }
+    catch {
+        throw "$Context is not valid URL-safe base64."
+    }
+    if ($decoded.Length -ne 32) {
+        throw "$Context must decode to exactly 32 bytes."
+    }
+}
+
+function Assert-OfflineExactSecretNames {
+    param(
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Values,
+
+        [Parameter(Mandatory = $true)]
+        [string[]]$RequiredNames,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Context
+    )
+
+    foreach ($key in @($Values.Keys)) {
+        if ($key -cnotin $RequiredNames) {
+            throw "$Context contains unsupported setting '$key'."
+        }
+    }
+    foreach ($key in $RequiredNames) {
+        if (-not $Values.ContainsKey($key)) {
+            throw "$Context is missing required setting '$key'."
+        }
+        if (
+            [string]::IsNullOrWhiteSpace($Values[$key]) -or
+            $Values[$key] -match "^REPLACE_WITH_"
+        ) {
+            throw "$Context setting '$key' is empty or contains a placeholder."
+        }
+    }
+}
+
+function Read-OfflineExportSecrets {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$SecretsFile
+    )
+
+    $resolved = Resolve-OfflinePath -Path $SecretsFile
+    $values = Read-OfflineEnvFile -EnvFile $resolved
+    $requiredNames = @(
+        "ENCRYPTION_KEY",
+        "JWT_SECRET_KEY"
+    )
+
+    Assert-OfflineExactSecretNames `
+        -Values $values `
+        -RequiredNames $requiredNames `
+        -Context "Export secrets file"
+
+    $fernet = $values["ENCRYPTION_KEY"]
+    Assert-OfflineFernetKeyFormat `
+        -Value $fernet `
+        -Context "Exported ENCRYPTION_KEY"
+
+    $jwtSecret = $values["JWT_SECRET_KEY"]
+    if ($jwtSecret -cnotmatch "^[A-Za-z0-9_-]{64,}$") {
+        throw "Exported JWT_SECRET_KEY must contain at least 64 URL-safe characters."
+    }
+    if ($jwtSecret -ceq $fernet) {
+        throw "Exported JWT_SECRET_KEY and ENCRYPTION_KEY must be different."
+    }
+
+    return $values
+}
+
+function Read-OfflineEncryptionKeyImport {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$SecretsFile
+    )
+
+    $resolved = Resolve-OfflinePath -Path $SecretsFile
+    $values = Read-OfflineEnvFile -EnvFile $resolved
+    Assert-OfflineExactSecretNames `
+        -Values $values `
+        -RequiredNames @("ENCRYPTION_KEY") `
+        -Context "Encryption-key import file"
+    Assert-OfflineFernetKeyFormat `
+        -Value $values["ENCRYPTION_KEY"] `
+        -Context "Imported ENCRYPTION_KEY"
     return $values
 }
 
@@ -520,29 +837,32 @@ function Get-RunningOfflineServices {
     return @($restartable)
 }
 
-function Enter-OfflineVolumeLock {
+function Enter-OfflineNamedLock {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$VolumeName,
+        [ValidateSet("Project", "Volume")]
+        [string]$Kind,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
 
         [ValidateRange(0, 3600)]
         [int]$TimeoutSeconds = 0
     )
 
-    if ($VolumeName -notmatch "^[A-Za-z0-9][A-Za-z0-9_.-]*$") {
-        throw "Unsafe Docker volume name: $VolumeName"
-    }
-
     $sha256 = [System.Security.Cryptography.SHA256]::Create()
     try {
-        $bytes = [System.Text.Encoding]::UTF8.GetBytes($VolumeName.ToLowerInvariant())
+        $lockMaterial = "$Kind`n$($Name.ToLowerInvariant())"
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($lockMaterial)
         $digest = $sha256.ComputeHash($bytes)
     }
     finally {
         $sha256.Dispose()
     }
     $lockId = [System.BitConverter]::ToString($digest).Replace("-", "")
-    $mutexName = "Local\PaperTrackerOfflineVolume-$lockId"
+    # Global prevents two Windows login sessions from racing the same Docker
+    # Desktop engine. The caller must acquire project before volume locks.
+    $mutexName = "Global\PaperTrackerOffline$Kind-$lockId"
     $createdNew = $false
     $mutex = New-Object System.Threading.Mutex($false, $mutexName, [ref]$createdNew)
 
@@ -555,8 +875,7 @@ function Enter-OfflineVolumeLock {
         }
         if (-not $acquired) {
             throw (
-                "Another backup or restore operation already holds the lock for " +
-                "Docker volume '$VolumeName'."
+                "Another offline operation already holds the $Kind lock for '$Name'."
             )
         }
         return $mutex
@@ -565,6 +884,42 @@ function Enter-OfflineVolumeLock {
         $mutex.Dispose()
         throw
     }
+}
+
+function Enter-OfflineProjectLock {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ProjectName,
+
+        [ValidateRange(0, 3600)]
+        [int]$TimeoutSeconds = 0
+    )
+
+    if ($ProjectName -notmatch "^[a-z0-9][a-z0-9_-]*$") {
+        throw "Unsafe Compose project name: $ProjectName"
+    }
+    return Enter-OfflineNamedLock `
+        -Kind "Project" `
+        -Name $ProjectName `
+        -TimeoutSeconds $TimeoutSeconds
+}
+
+function Enter-OfflineVolumeLock {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$VolumeName,
+
+        [ValidateRange(0, 3600)]
+        [int]$TimeoutSeconds = 0
+    )
+
+    if ($VolumeName -notmatch "^[A-Za-z0-9][A-Za-z0-9_.-]*$") {
+        throw "Unsafe Docker volume name: $VolumeName"
+    }
+    return Enter-OfflineNamedLock `
+        -Kind "Volume" `
+        -Name $VolumeName `
+        -TimeoutSeconds $TimeoutSeconds
 }
 
 function Exit-OfflineVolumeLock {

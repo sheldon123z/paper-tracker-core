@@ -4,6 +4,10 @@
 机器运行。联网只发生在构建阶段；离线运行阶段使用预构建镜像，Compose
 配置禁止拉取镜像。
 
+> 如果 `bundle-manifest.json` 含有 `seed`，这是带账号和业务数据的完整安装包。
+> 首次安装必须使用 `deploy\windows\Install-Offline.ps1`，并以
+> `docs\offline-install-operations-zh.md` 为准；不要先手工启动空数据卷。
+
 ## 1. 前置条件
 
 构建机和离线机都需要：
@@ -23,13 +27,34 @@ docker compose version
 
 ## 2. 在联网构建机生成离线包
 
-在仓库根目录运行：
+生成不含账号和业务数据的空白离线包时，在仓库根目录运行：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\deploy\windows\Build-OfflineBundle.ps1 `
   -OutputDirectory D:\transfer\paper-tracker-offline-bundle `
   -ImageTag 2026-07-30
 ```
+
+生成带种子数据的完整安装包时，必须同时显式指定种子导出目录和它所属的
+`data-import` 根目录：
+
+```powershell
+$dataImport = "D:\exports\data-import"
+$seedExport = "D:\exports\data-import\paper-tracker-export-20260730"
+
+powershell -ExecutionPolicy Bypass -File .\deploy\windows\Build-OfflineBundle.ps1 `
+  -OutputDirectory D:\transfer\paper-tracker-seeded-bundle `
+  -ImageTag 2026-07-30 `
+  -SeedExportDirectory $seedExport `
+  -DataImportDirectory $dataImport
+```
+
+`SeedExportDirectory` 必须是 `DataImportDirectory` 内的子目录，且包含受支持的
+Paper Tracker backend 导出。构建器除了生成最小种子归档外，还会把
+`DataImportDirectory` 的**全部内容原样复制**到离线包的 `src\`；同级的其他
+导出、附件、账号数据、密码哈希、会话、审计记录和密钥文件也会一并进入包中。
+因此应使用隔离且已经人工复核的 `data-import` 目录，并把整个种子包按最高敏感
+级别保管。
 
 脚本在线构建 backend、Copilot runtime 和 gateway 三个 Linux 镜像，导出镜像
 归档，并为归档和部署文件生成 `bundle-manifest.json` SHA-256 清单。目标目录
@@ -42,8 +67,16 @@ powershell -ExecutionPolicy Bypass -File .\deploy\windows\Build-OfflineBundle.ps
 、`PAPER_TRACKER_PYPI_INDEX_URL` 和 `PAPER_TRACKER_NPM_REGISTRY`；未设置时
 仍使用上游官方源。
 
-将整个 `paper-tracker-offline-bundle` 目录复制到移动介质。不要把构建机上的
-`offline.env` 放进离线包。
+将整个离线包目录复制到移动介质。不要另行把仓库或运行中部署的 `offline.env`
+放进包根目录；构建器会生成仅含 `ENCRYPTION_KEY` 的安装专用
+`data\import-encryption.env`，原始导出 `.env` 只保留在用户要求的完整 `src\` 副本中。
+构建机上的 NTFS ACL 会限制为当前用户、SYSTEM 与 Administrators，但 ACL 不能可靠跨
+FAT/exFAT、普通 U 盘复制或其他主机保留，因此转移介质必须使用 BitLocker 或等价加密。
+
+`bundle-manifest.json.sha256` 和 manifest 内的 SHA-256 只能发现传输损坏，不能独立证明
+介质真实性，因为攻击者可以同时替换文件和同介质校验值。只从可信交付方取得包，并通过独立
+渠道核对最终 manifest SHA-256；需要抵抗恶意介质替换时，应另行采用组织可信根验证的 detached
+signature。
 
 ## 3. 在离线 Windows 导入并启动
 
@@ -57,10 +90,27 @@ powershell -ExecutionPolicy Bypass -File .\deploy\windows\New-OfflineEnv.ps1
 powershell -ExecutionPolicy Bypass -File .\deploy\windows\Start-Offline.ps1
 ```
 
+上述三条命令只适用于不含 `seed` 的空白离线包。带种子数据的包必须执行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\deploy\windows\Install-Offline.ps1
+```
+
+空白包的 `Start-Offline.ps1`、`Stop-Offline.ps1` 和 `Status-Offline.ps1`
+默认使用包内 `offline.env`；manifest 含 `seed` 时，三个脚本会一致使用离线包
+同级的 `runtime\offline.env`，该文件由首次安装器创建。
+
 导入脚本在加载镜像前验证清单、文件大小和 SHA-256；加载后的镜像 ID 也必须
 与清单一致。失败时脚本会恢复导入前的镜像标签。环境脚本使用系统加密随机数
 生成 Fernet、JWT 和服务令牌，并将 `offline.env` ACL 限制为当前用户、
 SYSTEM 和 Administrators。升级离线包时只更新镜像 tag，不轮换现有密钥。
+
+种子安装是不同的安全边界：构建器从安装用数据库副本中清空全部 `user_sessions`，
+安装器只延续解密既有配置所必需的加密密钥，并生成新的 JWT 签名密钥和内部服务令牌。
+源系统签发的 access/refresh 会话在**新离线部署中**都会失效，用户必须重新登录；这不会
+远程注销仍运行的源系统，`src\` 原始副本也不作清理。安装器同时关闭公开注册。首次安装器
+拒绝复用任何既有 runtime env，seeded `Start-Offline.ps1` 也绝不
+为缺失的 env 生成替代密钥，避免旧 JWT 或随机加密密钥误配到已有数据卷。
 
 启动完成后只访问：
 

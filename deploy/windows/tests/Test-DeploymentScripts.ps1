@@ -14,11 +14,155 @@ $testRoot = Join-Path ([System.IO.Path]::GetTempPath()) (
 )
 $testScripts = Join-Path $testRoot "deploy\windows"
 
+function Assert-RestrictedSecretAcl {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $true)]
+        [string[]]$AllowedSids,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Label
+    )
+
+    $acl = Get-Acl -LiteralPath $Path
+    if (-not $acl.AreAccessRulesProtected) {
+        throw "$Label still inherits ACL entries."
+    }
+    foreach ($rule in @($acl.Access)) {
+        $sid = $rule.IdentityReference.Translate(
+            [System.Security.Principal.SecurityIdentifier]
+        ).Value
+        if (
+            $rule.AccessControlType -eq [System.Security.AccessControl.AccessControlType]::Allow -and
+            $sid -notin $AllowedSids
+        ) {
+            throw "$Label grants access to unexpected SID: $sid"
+        }
+    }
+}
+
+function Assert-NoSecretDisclosure {
+    param(
+        [AllowEmptyString()]
+        [string]$Text,
+
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Secrets,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Label
+    )
+
+    foreach ($secretName in @($Secrets.Keys)) {
+        $secretValue = [string]$Secrets[$secretName]
+        if (
+            -not [string]::IsNullOrEmpty($secretValue) -and
+            $Text.Contains($secretValue)
+        ) {
+            throw "$Label disclosed $secretName."
+        }
+    }
+}
+
+function Get-OfflineSecretValues {
+    param(
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Values
+    )
+
+    $secrets = @{}
+    foreach ($secretName in @(
+        "ENCRYPTION_KEY",
+        "JWT_SECRET_KEY",
+        "PAPER_TRACKER_SERVICE_TOKEN",
+        "LLM_CONFIG_ADMIN_TOKEN"
+    )) {
+        if ($Values.ContainsKey($secretName)) {
+            $secrets[$secretName] = $Values[$secretName]
+        }
+    }
+    return $secrets
+}
+
+function Write-ProtectedTestFile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$Content
+    )
+
+    $parent = Split-Path -Parent $Path
+    if (-not (Test-Path -LiteralPath $parent -PathType Container)) {
+        [void](New-Item -ItemType Directory -Path $parent -Force)
+    }
+    [System.IO.File]::WriteAllText(
+        $Path,
+        $Content,
+        (New-Object System.Text.UTF8Encoding($false))
+    )
+    Protect-OfflineSecretFile -Path $Path
+}
+
 try {
     [void](New-Item -ItemType Directory -Path $testScripts -Force)
     Copy-Item -LiteralPath (Join-Path $sourceRoot "offline.env.example") -Destination $testRoot
     Copy-Item -LiteralPath (Join-Path $sourceRoot "deploy\windows\Common.ps1") -Destination $testScripts
     Copy-Item -LiteralPath (Join-Path $sourceRoot "deploy\windows\New-OfflineEnv.ps1") -Destination $testScripts
+    $commonScript = Join-Path $testScripts "Common.ps1"
+    $newOfflineEnvScript = Join-Path $testScripts "New-OfflineEnv.ps1"
+    . $commonScript
+
+    $aclBundle = Join-Path $testRoot "acl-bundle"
+    $aclOutside = Join-Path $testRoot "acl-outside"
+    [void](New-Item -ItemType Directory -Path $aclBundle, $aclOutside)
+    $outsideSentinel = Join-Path $aclOutside "sentinel.txt"
+    [System.IO.File]::WriteAllText($outsideSentinel, "sentinel")
+    $outsideAclBefore = (Get-Acl -LiteralPath $outsideSentinel).Sddl
+    $junctionPath = Join-Path $aclBundle "escape"
+    [void](New-Item -ItemType Junction -Path $junctionPath -Target $aclOutside)
+    $reparseFailure = $null
+    try {
+        Protect-OfflineSensitiveTree -Path $aclBundle
+    }
+    catch {
+        $reparseFailure = $_
+    }
+    if (
+        -not $reparseFailure -or
+        $reparseFailure.Exception.Message -notmatch "reparse point"
+    ) {
+        throw "Sensitive-tree ACL protection did not reject a junction."
+    }
+    if ((Get-Acl -LiteralPath $outsideSentinel).Sddl -ne $outsideAclBefore) {
+        throw "Sensitive-tree ACL protection changed an outside target ACL."
+    }
+    [System.IO.Directory]::Delete($junctionPath)
+    $runtimeJunction = Join-Path $testRoot "runtime-junction"
+    [void](New-Item -ItemType Junction -Path $runtimeJunction -Target $aclOutside)
+    $runtimeJunctionFailure = $null
+    try {
+        & $newOfflineEnvScript `
+            -EnvFile (Join-Path $runtimeJunction "offline.env") 6>&1 |
+            Out-Null
+    }
+    catch {
+        $runtimeJunctionFailure = $_
+    }
+    if (
+        -not $runtimeJunctionFailure -or
+        $runtimeJunctionFailure.Exception.Message -notmatch "reparse point"
+    ) {
+        throw "New-OfflineEnv.ps1 did not reject a junction in the runtime path."
+    }
+    if (Test-Path -LiteralPath (Join-Path $aclOutside "offline.env")) {
+        throw "New-OfflineEnv.ps1 wrote secrets through a runtime junction."
+    }
+    [System.IO.Directory]::Delete($runtimeJunction)
 
     $manifest = @{
         schemaVersion = 1
@@ -30,7 +174,7 @@ try {
         (New-Object System.Text.UTF8Encoding($false))
     )
 
-    & (Join-Path $testScripts "New-OfflineEnv.ps1")
+    $initialOutput = (& $newOfflineEnvScript 6>&1 | Out-String)
     $generated = Get-Content -LiteralPath (Join-Path $testRoot "offline.env") -Raw
     if ($generated -notmatch "(?m)^PAPER_TRACKER_IMAGE_TAG=custom-airgap-tag$") {
         throw "New-OfflineEnv.ps1 did not adopt bundle-manifest.json imageTag."
@@ -44,33 +188,23 @@ try {
             $generatedValues[$Matches[1]] = $Matches[2]
         }
     }
+    Assert-NoSecretDisclosure -Text $initialOutput `
+        -Secrets (Get-OfflineSecretValues -Values $generatedValues) `
+        -Label "Initial environment generation"
 
     $allowedSids = @(
         [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value,
         "S-1-5-18",
         "S-1-5-32-544"
     )
-    $generatedAcl = Get-Acl -LiteralPath (Join-Path $testRoot "offline.env")
-    if (-not $generatedAcl.AreAccessRulesProtected) {
-        throw "Generated offline.env still inherits ACL entries."
-    }
-    foreach ($rule in @($generatedAcl.Access)) {
-        $sid = $rule.IdentityReference.Translate(
-            [System.Security.Principal.SecurityIdentifier]
-        ).Value
-        if (
-            $rule.AccessControlType -eq [System.Security.AccessControl.AccessControlType]::Allow -and
-            $sid -notin $allowedSids
-        ) {
-            throw "Generated offline.env grants access to unexpected SID: $sid"
-        }
-    }
+    Assert-RestrictedSecretAcl -Path (Join-Path $testRoot "offline.env") `
+        -AllowedSids $allowedSids -Label "Generated offline.env"
 
-    & (Join-Path $testScripts "New-OfflineEnv.ps1") -Force
-    $forcedValues = & {
-        . (Join-Path $testScripts "Common.ps1")
-        Read-OfflineEnvFile -EnvFile (Join-Path $testRoot "offline.env")
-    }
+    $forceOutput = (& $newOfflineEnvScript -Force 6>&1 | Out-String)
+    $forcedValues = Read-OfflineEnvFile -EnvFile (Join-Path $testRoot "offline.env")
+    Assert-NoSecretDisclosure -Text $forceOutput `
+        -Secrets (Get-OfflineSecretValues -Values $forcedValues) `
+        -Label "Forced environment refresh"
     foreach ($secretName in @(
         "ENCRYPTION_KEY",
         "JWT_SECRET_KEY",
@@ -86,21 +220,8 @@ try {
     if (-not $backupFile) {
         throw "Forced environment regeneration did not retain a backup."
     }
-    $backupAcl = Get-Acl -LiteralPath $backupFile.FullName
-    if (-not $backupAcl.AreAccessRulesProtected) {
-        throw "offline.env backup still inherits ACL entries."
-    }
-    foreach ($rule in @($backupAcl.Access)) {
-        $sid = $rule.IdentityReference.Translate(
-            [System.Security.Principal.SecurityIdentifier]
-        ).Value
-        if (
-            $rule.AccessControlType -eq [System.Security.AccessControl.AccessControlType]::Allow -and
-            $sid -notin $allowedSids
-        ) {
-            throw "offline.env backup grants access to unexpected SID: $sid"
-        }
-    }
+    Assert-RestrictedSecretAcl -Path $backupFile.FullName `
+        -AllowedSids $allowedSids -Label "offline.env backup"
 
     $manifest = @{
         schemaVersion = 1
@@ -111,11 +232,11 @@ try {
         $manifest,
         (New-Object System.Text.UTF8Encoding($false))
     )
-    & (Join-Path $testScripts "New-OfflineEnv.ps1")
-    $upgradedValues = & {
-        . (Join-Path $testScripts "Common.ps1")
-        Read-OfflineEnvFile -EnvFile (Join-Path $testRoot "offline.env")
-    }
+    $upgradeOutput = (& $newOfflineEnvScript 6>&1 | Out-String)
+    $upgradedValues = Read-OfflineEnvFile -EnvFile (Join-Path $testRoot "offline.env")
+    Assert-NoSecretDisclosure -Text $upgradeOutput `
+        -Secrets (Get-OfflineSecretValues -Values $upgradedValues) `
+        -Label "Bundle tag upgrade"
     if ($upgradedValues["PAPER_TRACKER_IMAGE_TAG"] -ne "upgraded-airgap-tag") {
         throw "Existing environment did not adopt the upgraded bundle image tag."
     }
@@ -129,6 +250,353 @@ try {
             throw "Bundle tag upgrade unexpectedly rotated $secretName."
         }
     }
+    if ($upgradedValues["PAPER_TRACKER_ALLOW_PUBLIC_REGISTRATION"] -ne "1") {
+        throw "Default environment generation unexpectedly disabled public registration."
+    }
+
+    $sourceEncryption = New-SecureBase64Url -ByteCount 32 -KeepPadding
+    $sourceJwt = New-SecureBase64Url -ByteCount 64
+    $validExportPath = Join-Path $testRoot "secret-input\valid-export.env"
+    $validExportContent = @(
+        "# The backend export contains exactly these two secrets.",
+        "ENCRYPTION_KEY=$sourceEncryption",
+        "JWT_SECRET_KEY=$sourceJwt"
+    ) -join [Environment]::NewLine
+    Write-ProtectedTestFile -Path $validExportPath -Content $validExportContent
+    $exportValues = Read-OfflineExportSecrets -SecretsFile $validExportPath
+    if (
+        $exportValues["ENCRYPTION_KEY"] -cne $sourceEncryption -or
+        $exportValues["JWT_SECRET_KEY"] -cne $sourceJwt
+    ) {
+        throw "Export secret validation did not preserve the validated values."
+    }
+
+    $extraSecret = New-SecureBase64Url -ByteCount 32
+    $invalidExportCases = @(
+        @{
+            Name = "missing-jwt"
+            Expected = "missing required setting 'JWT_SECRET_KEY'"
+            Content = "ENCRYPTION_KEY=$sourceEncryption"
+        },
+        @{
+            Name = "extra-key"
+            Expected = "unsupported setting 'PAPER_TRACKER_SERVICE_TOKEN'"
+            Content = @(
+                "ENCRYPTION_KEY=$sourceEncryption",
+                "JWT_SECRET_KEY=$sourceJwt",
+                "PAPER_TRACKER_SERVICE_TOKEN=$extraSecret"
+            ) -join [Environment]::NewLine
+        },
+        @{
+            Name = "duplicate-key"
+            Expected = "Duplicate environment key 'ENCRYPTION_KEY'"
+            Content = @(
+                "ENCRYPTION_KEY=$sourceEncryption",
+                "ENCRYPTION_KEY=$sourceEncryption",
+                "JWT_SECRET_KEY=$sourceJwt"
+            ) -join [Environment]::NewLine
+        },
+        @{
+            Name = "placeholder"
+            Expected = "empty or contains a placeholder"
+            Content = @(
+                "ENCRYPTION_KEY=$sourceEncryption",
+                "JWT_SECRET_KEY=REPLACE_WITH_EXPORTED_VALUE"
+            ) -join [Environment]::NewLine
+        },
+        @{
+            Name = "invalid-fernet"
+            Expected = "Exported ENCRYPTION_KEY must be a 44-character Fernet key"
+            Content = @(
+                "ENCRYPTION_KEY=not-a-fernet-key",
+                "JWT_SECRET_KEY=$sourceJwt"
+            ) -join [Environment]::NewLine
+        },
+        @{
+            Name = "invalid-jwt"
+            Expected = "Exported JWT_SECRET_KEY must contain at least 64 URL-safe characters"
+            Content = @(
+                "ENCRYPTION_KEY=$sourceEncryption",
+                "JWT_SECRET_KEY=too-short"
+            ) -join [Environment]::NewLine
+        }
+    )
+    $sourceSecrets = @{
+        "ENCRYPTION_KEY" = $sourceEncryption
+        "JWT_SECRET_KEY" = $sourceJwt
+        "EXTRA_SECRET" = $extraSecret
+    }
+    foreach ($case in $invalidExportCases) {
+        $caseSource = Join-Path $testRoot "secret-input\export-$($case.Name).env"
+        Write-ProtectedTestFile -Path $caseSource -Content $case.Content
+        $failure = $null
+        try {
+            [void](Read-OfflineExportSecrets -SecretsFile $caseSource)
+        }
+        catch {
+            $failure = $_
+        }
+        if (-not $failure) {
+            throw "Invalid export case '$($case.Name)' unexpectedly succeeded."
+        }
+        if ($failure.Exception.Message -notmatch [Regex]::Escape($case.Expected)) {
+            throw "Invalid export case '$($case.Name)' failed for the wrong reason."
+        }
+        Assert-NoSecretDisclosure -Text $failure.Exception.Message `
+            -Secrets $sourceSecrets -Label "Invalid export case '$($case.Name)'"
+    }
+
+    $validImportPath = Join-Path $testRoot "secret-input\encryption-key.env"
+    Write-ProtectedTestFile -Path $validImportPath `
+        -Content "ENCRYPTION_KEY=$sourceEncryption"
+
+    $importedEnvPath = Join-Path $testRoot "runtime\imported.env"
+    $importOutput = (
+        & $newOfflineEnvScript -EnvFile $importedEnvPath `
+            -ImportSecretsFrom $validImportPath 6>&1 |
+            Out-String
+    )
+    $importedValues = Read-OfflineEnvFile -EnvFile $importedEnvPath
+    if ($importedValues["ENCRYPTION_KEY"] -cne $sourceEncryption) {
+        throw "New environment did not preserve the imported encryption key."
+    }
+    if (
+        $importedValues["JWT_SECRET_KEY"] -ceq $sourceJwt -or
+        $importedValues["JWT_SECRET_KEY"] -cnotmatch "^[A-Za-z0-9_-]{64,}$"
+    ) {
+        throw "New environment copied or generated an invalid JWT secret."
+    }
+    $distinctGeneratedSecrets = @(
+        $importedValues["ENCRYPTION_KEY"],
+        $importedValues["JWT_SECRET_KEY"],
+        $importedValues["PAPER_TRACKER_SERVICE_TOKEN"],
+        $importedValues["LLM_CONFIG_ADMIN_TOKEN"]
+    ) | Select-Object -Unique
+    if ($distinctGeneratedSecrets.Count -ne 4) {
+        throw "New environment did not generate four distinct secrets."
+    }
+    if ($importedValues["PAPER_TRACKER_ALLOW_PUBLIC_REGISTRATION"] -ne "1") {
+        throw "Encryption-key import changed the default registration behavior."
+    }
+    Assert-NoSecretDisclosure -Text $importOutput `
+        -Secrets (Get-OfflineSecretValues -Values $importedValues) `
+        -Label "Encryption-key import"
+    Assert-RestrictedSecretAcl -Path $importedEnvPath `
+        -AllowedSids $allowedSids -Label "Imported environment"
+
+    $presetEnvPath = Join-Path $testRoot "runtime\preset-account.env"
+    $presetOutput = (
+        & $newOfflineEnvScript -EnvFile $presetEnvPath `
+            -ImportSecretsFrom $validImportPath `
+            -DisablePublicRegistration 6>&1 |
+            Out-String
+    )
+    $presetValues = Read-OfflineEnvFile -EnvFile $presetEnvPath
+    if ($presetValues["PAPER_TRACKER_ALLOW_PUBLIC_REGISTRATION"] -ne "0") {
+        throw "Preconfigured-account environment left public registration enabled."
+    }
+    if ($presetValues["ENCRYPTION_KEY"] -cne $sourceEncryption) {
+        throw "Preconfigured-account environment changed the imported encryption key."
+    }
+    if (
+        $presetValues["JWT_SECRET_KEY"] -ceq $sourceJwt -or
+        $presetValues["JWT_SECRET_KEY"] -ceq $importedValues["JWT_SECRET_KEY"] -or
+        $presetValues["JWT_SECRET_KEY"] -cnotmatch "^[A-Za-z0-9_-]{64,}$"
+    ) {
+        throw "Separate installation did not generate an independent JWT secret."
+    }
+    foreach ($tokenName in @(
+        "PAPER_TRACKER_SERVICE_TOKEN",
+        "LLM_CONFIG_ADMIN_TOKEN"
+    )) {
+        if ($presetValues[$tokenName] -ceq $importedValues[$tokenName]) {
+            throw "Separate installation reused $tokenName."
+        }
+    }
+    Assert-NoSecretDisclosure -Text $presetOutput `
+        -Secrets (Get-OfflineSecretValues -Values $presetValues) `
+        -Label "Preconfigured-account environment generation"
+    Assert-RestrictedSecretAcl -Path $presetEnvPath `
+        -AllowedSids $allowedSids -Label "Preconfigured-account environment"
+
+    $invalidImportCases = @(
+        @{
+            Name = "missing-key"
+            Expected = "missing required setting 'ENCRYPTION_KEY'"
+            Content = "# no imported key"
+        },
+        @{
+            Name = "old-jwt"
+            Expected = "unsupported setting 'JWT_SECRET_KEY'"
+            Content = $validExportContent
+        },
+        @{
+            Name = "noncanonical-key"
+            Expected = "unsupported setting 'encryption_key'"
+            Content = "encryption_key=$sourceEncryption"
+        },
+        @{
+            Name = "duplicate-key"
+            Expected = "Duplicate environment key 'ENCRYPTION_KEY'"
+            Content = @(
+                "ENCRYPTION_KEY=$sourceEncryption",
+                "ENCRYPTION_KEY=$sourceEncryption"
+            ) -join [Environment]::NewLine
+        },
+        @{
+            Name = "placeholder"
+            Expected = "empty or contains a placeholder"
+            Content = "ENCRYPTION_KEY=REPLACE_WITH_IMPORTED_VALUE"
+        },
+        @{
+            Name = "malformed-entry"
+            Expected = "Invalid environment entry"
+            Content = @(
+                "ENCRYPTION_KEY=$sourceEncryption",
+                "malformed-secret-material"
+            ) -join [Environment]::NewLine
+        },
+        @{
+            Name = "invalid-fernet"
+            Expected = "Imported ENCRYPTION_KEY must be a 44-character Fernet key"
+            Content = "ENCRYPTION_KEY=not-a-fernet-key"
+        }
+    )
+    foreach ($case in $invalidImportCases) {
+        $caseSource = Join-Path $testRoot "secret-input\import-$($case.Name).env"
+        $caseTarget = Join-Path $testRoot "invalid-targets\$($case.Name).env"
+        Write-ProtectedTestFile -Path $caseSource -Content $case.Content
+        $failure = $null
+        $failureOutput = ""
+        try {
+            $failureOutput = (
+                & $newOfflineEnvScript -EnvFile $caseTarget `
+                    -ImportSecretsFrom $caseSource 6>&1 |
+                    Out-String
+            )
+        }
+        catch {
+            $failure = $_
+        }
+        if (-not $failure) {
+            throw "Invalid import case '$($case.Name)' unexpectedly succeeded."
+        }
+        $failureText = $failureOutput + [Environment]::NewLine +
+            $failure.Exception.Message
+        if ($failureText -notmatch [Regex]::Escape($case.Expected)) {
+            throw "Invalid import case '$($case.Name)' failed for the wrong reason."
+        }
+        Assert-NoSecretDisclosure -Text $failureText -Secrets $sourceSecrets `
+            -Label "Invalid import case '$($case.Name)'"
+        if (Test-Path -LiteralPath $caseTarget) {
+            throw "Invalid import case '$($case.Name)' created a destination file."
+        }
+    }
+
+    $retryOutput = (
+        & $newOfflineEnvScript -EnvFile $importedEnvPath `
+            -ImportSecretsFrom $validImportPath -Force 6>&1 |
+            Out-String
+    )
+    $retryValues = Read-OfflineEnvFile -EnvFile $importedEnvPath
+    foreach ($secretName in @(
+        "ENCRYPTION_KEY",
+        "JWT_SECRET_KEY",
+        "PAPER_TRACKER_SERVICE_TOKEN",
+        "LLM_CONFIG_ADMIN_TOKEN"
+    )) {
+        if ($retryValues[$secretName] -cne $importedValues[$secretName]) {
+            throw "Matching installation retry unexpectedly rotated $secretName."
+        }
+    }
+    Assert-NoSecretDisclosure -Text $retryOutput `
+        -Secrets (Get-OfflineSecretValues -Values $retryValues) `
+        -Label "Matching installation retry"
+    $stableImportedContent = [System.IO.File]::ReadAllText($importedEnvPath)
+
+    $alternateEncryption = New-SecureBase64Url -ByteCount 32 -KeepPadding
+    foreach ($forceMismatch in @($false, $true)) {
+        $mismatchSource = Join-Path $testRoot (
+            "secret-input\mismatch-$forceMismatch.env"
+        )
+        Write-ProtectedTestFile -Path $mismatchSource `
+            -Content "ENCRYPTION_KEY=$alternateEncryption"
+        $failure = $null
+        $failureOutput = ""
+        try {
+            if ($forceMismatch) {
+                $failureOutput = (
+                    & $newOfflineEnvScript -EnvFile $importedEnvPath `
+                        -ImportSecretsFrom $mismatchSource -Force 6>&1 |
+                        Out-String
+                )
+            }
+            else {
+                $failureOutput = (
+                    & $newOfflineEnvScript -EnvFile $importedEnvPath `
+                        -ImportSecretsFrom $mismatchSource 6>&1 |
+                        Out-String
+                )
+            }
+        }
+        catch {
+            $failure = $_
+        }
+        if (-not $failure) {
+            throw "Existing environment accepted a mismatched encryption key."
+        }
+        $failureText = $failureOutput + [Environment]::NewLine +
+            $failure.Exception.Message
+        if ($failureText -notmatch "does not match the existing environment") {
+            throw "Mismatched encryption-key import failed for the wrong reason."
+        }
+        $mismatchSecrets = Get-OfflineSecretValues -Values $retryValues
+        $mismatchSecrets["IMPORTED_ENCRYPTION_KEY"] = $alternateEncryption
+        Assert-NoSecretDisclosure -Text $failureText -Secrets $mismatchSecrets `
+            -Label "Mismatched existing-environment import"
+        if (
+            [System.IO.File]::ReadAllText($importedEnvPath) -cne
+            $stableImportedContent
+        ) {
+            throw "Rejected encryption-key import changed the existing environment."
+        }
+        Assert-RestrictedSecretAcl -Path $importedEnvPath `
+            -AllowedSids $allowedSids -Label "Rejected-import environment"
+    }
+
+    $disableOutput = (
+        & $newOfflineEnvScript -EnvFile $importedEnvPath `
+            -ImportSecretsFrom $validImportPath `
+            -DisablePublicRegistration 6>&1 |
+            Out-String
+    )
+    $disabledValues = Read-OfflineEnvFile -EnvFile $importedEnvPath
+    if ($disabledValues["PAPER_TRACKER_ALLOW_PUBLIC_REGISTRATION"] -ne "0") {
+        throw "Existing environment did not disable public registration."
+    }
+    foreach ($secretName in @(
+        "ENCRYPTION_KEY",
+        "JWT_SECRET_KEY",
+        "PAPER_TRACKER_SERVICE_TOKEN",
+        "LLM_CONFIG_ADMIN_TOKEN"
+    )) {
+        if ($disabledValues[$secretName] -cne $retryValues[$secretName]) {
+            throw "Registration update unexpectedly rotated $secretName."
+        }
+    }
+    Assert-NoSecretDisclosure -Text $disableOutput `
+        -Secrets (Get-OfflineSecretValues -Values $disabledValues) `
+        -Label "Existing environment registration update"
+    Assert-RestrictedSecretAcl -Path $importedEnvPath `
+        -AllowedSids $allowedSids -Label "Registration-updated environment"
+    $importBackup = Get-ChildItem -LiteralPath (Split-Path -Parent $importedEnvPath) `
+        -File -Filter "imported.env.bak-*" |
+        Select-Object -First 1
+    if (-not $importBackup) {
+        throw "Environment retry did not retain an environment backup."
+    }
+    Assert-RestrictedSecretAcl -Path $importBackup.FullName `
+        -AllowedSids $allowedSids -Label "Environment retry backup"
 
     Write-Host "Deployment script tests passed."
 }

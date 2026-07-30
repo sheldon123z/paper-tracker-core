@@ -7,7 +7,11 @@ param(
     [ValidatePattern("^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$")]
     [string]$ImageTag,
 
-    [switch]$Force
+    [switch]$Force,
+
+    [string]$ImportSecretsFrom,
+
+    [switch]$DisablePublicRegistration
 )
 
 Set-StrictMode -Version Latest
@@ -23,6 +27,39 @@ $template = Join-Path $root "offline.env.example"
 
 if (-not (Test-Path -LiteralPath $template -PathType Leaf)) {
     throw "Environment template not found: $template"
+}
+$resolvedEnv = Assert-OfflineLocalPathNoReparse -Path $resolvedEnv
+$parent = Split-Path -Parent $resolvedEnv
+if ($parent -eq [System.IO.Path]::GetPathRoot($parent)) {
+    throw "Environment file must not be written directly to a drive root."
+}
+if (-not (Test-Path -LiteralPath $parent -PathType Container)) {
+    [void](New-Item -ItemType Directory -Path $parent -Force)
+}
+[void](Assert-OfflineLocalPathNoReparse -Path $resolvedEnv)
+Protect-OfflineSensitiveDirectory -Path $parent
+
+$importedSecrets = $null
+if ($PSBoundParameters.ContainsKey("ImportSecretsFrom")) {
+    if ([string]::IsNullOrWhiteSpace($ImportSecretsFrom)) {
+        throw "ImportSecretsFrom must name a secrets file."
+    }
+
+    $resolvedImport = Resolve-OfflinePath -Path $ImportSecretsFrom
+    if (-not (Test-Path -LiteralPath $resolvedImport -PathType Leaf)) {
+        throw "Imported secrets file not found: $resolvedImport"
+    }
+    if (
+        [string]::Equals(
+            $resolvedImport,
+            $resolvedEnv,
+            [System.StringComparison]::OrdinalIgnoreCase
+        )
+    ) {
+        throw "ImportSecretsFrom must not be the destination environment file."
+    }
+
+    $importedSecrets = Read-OfflineEncryptionKeyImport -SecretsFile $resolvedImport
 }
 
 $manifestTag = $null
@@ -66,6 +103,17 @@ if ($envExists) {
     }
     else {
         $existingValues = Assert-OfflineEnv -EnvFile $resolvedEnv
+        if ($importedSecrets) {
+            if (
+                $existingValues["ENCRYPTION_KEY"] -cne
+                $importedSecrets["ENCRYPTION_KEY"]
+            ) {
+                throw (
+                    "Imported ENCRYPTION_KEY does not match the existing " +
+                    "environment; refusing to rotate the encryption key."
+                )
+            }
+        }
     }
 }
 
@@ -81,19 +129,23 @@ if (-not $PSBoundParameters.ContainsKey("ImageTag")) {
     }
 }
 
+$registrationNeedsUpdate = (
+    $DisablePublicRegistration -and
+    (
+        -not $existingValues -or
+        -not $existingValues.ContainsKey("PAPER_TRACKER_ALLOW_PUBLIC_REGISTRATION") -or
+        $existingValues["PAPER_TRACKER_ALLOW_PUBLIC_REGISTRATION"] -ne "0"
+    )
+)
 if (
     $envExists -and
     -not $initializeSecrets -and
     -not $Force -and
+    -not $registrationNeedsUpdate -and
     $existingValues["PAPER_TRACKER_IMAGE_TAG"] -eq $ImageTag
 ) {
     Write-Host "Existing environment is valid; no changes made: $resolvedEnv"
     return
-}
-
-$parent = Split-Path -Parent $resolvedEnv
-if (-not (Test-Path -LiteralPath $parent -PathType Container)) {
-    [void](New-Item -ItemType Directory -Path $parent -Force)
 }
 
 if ($envExists) {
@@ -107,10 +159,18 @@ $replacements = @{
     "PAPER_TRACKER_IMAGE_TAG" = $ImageTag
 }
 if ($initializeSecrets) {
-    $replacements["ENCRYPTION_KEY"] = New-SecureBase64Url -ByteCount 32 -KeepPadding
+    if ($importedSecrets) {
+        $replacements["ENCRYPTION_KEY"] = $importedSecrets["ENCRYPTION_KEY"]
+    }
+    else {
+        $replacements["ENCRYPTION_KEY"] = New-SecureBase64Url -ByteCount 32 -KeepPadding
+    }
     $replacements["JWT_SECRET_KEY"] = New-SecureBase64Url -ByteCount 64
     $replacements["PAPER_TRACKER_SERVICE_TOKEN"] = New-SecureBase64Url -ByteCount 32
     $replacements["LLM_CONFIG_ADMIN_TOKEN"] = New-SecureBase64Url -ByteCount 32
+}
+if ($DisablePublicRegistration) {
+    $replacements["PAPER_TRACKER_ALLOW_PUBLIC_REGISTRATION"] = "0"
 }
 
 foreach ($entry in $replacements.GetEnumerator()) {
@@ -156,6 +216,7 @@ try {
     }
 
     [void](Assert-OfflineEnv -EnvFile $resolvedEnv)
+    Assert-OfflineSecretAcl -Path $resolvedEnv
 }
 finally {
     if (Test-Path -LiteralPath $candidatePath -PathType Leaf) {

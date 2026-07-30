@@ -13,9 +13,37 @@ if ([string]::IsNullOrWhiteSpace($BundleDirectory)) {
     $BundleDirectory = Get-OfflineDeploymentRoot
 }
 $bundleRoot = Resolve-OfflinePath -Path $BundleDirectory
-$manifestPath = Join-Path $bundleRoot "bundle-manifest.json"
+try {
+    Protect-OfflineSensitiveTree -Path $bundleRoot
+}
+catch {
+    throw (
+        "The offline bundle ACL could not be restricted on this host. " +
+        "Install from an NTFS directory owned by the current operator: " +
+        "$($_.Exception.Message)"
+    )
+}
+$manifestPath = Resolve-OfflineManifestPath `
+    -RelativePath "bundle-manifest.json" `
+    -Root $bundleRoot
 if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
     throw "Bundle manifest not found: $manifestPath"
+}
+$manifestSidecar = Resolve-OfflineManifestPath `
+    -RelativePath "bundle-manifest.json.sha256" `
+    -Root $bundleRoot
+$manifestSidecarVerified = $false
+if (Test-Path -LiteralPath $manifestSidecar -PathType Leaf) {
+    $sidecarHash = (
+        (Get-Content -LiteralPath $manifestSidecar -Raw).Trim() -split "\s+"
+    )[0].ToLowerInvariant()
+    if ($sidecarHash -notmatch "^[0-9a-f]{64}$") {
+        throw "Bundle manifest SHA-256 sidecar is invalid."
+    }
+    if ((Get-Sha256 -Path $manifestPath) -ne $sidecarHash) {
+        throw "Bundle manifest SHA-256 mismatch."
+    }
+    $manifestSidecarVerified = $true
 }
 
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
@@ -41,27 +69,161 @@ $archiveLeaf = [System.IO.Path]::GetFileName([string]$manifest.archive.file)
 if ($archiveLeaf -ne [string]$manifest.archive.file) {
     throw "Manifest archive path must be a filename only."
 }
-$archivePath = Assert-PathWithin -Path (Join-Path $bundleRoot $archiveLeaf) -Root $bundleRoot
+$archivePath = Resolve-OfflineManifestPath `
+    -RelativePath $archiveLeaf `
+    -Root $bundleRoot
 if (-not (Test-Path -LiteralPath $archivePath -PathType Leaf)) {
     throw "Image archive not found: $archivePath"
 }
 
+$expectedArchiveHash = ([string]$manifest.archive.sha256).ToLowerInvariant()
+if ($expectedArchiveHash -notmatch "^[0-9a-f]{64}$" -or
+    [long]$manifest.archive.size -lt 0) {
+    throw "Bundle manifest contains invalid image archive metadata."
+}
 $archiveHash = Get-Sha256 -Path $archivePath
-if ($archiveHash -ne ([string]$manifest.archive.sha256).ToLowerInvariant()) {
+if ($archiveHash -ne $expectedArchiveHash) {
     throw "Image archive SHA-256 mismatch. Expected $($manifest.archive.sha256), got $archiveHash."
 }
+if ((Get-Item -LiteralPath $archivePath).Length -ne [long]$manifest.archive.size) {
+    throw "Image archive size mismatch: $archivePath"
+}
 
+$manifestFileEntries = @($manifest.files)
+if ($manifestFileEntries.Count -eq 0) {
+    throw "Bundle manifest does not contain any deployment files."
+}
+$manifestFilesByPath = @{}
 foreach ($file in $manifest.files) {
-    $candidate = Assert-PathWithin -Path (Join-Path $bundleRoot ([string]$file.path)) -Root $bundleRoot
+    $relativePath = [string]$file.path
+    $entryHash = ([string]$file.sha256).ToLowerInvariant()
+    if ([string]::IsNullOrWhiteSpace($relativePath)) {
+        throw "Bundle manifest contains an empty file path."
+    }
+    if ($entryHash -notmatch "^[0-9a-f]{64}$") {
+        throw "Bundle manifest contains an invalid file SHA-256: $relativePath"
+    }
+    if ([long]$file.size -lt 0) {
+        throw "Bundle manifest contains a negative file size: $relativePath"
+    }
+    $pathKey = $relativePath.Replace("\", "/").ToLowerInvariant()
+    if ($manifestFilesByPath.ContainsKey($pathKey)) {
+        throw "Bundle manifest contains a duplicate file path: $relativePath"
+    }
+    $manifestFilesByPath[$pathKey] = $file
+
+    $candidate = Resolve-OfflineManifestPath `
+        -RelativePath $relativePath `
+        -Root $bundleRoot
     if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
-        throw "Bundle file is missing: $($file.path)"
+        throw "Bundle file is missing: $relativePath"
     }
     $actualHash = Get-Sha256 -Path $candidate
-    if ($actualHash -ne ([string]$file.sha256).ToLowerInvariant()) {
-        throw "Bundle file SHA-256 mismatch: $($file.path)"
+    if ($actualHash -ne $entryHash) {
+        throw "Bundle file SHA-256 mismatch: $relativePath"
     }
     if ((Get-Item -LiteralPath $candidate).Length -ne [long]$file.size) {
-        throw "Bundle file size mismatch: $($file.path)"
+        throw "Bundle file size mismatch: $relativePath"
+    }
+}
+
+if ($manifest.PSObject.Properties.Name -contains "seed") {
+    if (-not $manifestSidecarVerified) {
+        throw "Seeded bundles require bundle-manifest.json.sha256."
+    }
+    $seed = $manifest.seed
+    if ($seed.schemaVersion -ne 1) {
+        throw "Unsupported seed manifest schema: $($seed.schemaVersion)"
+    }
+    $seedPaths = @(
+        [string]$seed.archive.path,
+        [string]$seed.metadata.path,
+        [string]$seed.secretSource
+    )
+    foreach ($seedPath in $seedPaths) {
+        if ([string]::IsNullOrWhiteSpace($seedPath)) {
+            throw "Seed manifest contains an empty required path."
+        }
+        $seedKey = $seedPath.Replace("\", "/").ToLowerInvariant()
+        if (-not $manifestFilesByPath.ContainsKey($seedKey)) {
+            throw "Seed file is not covered by the bundle file manifest: $seedPath"
+        }
+    }
+
+    foreach ($seedArtifact in @($seed.archive, $seed.metadata)) {
+        $artifactPath = [string]$seedArtifact.path
+        $artifactEntry = $manifestFilesByPath[
+            $artifactPath.Replace("\", "/").ToLowerInvariant()
+        ]
+        if (([string]$seedArtifact.sha256).ToLowerInvariant() -ne
+            ([string]$artifactEntry.sha256).ToLowerInvariant() -or
+            [long]$seedArtifact.size -ne [long]$artifactEntry.size) {
+            throw "Seed artifact metadata disagrees with the bundle file manifest: $artifactPath"
+        }
+    }
+
+    $sourceCopy = ([string]$seed.sourceCopy).Replace("\", "/").TrimEnd("/")
+    $secretSource = ([string]$seed.secretSource).Replace("\", "/")
+    if (
+        $sourceCopy -cne "src" -or
+        $secretSource -cne "data/import-encryption.env"
+    ) {
+        throw "Seed sourceCopy or secretSource does not use the supported safe layout."
+    }
+    $sourceCopyPath = Resolve-OfflineManifestPath `
+        -RelativePath $sourceCopy `
+        -Root $bundleRoot
+    if (-not (Test-Path -LiteralPath $sourceCopyPath -PathType Container)) {
+        throw "Seed sourceCopy directory is missing."
+    }
+    $secretSourcePath = Resolve-OfflineManifestPath `
+        -RelativePath $secretSource `
+        -Root $bundleRoot
+    [void](Read-OfflineEncryptionKeyImport -SecretsFile $secretSourcePath)
+
+    $metadataPath = Resolve-OfflineManifestPath `
+        -RelativePath ([string]$seed.metadata.path) `
+        -Root $bundleRoot
+    try {
+        $seedMetadata = Get-Content -LiteralPath $metadataPath -Raw |
+            ConvertFrom-Json
+    }
+    catch {
+        throw "Seed metadata is not valid JSON: $metadataPath"
+    }
+    if ($seedMetadata.schemaVersion -ne 1 -or
+        $seedMetadata.sourceFormat -ne "paper-tracker-backend-export-v1") {
+        throw "Seed metadata has an unsupported schema or source format."
+    }
+    if (
+        -not $seed.security -or
+        -not $seedMetadata.security -or
+        $seed.security.jwtRotationRequired -ne $true -or
+        $seedMetadata.security.jwtRotationRequired -ne $true -or
+        [long]$seed.security.remainingSessions -ne 0 -or
+        [long]$seedMetadata.security.remainingSessions -ne 0 -or
+        [long]$seed.security.revokedSessions -ne
+            [long]$seedMetadata.security.revokedSessions
+    ) {
+        throw "Seed security metadata does not prove session revocation."
+    }
+    foreach ($countName in @(
+        "papers",
+        "users",
+        "auditEvents",
+        "paperFiles",
+        "checkpoints",
+        "writes"
+    )) {
+        if (-not ($seed.expectedCounts.PSObject.Properties.Name -contains $countName) -or
+            -not ($seedMetadata.counts.PSObject.Properties.Name -contains $countName)) {
+            throw "Seed metadata is missing expected count: $countName"
+        }
+        $expectedCount = [long]$seed.expectedCounts.$countName
+        $metadataCount = [long]$seedMetadata.counts.$countName
+        if ($expectedCount -lt 0 -or $metadataCount -ne $expectedCount) {
+            throw "Seed metadata count mismatch: $countName"
+        }
     }
 }
 

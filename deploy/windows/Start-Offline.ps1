@@ -13,17 +13,58 @@ $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "Common.ps1")
 
 $root = Get-OfflineDeploymentRoot
+$manifestPath = Join-Path $root "bundle-manifest.json"
+$isSeededBundle = $false
+$seededImageTag = $null
+if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
+    try {
+        $manifest = Get-Content -LiteralPath $manifestPath -Raw |
+            ConvertFrom-Json
+        $isSeededBundle = $manifest.PSObject.Properties.Name -contains "seed"
+        if ($isSeededBundle) {
+            $seededImageTag = [string]$manifest.imageTag
+        }
+    }
+    catch {
+        throw "Bundle manifest is not valid JSON: $manifestPath"
+    }
+}
 if ([string]::IsNullOrWhiteSpace($EnvFile)) {
-    $EnvFile = Join-Path $root "offline.env"
+    if ($isSeededBundle) {
+        $EnvFile = Join-Path (Split-Path -Parent $root) "runtime\offline.env"
+    }
+    else {
+        $EnvFile = Join-Path $root "offline.env"
+    }
 }
 $resolvedEnv = Resolve-OfflinePath -Path $EnvFile
 
-& (Join-Path $PSScriptRoot "New-OfflineEnv.ps1") -EnvFile $resolvedEnv
-if (-not (Test-Path -LiteralPath $resolvedEnv -PathType Leaf)) {
-    throw "Offline environment script returned without creating: $resolvedEnv"
+if ($isSeededBundle) {
+    if (-not (Test-Path -LiteralPath $resolvedEnv -PathType Leaf)) {
+        throw (
+            "Seeded runtime environment not found: $resolvedEnv. " +
+            "Run Install-Offline.ps1 before starting this bundle; Start-Offline.ps1 " +
+            "will never create replacement keys for seeded data."
+        )
+    }
+}
+else {
+    & (Join-Path $PSScriptRoot "New-OfflineEnv.ps1") -EnvFile $resolvedEnv
+    if (-not (Test-Path -LiteralPath $resolvedEnv -PathType Leaf)) {
+        throw "Offline environment script returned without creating: $resolvedEnv"
+    }
 }
 
 $envValues = Assert-OfflineEnv -EnvFile $resolvedEnv
+if (
+    $isSeededBundle -and
+    (
+        $envValues["PAPER_TRACKER_IMAGE_TAG"] -ne $seededImageTag -or
+        $envValues["PAPER_TRACKER_ALLOW_PUBLIC_REGISTRATION"] -ne "0"
+    )
+) {
+    throw "Seeded runtime environment does not match the bundle tag or registration policy."
+}
 Assert-DockerLinux
 Assert-OfflineImages -EnvValues $envValues
 
