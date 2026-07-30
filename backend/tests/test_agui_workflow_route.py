@@ -14,6 +14,7 @@ from backend.tests.support import make_fake_user, make_test_session_factory
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from langchain_core.messages import AIMessage
+from sqlalchemy.orm import Session as SQLAlchemySession
 
 
 class _FakeLLM:
@@ -26,6 +27,17 @@ class _FakeLLM:
                 "## 后续问题\n- 是否需要进一步筛选企业场景论文？"
             )
         )
+
+
+class _FakeCheckpointer:
+    def __init__(self, error: Exception | None = None):
+        self.deleted_threads = []
+        self.error = error
+
+    async def adelete_thread(self, thread_id: str):
+        if self.error is not None:
+            raise self.error
+        self.deleted_threads.append(thread_id)
 
 
 class WorkflowHeartbeatTests(unittest.IsolatedAsyncioTestCase):
@@ -152,6 +164,7 @@ class WorkflowRouteTests(unittest.TestCase):
         self.assertIn("文献检索已完成", payload)
         self.assertIn("TOOL_CALL_START", payload)
         self.assertIn("Workflow 报告", payload)
+        self.assertNotIn("wf-test", agui_workflow_module._active_workflow_sessions)
 
         with self.session_factory() as db:
             session = db.query(WorkflowSession).filter(WorkflowSession.session_id == "wf-test").first()
@@ -223,3 +236,240 @@ class WorkflowRouteTests(unittest.TestCase):
         self.assertIn("user", roles)
         self.assertIn("assistant", roles)
         self.assertIn("tool", roles)
+
+    def test_delete_workflow_removes_owned_session_messages_and_checkpoints(self):
+        with self.session_factory() as db:
+            db.add(WorkflowSession(
+                session_id="wf-delete",
+                user_id=1,
+                title="Delete me",
+                template_id="literature_survey",
+            ))
+            db.add_all([
+                ChatMessage(
+                    session_id="wf-delete",
+                    user_id=1,
+                    session_type="workflow",
+                    role="user",
+                    content="workflow message",
+                ),
+                ChatMessage(
+                    session_id="wf-delete",
+                    user_id=1,
+                    session_type="assistant",
+                    role="assistant",
+                    content="unrelated message",
+                ),
+            ])
+            db.commit()
+
+        checkpointer = _FakeCheckpointer()
+        with patch.object(agui_workflow_module, "get_checkpointer", return_value=checkpointer):
+            response = self.client.delete("/api/agui/workflow/wf-delete")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["deleted_messages"], 1)
+        self.assertEqual(checkpointer.deleted_threads, ["wf-delete"])
+        with self.session_factory() as db:
+            self.assertIsNone(
+                db.query(WorkflowSession)
+                .filter(WorkflowSession.session_id == "wf-delete")
+                .first()
+            )
+            self.assertEqual(
+                db.query(ChatMessage)
+                .filter(
+                    ChatMessage.session_id == "wf-delete",
+                    ChatMessage.session_type == "workflow",
+                )
+                .count(),
+                0,
+            )
+            self.assertEqual(
+                db.query(ChatMessage)
+                .filter(
+                    ChatMessage.session_id == "wf-delete",
+                    ChatMessage.session_type == "assistant",
+                )
+                .count(),
+                1,
+            )
+
+    def test_delete_workflow_does_not_disclose_or_remove_another_users_session(self):
+        with self.session_factory() as db:
+            db.add(WorkflowSession(
+                session_id="wf-foreign",
+                user_id=2,
+                title="Foreign session",
+                template_id="literature_survey",
+            ))
+            db.add(ChatMessage(
+                session_id="wf-foreign",
+                user_id=2,
+                session_type="workflow",
+                role="user",
+                content="private workflow message",
+            ))
+            db.commit()
+
+        checkpointer = _FakeCheckpointer()
+        with patch.object(agui_workflow_module, "get_checkpointer", return_value=checkpointer):
+            response = self.client.delete("/api/agui/workflow/wf-foreign")
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json(), {"detail": "Workflow session not found"})
+        self.assertEqual(checkpointer.deleted_threads, [])
+        with self.session_factory() as db:
+            self.assertIsNotNone(
+                db.query(WorkflowSession)
+                .filter(WorkflowSession.session_id == "wf-foreign")
+                .first()
+            )
+            self.assertEqual(
+                db.query(ChatMessage)
+                .filter(ChatMessage.session_id == "wf-foreign")
+                .count(),
+                1,
+            )
+
+    def test_delete_workflow_keeps_primary_records_when_checkpoint_cleanup_fails(self):
+        with self.session_factory() as db:
+            db.add(WorkflowSession(
+                session_id="wf-cleanup-failure",
+                user_id=1,
+                title="Retry later",
+                template_id="literature_survey",
+            ))
+            db.add(ChatMessage(
+                session_id="wf-cleanup-failure",
+                user_id=1,
+                session_type="workflow",
+                role="user",
+                content="keep until cleanup succeeds",
+            ))
+            db.commit()
+
+        checkpointer = _FakeCheckpointer(RuntimeError("checkpoint unavailable"))
+        with patch.object(agui_workflow_module, "get_checkpointer", return_value=checkpointer):
+            response = self.client.delete("/api/agui/workflow/wf-cleanup-failure")
+
+        self.assertEqual(response.status_code, 503)
+        with self.session_factory() as db:
+            session = (
+                db.query(WorkflowSession)
+                .filter(WorkflowSession.session_id == "wf-cleanup-failure")
+                .first()
+            )
+            self.assertIsNotNone(session)
+            self.assertEqual(session.workflow_status, "deleting")
+            self.assertEqual(
+                db.query(ChatMessage)
+                .filter(ChatMessage.session_id == "wf-cleanup-failure")
+                .count(),
+                1,
+            )
+
+        retry_checkpointer = _FakeCheckpointer()
+        with patch.object(agui_workflow_module, "get_checkpointer", return_value=retry_checkpointer):
+            retry = self.client.delete("/api/agui/workflow/wf-cleanup-failure")
+
+        self.assertEqual(retry.status_code, 200)
+        self.assertEqual(retry_checkpointer.deleted_threads, ["wf-cleanup-failure"])
+
+    def test_delete_workflow_leaves_retryable_tombstone_when_primary_commit_fails(self):
+        with self.session_factory() as db:
+            db.add(WorkflowSession(
+                session_id="wf-primary-failure",
+                user_id=1,
+                title="Primary commit failure",
+                template_id="literature_survey",
+            ))
+            db.add(ChatMessage(
+                session_id="wf-primary-failure",
+                user_id=1,
+                session_type="workflow",
+                role="user",
+                content="retain for retry",
+            ))
+            db.commit()
+
+        checkpointer = _FakeCheckpointer()
+        original_commit = SQLAlchemySession.commit
+        commit_calls = []
+
+        def fail_second_commit(session):
+            commit_calls.append(1)
+            if len(commit_calls) == 2:
+                raise RuntimeError("primary delete commit failed")
+            return original_commit(session)
+
+        with patch.object(agui_workflow_module, "get_checkpointer", return_value=checkpointer), \
+             patch.object(SQLAlchemySession, "commit", new=fail_second_commit), \
+             self.assertRaisesRegex(RuntimeError, "primary delete commit failed"):
+            self.client.delete("/api/agui/workflow/wf-primary-failure")
+
+        self.assertEqual(checkpointer.deleted_threads, ["wf-primary-failure"])
+        with self.session_factory() as db:
+            session = (
+                db.query(WorkflowSession)
+                .filter(WorkflowSession.session_id == "wf-primary-failure")
+                .first()
+            )
+            self.assertIsNotNone(session)
+            self.assertEqual(session.workflow_status, "deleting")
+            self.assertEqual(
+                db.query(ChatMessage)
+                .filter(ChatMessage.session_id == "wf-primary-failure")
+                .count(),
+                1,
+            )
+
+    def test_deleting_workflow_cannot_be_restored_or_run(self):
+        with self.session_factory() as db:
+            db.add(WorkflowSession(
+                session_id="wf-deleting",
+                user_id=1,
+                title="Pending deletion",
+                template_id="literature_survey",
+                workflow_status="deleting",
+            ))
+            db.commit()
+
+        detail = self.client.get("/api/agui/workflow/wf-deleting")
+        messages = self.client.get("/api/agui/workflow/wf-deleting/messages")
+        run = self.client.post(
+            "/api/agui/workflow",
+            json={
+                "threadId": "wf-deleting",
+                "runId": "run-deleting",
+                "messages": [{"role": "user", "content": "resume"}],
+                "forwardedProps": {
+                    "workflowSessionId": "wf-deleting",
+                    "templateId": "literature_survey",
+                },
+            },
+            headers={"accept": "application/jsonl"},
+        )
+
+        self.assertEqual(detail.status_code, 409)
+        self.assertEqual(messages.status_code, 409)
+        self.assertEqual(run.status_code, 409)
+
+    def test_delete_workflow_rejects_an_active_session(self):
+        with self.session_factory() as db:
+            db.add(WorkflowSession(
+                session_id="wf-active",
+                user_id=1,
+                title="Still running",
+                template_id="literature_survey",
+            ))
+            db.commit()
+
+        agui_workflow_module._active_workflow_sessions["wf-active"] = 1
+        try:
+            response = self.client.delete("/api/agui/workflow/wf-active")
+        finally:
+            agui_workflow_module._active_workflow_sessions.pop("wf-active", None)
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("仍在运行", response.json()["detail"])

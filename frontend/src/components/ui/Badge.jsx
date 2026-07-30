@@ -11,9 +11,10 @@ const variantClasses = {
   neutral: 'glass-subtle text-secondary border border-glass',
 }
 
-export default function Badge({ variant = 'neutral', children, className = '' }) {
+export default function Badge({ variant = 'neutral', children, className = '', ...props }) {
   return (
     <span
+      {...props}
       className={[
         'inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold tracking-[0.14em] uppercase',
         variantClasses[variant] || variantClasses.neutral,

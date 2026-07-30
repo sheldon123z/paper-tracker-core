@@ -52,6 +52,7 @@ class UserResponse(BaseModel):
     status: str
     role: str
     department_id: int | None = None
+    department_name: str | None = None
     must_change_password: bool = False
     last_login_at: datetime | None = None
     created_at: datetime

@@ -17,6 +17,7 @@ import json
 import os
 import shutil
 import uuid
+from threading import Lock
 
 import jsonpatch
 from ag_ui.core import (
@@ -130,6 +131,13 @@ WORKFLOW_SNAPSHOT_KEYS = (
     "last_stage_summary",
 )
 
+# Streaming responses outlive the request handler itself. Track active workflow
+# generators so a destructive request cannot race with late message/checkpoint
+# writes from the same session.
+_active_workflow_sessions: dict[str, int] = {}
+_deleting_workflow_sessions: set[str] = set()
+_workflow_session_state_lock = Lock()
+
 
 # ---------------------------------------------------------------------------
 # Workflow helper functions
@@ -137,6 +145,55 @@ WORKFLOW_SNAPSHOT_KEYS = (
 
 def _workflow_snapshot(state: dict) -> dict:
     return {key: state[key] for key in WORKFLOW_SNAPSHOT_KEYS if key in state}
+
+
+def _owned_workflow_status(db: Session, session_id: str, user_id: int) -> tuple[bool, str | None]:
+    session = db.query(WorkflowSession).filter(
+        WorkflowSession.session_id == session_id,
+        WorkflowSession.user_id == user_id,
+    ).first()
+    return (session is not None, session.workflow_status if session else None)
+
+
+def _mark_workflow_deleting(db: Session, session_id: str, user_id: int) -> None:
+    # Close any read transaction opened by the authorization lookup, then
+    # re-check ownership after the in-memory deletion claim is established.
+    db.rollback()
+    session = db.query(WorkflowSession).filter(
+        WorkflowSession.session_id == session_id,
+        WorkflowSession.user_id == user_id,
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Workflow session not found")
+
+    session.workflow_status = "deleting"
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+
+def _delete_workflow_primary_records(db: Session, session_id: str, user_id: int) -> int:
+    session = db.query(WorkflowSession).filter(
+        WorkflowSession.session_id == session_id,
+        WorkflowSession.user_id == user_id,
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Workflow session not found")
+
+    try:
+        deleted = (
+            db.query(ChatMessage)
+            .filter(ChatMessage.session_id == session_id, ChatMessage.session_type == "workflow")
+            .delete()
+        )
+        db.delete(session)
+        db.commit()
+        return deleted
+    except Exception:
+        db.rollback()
+        raise
 
 
 def _parse_workflow_snapshot(raw_snapshot) -> dict:
@@ -274,10 +331,13 @@ async def workflow_agent(request: Request, db: Session = Depends(get_db), user: 
     body = await request.json()
     encoder = make_agui_encoder(request)
     thread_id, run_id, messages, props = parse_agui_request(body)
+    session_id = _workflow_session_id(thread_id, props)
+    _, workflow_status = await run_in_threadpool(_owned_workflow_status, db, session_id, user.id)
+    if workflow_status == "deleting":
+        raise HTTPException(status_code=409, detail="工作流正在删除，请完成删除后再继续")
 
     async def stream():
         config_id = props.get("configId")
-        session_id = _workflow_session_id(thread_id, props)
         msg_id = str(uuid.uuid4())
 
         with RequestTimer(logger, method="POST", path="/api/agui/workflow", endpoint="workflow_agent", session_id=session_id) as timer:
@@ -716,7 +776,24 @@ async def workflow_agent(request: Request, db: Session = Depends(get_db), user: 
         ))
         timer.status_code = 200
 
-    return StreamingResponse(stream(), media_type=encoder.get_content_type())
+    async def tracked_stream():
+        try:
+            async for chunk in stream():
+                yield chunk
+        finally:
+            with _workflow_session_state_lock:
+                remaining = _active_workflow_sessions.get(session_id, 0) - 1
+                if remaining > 0:
+                    _active_workflow_sessions[session_id] = remaining
+                else:
+                    _active_workflow_sessions.pop(session_id, None)
+
+    with _workflow_session_state_lock:
+        if session_id in _deleting_workflow_sessions:
+            raise HTTPException(status_code=409, detail="工作流正在删除，请稍后重试")
+        _active_workflow_sessions[session_id] = _active_workflow_sessions.get(session_id, 0) + 1
+
+    return StreamingResponse(tracked_stream(), media_type=encoder.get_content_type())
 
 
 # ---------------------------------------------------------------------------
@@ -782,6 +859,8 @@ def get_workflow_session(session_id: str, db: Session = Depends(get_db), user: U
     ).first()
     if not session:
         raise HTTPException(status_code=404, detail="Workflow session not found")
+    if session.workflow_status == "deleting":
+        raise HTTPException(status_code=409, detail="工作流正在删除，请稍后重试")
     return _workflow_session_payload(session)
 
 
@@ -793,6 +872,8 @@ def get_workflow_messages(session_id: str, db: Session = Depends(get_db), user: 
     ).first()
     if not session:
         raise HTTPException(status_code=404, detail="Workflow session not found")
+    if session.workflow_status == "deleting":
+        raise HTTPException(status_code=409, detail="工作流正在删除，请稍后重试")
 
     messages = (
         db.query(ChatMessage)
@@ -816,19 +897,38 @@ def get_workflow_messages(session_id: str, db: Session = Depends(get_db), user: 
 
 
 @router.delete("/workflow/{session_id}")
-def delete_workflow_session(session_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    session = db.query(WorkflowSession).filter(
-        WorkflowSession.session_id == session_id,
-        WorkflowSession.user_id == user.id,
-    ).first()
-    if not session:
+async def delete_workflow_session(
+    session_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    session_exists, _ = await run_in_threadpool(_owned_workflow_status, db, session_id, user.id)
+    if not session_exists:
         raise HTTPException(status_code=404, detail="Workflow session not found")
 
-    deleted = (
-        db.query(ChatMessage)
-        .filter(ChatMessage.session_id == session_id, ChatMessage.session_type == "workflow")
-        .delete()
-    )
-    db.delete(session)
-    db.commit()
-    return {"message": "Workflow session deleted", "session_id": session_id, "deleted_messages": deleted}
+    with _workflow_session_state_lock:
+        if _active_workflow_sessions.get(session_id, 0) > 0:
+            raise HTTPException(status_code=409, detail="工作流仍在运行，请等待运行结束后再删除")
+        if session_id in _deleting_workflow_sessions:
+            raise HTTPException(status_code=409, detail="工作流正在删除，请稍后重试")
+        _deleting_workflow_sessions.add(session_id)
+
+    try:
+        await run_in_threadpool(_mark_workflow_deleting, db, session_id, user.id)
+
+        try:
+            await get_checkpointer().adelete_thread(session_id)
+        except Exception as exc:
+            logger.exception("Workflow checkpoint cleanup failed: session_id=%s", session_id)
+            raise HTTPException(status_code=503, detail="工作流存储清理失败，请稍后重试") from exc
+
+        deleted = await run_in_threadpool(
+            _delete_workflow_primary_records,
+            db,
+            session_id,
+            user.id,
+        )
+        return {"message": "Workflow session deleted", "session_id": session_id, "deleted_messages": deleted}
+    finally:
+        with _workflow_session_state_lock:
+            _deleting_workflow_sessions.discard(session_id)

@@ -57,6 +57,18 @@ def _clear_auth_cookies(response: JSONResponse) -> None:
     response.delete_cookie(key="access_token", path="/api")
     response.delete_cookie(key="refresh_token", path="/api/auth")
 
+
+def _user_response(user: User) -> UserResponse:
+    """Build the public account payload, including the user's department label."""
+    response = UserResponse.model_validate(user)
+    response.department_name = (
+        user.department.name
+        if user.role == "user" and user.department is not None
+        else None
+    )
+    return response
+
+
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
@@ -155,18 +167,7 @@ def login(request: Request, body: LoginRequest, db: Session = Depends(get_contro
     write_audit_event(db, event_type="auth.login", request=request, actor=user)
 
     # Return user info in body; tokens go in httpOnly cookies
-    user_data = {
-        "id": user.id,
-        "email": user.email,
-        "username": user.username,
-        "display_name": user.display_name,
-        "status": user.status,
-        "role": user.role,
-        "department_id": user.department_id,
-        "must_change_password": user.must_change_password,
-        "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
-        "created_at": user.created_at.isoformat() if user.created_at else None,
-    }
+    user_data = _user_response(user).model_dump(mode="json")
     response = JSONResponse(content={
         "message": "登录成功",
         "user": user_data,
@@ -323,7 +324,7 @@ def refresh(request: Request, body: RefreshRequest | None = None, db: Session = 
 @router.get("/me", response_model=UserResponse)
 def get_me(current_user: User = Depends(get_current_user)):
     """Return the currently authenticated user's profile."""
-    return current_user
+    return _user_response(current_user)
 
 
 @router.post("/change-password")

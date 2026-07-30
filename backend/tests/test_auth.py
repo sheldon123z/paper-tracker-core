@@ -25,7 +25,7 @@ from backend.app.auth.tokens import (
     hash_refresh_token,
 )
 from backend.app.control_plane.database import ControlBase, get_control_db
-from backend.app.control_plane.models import User, UserSession
+from backend.app.control_plane.models import Department, User, UserSession
 from backend.app.routes.auth import router as auth_router
 from backend.tests.support import patched_env
 from fastapi import FastAPI
@@ -294,6 +294,7 @@ class AuthAPITestBase(unittest.IsolatedAsyncioTestCase):
         with self.session_factory() as db:
             db.query(UserSession).delete()
             db.query(User).delete()
+            db.query(Department).delete()
             db.commit()
 
     # -- Helpers --
@@ -410,12 +411,32 @@ class LoginTests(AuthAPITestBase):
         # Tokens are now in httpOnly cookies, not JSON body
         self.assertIn("message", data)
         self.assertIn("user", data)
+        self.assertIn("department_name", data["user"])
+        self.assertIsNone(data["user"]["department_name"])
         self.assertIsInstance(data["expires_in"], int)
         self.assertGreater(data["expires_in"], 0)
         # Verify cookies are set
         tokens = self._extract_tokens(res)
         self.assertIsNotNone(tokens["access_token"])
         self.assertIsNotNone(tokens["refresh_token"])
+
+    async def test_login_user_includes_department_name(self):
+        await self._register()
+        with self.session_factory() as db:
+            department = Department(code="computer-science", name="Computer Science")
+            db.add(department)
+            db.flush()
+            user = db.query(User).filter(User.email == "test@example.com").one()
+            user.department_id = department.id
+            db.commit()
+            department_id = department.id
+
+        res = await self._login()
+
+        self.assertEqual(res.status_code, 200)
+        user_data = res.json()["user"]
+        self.assertEqual(user_data["department_id"], department_id)
+        self.assertEqual(user_data["department_name"], "Computer Science")
 
     async def test_login_wrong_password(self):
         await self._register()
@@ -471,7 +492,55 @@ class MeEndpointTests(AuthAPITestBase):
         self.assertEqual(data["email"], "test@example.com")
         self.assertEqual(data["username"], "testuser")
         self.assertEqual(data["role"], "user")
+        self.assertIn("department_name", data)
+        self.assertIsNone(data["department_name"])
         self.assertNotIn("password_hash", data)
+
+    async def test_me_returns_department_name(self):
+        await self._register()
+        with self.session_factory() as db:
+            department = Department(code="physics", name="Physics")
+            db.add(department)
+            db.flush()
+            user = db.query(User).filter(User.email == "test@example.com").one()
+            user.department_id = department.id
+            db.commit()
+            department_id = department.id
+
+        login_res = await self._login()
+        tokens = self._extract_tokens(login_res)
+        res = await self.client.get(
+            "/api/auth/me",
+            headers=self._auth_header(tokens["access_token"]),
+        )
+
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data["department_id"], department_id)
+        self.assertEqual(data["department_name"], "Physics")
+
+    async def test_me_manager_department_name_is_null(self):
+        await self._register()
+        with self.session_factory() as db:
+            department = Department(code="management", name="Management")
+            db.add(department)
+            db.flush()
+            user = db.query(User).filter(User.email == "test@example.com").one()
+            user.role = "manager"
+            user.department_id = department.id
+            db.commit()
+
+        login_res = await self._login()
+        tokens = self._extract_tokens(login_res)
+        res = await self.client.get(
+            "/api/auth/me",
+            headers=self._auth_header(tokens["access_token"]),
+        )
+
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data["role"], "manager")
+        self.assertIsNone(data["department_name"])
 
     async def test_me_no_token_returns_401(self):
         res = await self.client.get("/api/auth/me")

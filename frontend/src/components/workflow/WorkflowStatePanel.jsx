@@ -36,6 +36,8 @@ export default function WorkflowStatePanel({
   historyLoading,
   historyError,
   onOpenSession,
+  onDeleteSession,
+  deletingSessionId,
   onSelectTemplate,
   onStartWorkflow,
   onBackToTemplates,
@@ -79,6 +81,8 @@ export default function WorkflowStatePanel({
           historyLoading={historyLoading}
           historyError={historyError}
           onOpenSession={onOpenSession}
+          onDeleteSession={onDeleteSession}
+          deletingSessionId={deletingSessionId}
         />
       )
   }

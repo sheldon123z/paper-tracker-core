@@ -125,6 +125,20 @@ export default function AppIcon({ name, size = 18, className = '', strokeWidth =
           <path d="M6 6l12 12M18 6 6 18" />
         </Svg>
       )
+    case 'more-vertical':
+      return (
+        <Svg size={size} className={className} strokeWidth={strokeWidth}>
+          <circle cx="12" cy="5" r="1" fill="currentColor" stroke="none" />
+          <circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" />
+          <circle cx="12" cy="19" r="1" fill="currentColor" stroke="none" />
+        </Svg>
+      )
+    case 'trash':
+      return (
+        <Svg size={size} className={className} strokeWidth={strokeWidth}>
+          <path d="M4 7h16M9 7V4h6v3M7 7l1 14h8l1-14M10 11v6M14 11v6" />
+        </Svg>
+      )
     case 'search':
       return (
         <Svg size={size} className={className} strokeWidth={strokeWidth}>

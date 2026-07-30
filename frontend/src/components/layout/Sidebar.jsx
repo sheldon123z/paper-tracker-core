@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import api from '../../api'
 import useStore from '../../store'
-import AppIcon from '../ui/AppIcon'
+import { AppIcon, Badge } from '../ui'
 
 const navItems = [
   { path: '/', label: '仪表盘', icon: 'dashboard', description: '研究概览' },
@@ -21,6 +21,13 @@ export default function Sidebar() {
   const [isPrimarySidebarOpen, setIsPrimarySidebarOpen] = useState(true)
 
   const sidebarToggleLabel = isPrimarySidebarOpen ? '收起左侧边栏' : '展开左侧边栏'
+  const accountBadge = user?.role === 'manager'
+    ? { label: '管理员', variant: 'warning' }
+    : user?.department_name
+      ? { label: user.department_name, variant: 'neutral' }
+      : user?.department_id
+        ? { label: '部门账号', variant: 'neutral' }
+        : null
 
   const handleLogout = async () => {
     try {
@@ -144,12 +151,24 @@ export default function Sidebar() {
                     {(user.display_name || user.username || '?')[0].toUpperCase()}
                   </div>
                   <div className="hidden min-w-0 flex-1 md:block">
-                    <div className="text-sm font-semibold text-primary truncate">{user.display_name || user.username}</div>
+                    <div className="truncate text-sm font-semibold text-primary">
+                      {user.display_name || user.username}
+                    </div>
                     <div className="text-xs text-tertiary truncate">{user.email || 'Authenticated Node'}</div>
+                    {accountBadge && (
+                      <Badge
+                        variant={accountBadge.variant}
+                        className="mt-1 max-w-full truncate px-2 py-0.5 text-[10px] normal-case tracking-[0.04em]"
+                        title={accountBadge.label}
+                      >
+                        {accountBadge.label}
+                      </Badge>
+                    )}
                   </div>
                   <button
                     onClick={handleLogout}
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-glass bg-primary/22 text-secondary transition-all hover:border-danger/30 hover:bg-danger/10 hover:text-danger"
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-glass bg-primary/22 text-secondary transition-all hover:border-danger/30 hover:bg-danger/10 hover:text-danger"
+                    aria-label="登出"
                     title="登出"
                   >
                     <AppIcon name="logout" size={16} />
