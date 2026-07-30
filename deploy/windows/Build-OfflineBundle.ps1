@@ -202,8 +202,13 @@ Assert-DockerLinux
 
 $bundleParent = Split-Path -Parent $bundleRoot
 [void](New-Item -ItemType Directory -Path $bundleParent -Force)
-$stagingRoot = Join-Path $bundleParent (
-    "$(Split-Path -Leaf $bundleRoot).staging-$([Guid]::NewGuid().ToString('N'))"
+$stagingParent = [System.IO.Path]::GetPathRoot($bundleRoot)
+$stagingPrefix = ".ptb-"
+# Keep the temporary root deliberately short. Scientific attachment names can
+# otherwise exceed the Windows PowerShell 5.1 MAX_PATH limit before the final
+# directory is atomically moved into place.
+$stagingRoot = Join-Path $stagingParent (
+    "$stagingPrefix$([Guid]::NewGuid().ToString('N'))"
 )
 [void](New-Item -ItemType Directory -Path $stagingRoot)
 
@@ -522,9 +527,8 @@ catch {
     $buildError = $_
     if (Test-Path -LiteralPath $stagingRoot) {
         $resolvedStaging = [System.IO.Path]::GetFullPath($stagingRoot)
-        $resolvedParent = [System.IO.Path]::GetFullPath($bundleParent)
+        $resolvedParent = [System.IO.Path]::GetFullPath($stagingParent)
         $stagingLeaf = Split-Path -Leaf $resolvedStaging
-        $expectedPrefix = "$(Split-Path -Leaf $bundleRoot).staging-"
         if (
             [string]::Equals(
                 (Split-Path -Parent $resolvedStaging),
@@ -532,10 +536,10 @@ catch {
                 [System.StringComparison]::OrdinalIgnoreCase
             ) -and
             $stagingLeaf.StartsWith(
-                $expectedPrefix,
+                $stagingPrefix,
                 [System.StringComparison]::OrdinalIgnoreCase
             ) -and
-            $stagingLeaf.Substring($expectedPrefix.Length) -match "^[0-9a-f]{32}$"
+            $stagingLeaf.Substring($stagingPrefix.Length) -match "^[0-9a-f]{32}$"
         ) {
             Remove-Item -LiteralPath $resolvedStaging -Recurse -Force
         }
