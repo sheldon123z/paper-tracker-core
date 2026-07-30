@@ -25,6 +25,31 @@ function Resolve-OfflinePath {
     return [System.IO.Path]::GetFullPath((Join-Path -Path $BasePath -ChildPath $Path))
 }
 
+function Read-OfflineJsonFile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [string]$Label = "JSON file"
+    )
+
+    $resolved = Resolve-OfflinePath -Path $Path
+    if (-not (Test-Path -LiteralPath $resolved -PathType Leaf)) {
+        throw "$Label not found: $resolved"
+    }
+    try {
+        $strictUtf8 = New-Object System.Text.UTF8Encoding($false, $true)
+        $text = [System.IO.File]::ReadAllText($resolved, $strictUtf8)
+        if ($text.Length -gt 0 -and $text[0] -eq [char]0xFEFF) {
+            $text = $text.Substring(1)
+        }
+        return ($text | ConvertFrom-Json)
+    }
+    catch {
+        throw "$Label is not valid UTF-8 JSON: $resolved"
+    }
+}
+
 function Get-OfflineBundleLayout {
     param(
         [Parameter(Mandatory = $true)]
@@ -36,13 +61,8 @@ function Get-OfflineBundleLayout {
     $isSeeded = $false
     $imageTag = $null
     if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
-        try {
-            $manifest = Get-Content -LiteralPath $manifestPath -Raw |
-                ConvertFrom-Json
-        }
-        catch {
-            throw "Bundle manifest is not valid JSON: $manifestPath"
-        }
+        $manifest = Read-OfflineJsonFile -Path $manifestPath `
+            -Label "Bundle manifest"
         $isSeeded = $manifest.PSObject.Properties.Name -contains "seed"
         if ($manifest.PSObject.Properties.Name -contains "imageTag") {
             $imageTag = [string]$manifest.imageTag

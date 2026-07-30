@@ -121,7 +121,8 @@ if (Test-Path -LiteralPath $bundleRoot) {
         throw "-Force can replace only a directory containing bundle-manifest.json: $bundleRoot"
     }
     try {
-        $existingBundle = Get-Content -LiteralPath $existingManifest -Raw | ConvertFrom-Json
+        $existingBundle = Read-OfflineJsonFile -Path $existingManifest `
+            -Label "Existing bundle manifest"
     }
     catch {
         throw "Existing target is not a valid Paper Tracker offline bundle: $bundleRoot"
@@ -388,8 +389,8 @@ if ($resolvedSeedExport) {
     }
 
     try {
-        $seedMetadata = Get-Content -LiteralPath $seedMetadataPath -Raw |
-            ConvertFrom-Json
+        $seedMetadata = Read-OfflineJsonFile -Path $seedMetadataPath `
+            -Label "Seed metadata"
     }
     catch {
         throw "Seed metadata is not valid JSON: $seedMetadataPath"

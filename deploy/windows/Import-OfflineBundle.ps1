@@ -46,7 +46,7 @@ if (Test-Path -LiteralPath $manifestSidecar -PathType Leaf) {
     $manifestSidecarVerified = $true
 }
 
-$manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+$manifest = Read-OfflineJsonFile -Path $manifestPath -Label "Bundle manifest"
 if ($manifest.schemaVersion -ne 1) {
     throw "Unsupported bundle manifest schema: $($manifest.schemaVersion)"
 }
@@ -185,8 +185,8 @@ if ($manifest.PSObject.Properties.Name -contains "seed") {
         -RelativePath ([string]$seed.metadata.path) `
         -Root $bundleRoot
     try {
-        $seedMetadata = Get-Content -LiteralPath $metadataPath -Raw |
-            ConvertFrom-Json
+        $seedMetadata = Read-OfflineJsonFile -Path $metadataPath `
+            -Label "Seed metadata"
     }
     catch {
         throw "Seed metadata is not valid JSON: $metadataPath"

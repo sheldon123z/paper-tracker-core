@@ -144,12 +144,23 @@ try {
         (@{
             schemaVersion = 1
             imageTag = "seeded-layout"
+            files = @(
+                @{
+                    path = "论文/中文文件名.pdf"
+                }
+            )
             seed = @{
                 schemaVersion = 1
             }
         } | ConvertTo-Json -Depth 4),
         (New-Object System.Text.UTF8Encoding($false))
     )
+    $utf8Manifest = Read-OfflineJsonFile `
+        -Path (Join-Path $seededRoot "bundle-manifest.json") `
+        -Label "UTF-8 test manifest"
+    if ($utf8Manifest.files[0].path -cne "论文/中文文件名.pdf") {
+        throw "UTF-8 JSON reader corrupted a non-ASCII manifest path."
+    }
     $seededLayout = Get-OfflineBundleLayout -Root $seededRoot
     $expectedSeededEnv = Join-Path (
         Split-Path -Parent $seededRoot

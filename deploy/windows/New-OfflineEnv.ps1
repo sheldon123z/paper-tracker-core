@@ -66,7 +66,8 @@ $manifestTag = $null
 if (-not $PSBoundParameters.ContainsKey("ImageTag")) {
     $manifestPath = Join-Path $root "bundle-manifest.json"
     if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
-        $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+        $manifest = Read-OfflineJsonFile -Path $manifestPath `
+            -Label "Bundle manifest"
         $manifestTag = [string]$manifest.imageTag
         if ($manifestTag -notmatch "^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$") {
             throw "Bundle manifest contains an invalid imageTag."

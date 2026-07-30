@@ -234,8 +234,8 @@ try {
         }
     }
     try {
-        $manifest = Get-Content -LiteralPath $manifestPath -Raw |
-            ConvertFrom-Json
+        $manifest = Read-OfflineJsonFile -Path $manifestPath `
+            -Label "Bundle manifest"
     }
     catch {
         throw "Bundle manifest is not valid JSON: $manifestPath"
@@ -288,8 +288,9 @@ try {
         -BundleRoot $bundleRoot
 
     try {
-        $seedMetadata = Get-Content -LiteralPath $seedMetadataArtifact.Path -Raw |
-            ConvertFrom-Json
+        $seedMetadata = Read-OfflineJsonFile `
+            -Path $seedMetadataArtifact.Path `
+            -Label "Seed metadata"
     }
     catch {
         throw "Seed metadata is not valid JSON: $($seedMetadataArtifact.Path)"
