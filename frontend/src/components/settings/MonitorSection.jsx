@@ -2,6 +2,11 @@ import { useEffect, useState } from 'react'
 import api from '../../api'
 import { Card } from '../ui'
 import BudgetSection from './BudgetSection'
+import {
+  filterLlmConfigsForRuntime,
+  filterUsageRecordsForRuntime,
+  RUNTIME_CAPABILITIES,
+} from '../../config/runtime'
 
 export default function MonitorSection() {
   const [summary, setSummary] = useState(null)
@@ -16,14 +21,17 @@ export default function MonitorSection() {
       api.get('/api/usage/summary', { params: { days } }),
       api.get('/api/usage/by-model', { params: { days } }),
       api.get('/api/usage/timeline', { params: { days } }),
-      api.get('/api/usage/cost', { params: { days } }),
       api.get('/api/llm-configs'),
-    ]).then(([sumR, modelR, tlR, costR, cfgR]) => {
+      RUNTIME_CAPABILITIES.offlineMode
+        ? Promise.resolve({ data: null })
+        : api.get('/api/usage/cost', { params: { days } }),
+    ]).then(([sumR, modelR, tlR, cfgR, costR]) => {
+      const configsForRuntime = filterLlmConfigsForRuntime(cfgR.data)
       setSummary(sumR.data)
-      setByModel(modelR.data)
+      setByModel(filterUsageRecordsForRuntime(modelR.data, cfgR.data))
       setTimeline(tlR.data)
       setCost(costR.data)
-      setConfigs(cfgR.data)
+      setConfigs(configsForRuntime)
     }).catch(() => {})
   }, [days])
 
@@ -118,7 +126,7 @@ export default function MonitorSection() {
       </Card>
 
       {/* Cost summary */}
-      {cost && (
+      {!RUNTIME_CAPABILITIES.offlineMode && cost && (
         <Card title="成本估算">
           <div className="flex items-baseline gap-2 mb-3">
             <span className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
@@ -183,7 +191,7 @@ export default function MonitorSection() {
       )}
 
       {/* Budget alerts */}
-      <BudgetSection />
+      {!RUNTIME_CAPABILITIES.offlineMode && <BudgetSection />}
     </div>
   )
 }

@@ -16,7 +16,7 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
-from ..settings import BACKEND_ROOT, get_data_dir, is_frozen
+from ..settings import BACKEND_ROOT, get_backup_dir, get_checkpoint_db_path
 
 logger = logging.getLogger("paper-tracker.db-backup")
 
@@ -27,8 +27,7 @@ logger = logging.getLogger("paper-tracker.db-backup")
 
 def _backup_dir() -> Path:
     """Return the backup directory, creating it if necessary."""
-    base = get_data_dir() if is_frozen() else BACKEND_ROOT / "data"
-    backup_dir = base / "backups"
+    backup_dir = get_backup_dir()
     backup_dir.mkdir(parents=True, exist_ok=True)
     return backup_dir
 
@@ -50,12 +49,11 @@ def _resolve_db_paths() -> list[tuple[str, Path]]:
         pairs.append(("paper_tracker", db_path))
 
     # 2. LangGraph checkpoint database – resolves same way as checkpointer.py
-    checkpoint_rel = os.getenv("CHECKPOINT_DB_PATH", "graph_checkpoints.db")
-    checkpoint_path = Path(checkpoint_rel)
+    checkpoint_path = get_checkpoint_db_path()
     if not checkpoint_path.is_absolute():
         # When running via ``python main.py`` the cwd is backend/, so a
         # relative path resolves relative to BACKEND_ROOT.
-        checkpoint_path = BACKEND_ROOT / checkpoint_rel
+        checkpoint_path = BACKEND_ROOT / checkpoint_path
     pairs.append(("graph_checkpoints", checkpoint_path))
 
     # 3. Control-plane (auth) database

@@ -6,16 +6,18 @@ from datetime import UTC, datetime, timedelta
 
 from jwt import ExpiredSignatureError, InvalidTokenError, decode, encode
 
+from ..settings import get_secret_value
+
 logger = logging.getLogger(__name__)
 
 
 def _get_secret_key() -> str:
-    key = os.getenv("JWT_SECRET_KEY")
+    key = get_secret_value("JWT_SECRET_KEY")
     if key:
         return key
 
     raise RuntimeError(
-        "JWT_SECRET_KEY must be set. Generate one with: "
+        "JWT_SECRET_KEY or JWT_SECRET_KEY_FILE must be set. Generate one with: "
         "python -c \"import secrets; print(secrets.token_urlsafe(64))\""
     )
 

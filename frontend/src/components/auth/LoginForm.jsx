@@ -7,7 +7,7 @@ const registrationEnabled = import.meta.env.VITE_ALLOW_PUBLIC_REGISTRATION === '
 
 /**
  * Glass login/register card with mode toggle.
- * Academic Grid FUI style — glass morphism, cyan glow, Orbitron + Exo 2 fonts.
+ * Academic Grid FUI style — glass morphism, cyan glow, and local system fonts.
  */
 export default function LoginForm() {
   const [mode, setMode] = useState('login') // 'login' | 'register'

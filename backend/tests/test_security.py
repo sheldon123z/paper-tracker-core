@@ -25,30 +25,55 @@ class SecurityTests(unittest.TestCase):
 
     def test_loopback_allowed_without_admin_token(self):
         with patched_env(LLM_CONFIG_ADMIN_TOKEN=None, LLM_CONFIG_TRUST_LOOPBACK_ONLY="true"):
-            require_llm_config_access(self.loopback_request, authorization=None, x_llm_admin_token=None)
+            require_llm_config_access(
+                self.loopback_request,
+                authorization=None,
+                x_llm_admin_token=None,
+                authenticated_user=None,
+            )
 
     def test_remote_rejected_without_token(self):
         with patched_env(LLM_CONFIG_ADMIN_TOKEN=None, LLM_CONFIG_TRUST_LAN="false"):
             with self.assertRaises(HTTPException) as ctx:
-                require_llm_config_access(self.remote_request, authorization=None, x_llm_admin_token=None)
+                require_llm_config_access(
+                    self.remote_request,
+                    authorization=None,
+                    x_llm_admin_token=None,
+                    authenticated_user=None,
+                )
         self.assertEqual(ctx.exception.status_code, 403)
 
     def test_bearer_or_header_token_grants_access(self):
         with patched_env(LLM_CONFIG_ADMIN_TOKEN="secret-token"):
             with self.assertRaises(HTTPException) as ctx:
-                require_llm_config_access(self.remote_request, authorization=None, x_llm_admin_token=None)
+                require_llm_config_access(
+                    self.remote_request,
+                    authorization=None,
+                    x_llm_admin_token=None,
+                    authenticated_user=None,
+                )
             self.assertEqual(ctx.exception.status_code, 401)
 
             require_llm_config_access(
                 self.remote_request,
                 authorization="Bearer secret-token",
                 x_llm_admin_token=None,
+                authenticated_user=None,
             )
             require_llm_config_access(
                 self.remote_request,
                 authorization=None,
                 x_llm_admin_token="secret-token",
+                authenticated_user=None,
             )
+
+    def test_session_aware_authenticated_user_grants_access(self):
+        require_llm_config_access(
+            self.remote_request,
+            authorization=None,
+            x_llm_admin_token=None,
+            authenticated_user=types.SimpleNamespace(id=7),
+        )
 
     def test_pdf_import_routes_use_bounded_upload_limit(self):
         self.assertTrue(is_pdf_import_endpoint("/api/papers/import/pdf/analyze", "POST"))

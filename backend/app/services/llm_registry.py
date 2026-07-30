@@ -4,11 +4,18 @@ import ipaddress
 import json
 import logging
 import os
+import re
 import socket
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from typing import Any
 from urllib.parse import urlparse, urlunparse
+
+from ..offline import (
+    is_offline_llm_host_allowed,
+    is_offline_mode,
+    require_offline_llm_endpoint,
+)
 
 logger = logging.getLogger("paper-tracker.llm_registry")
 
@@ -235,12 +242,12 @@ class ResolvedLLMConfig:
     config_id: int | None = None
 
     def to_state(self) -> dict[str, Any]:
+        """Return checkpoint-safe state without cleartext credentials."""
         return {
             "provider_key": self.provider_key,
             "display_name": self.display_name,
             "model_name": self.model_name,
             "litellm_model": self.litellm_model,
-            "api_key": self.api_key,
             "base_url": self.api_base,
             "extra_headers": self.extra_headers,
             "model_kwargs": self.model_kwargs,
@@ -280,6 +287,102 @@ def parse_json_mapping(value: Any, *, field_name: str) -> dict[str, Any]:
             raise ProviderConfigError("INVALID_JSON", f"{field_name} must be a JSON object.")
         return parsed
     raise ProviderConfigError("INVALID_JSON", f"{field_name} must be a JSON object.")
+
+
+_SENSITIVE_METADATA_KEYS = {
+    "api_key",
+    "apikey",
+    "access_token",
+    "auth_token",
+    "authorization",
+    "bearer_token",
+    "client_secret",
+    "cookie",
+    "credential",
+    "credentials",
+    "id_token",
+    "password",
+    "passwd",
+    "private_key",
+    "proxy_authorization",
+    "refresh_token",
+    "secret",
+    "session_token",
+    "set_cookie",
+    "token",
+    "x_api_key",
+}
+_SENSITIVE_METADATA_SUFFIXES = (
+    "_api_key",
+    "_auth_token",
+    "_client_secret",
+    "_credential",
+    "_credentials",
+    "_password",
+    "_private_key",
+    "_refresh_token",
+    "_secret",
+    "_token",
+)
+_SENSITIVE_METADATA_COMPACT_KEYS = frozenset(
+    item.replace("_", "") for item in _SENSITIVE_METADATA_KEYS
+)
+_SENSITIVE_METADATA_COMPACT_SUFFIXES = tuple(
+    item.lstrip("_").replace("_", "")
+    for item in _SENSITIVE_METADATA_SUFFIXES
+)
+
+
+def _normalize_metadata_key(key: Any) -> str:
+    raw = str(key).strip()
+    separated = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", raw)
+    separated = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", separated)
+    return re.sub(r"[^a-z0-9]+", "_", separated.lower()).strip("_")
+
+
+def _is_sensitive_metadata_key(key: Any) -> bool:
+    normalized = _normalize_metadata_key(key)
+    compact = normalized.replace("_", "")
+    return (
+        normalized in _SENSITIVE_METADATA_KEYS
+        or compact in _SENSITIVE_METADATA_COMPACT_KEYS
+        or normalized.endswith(_SENSITIVE_METADATA_SUFFIXES)
+        or compact.endswith(_SENSITIVE_METADATA_COMPACT_SUFFIXES)
+    )
+
+
+def validate_extra_body(body: dict[str, Any]) -> dict[str, Any]:
+    """Reject credentials hidden in arbitrary provider request metadata."""
+
+    def walk(value: Any, path: str) -> None:
+        if isinstance(value, dict):
+            for key, nested in value.items():
+                if _is_sensitive_metadata_key(key):
+                    raise ProviderConfigError(
+                        "FORBIDDEN_SECRET",
+                        f"{path} must not contain credentials; use the dedicated API key field.",
+                    )
+                walk(nested, f"{path}.{key}")
+        elif isinstance(value, list):
+            for index, nested in enumerate(value):
+                walk(nested, f"{path}[{index}]")
+
+    walk(body, "extra_body")
+    return body
+
+
+def redact_sensitive_metadata(value: Any) -> Any:
+    """Return a JSON-safe copy with credential-like fields removed."""
+
+    if isinstance(value, dict):
+        return {
+            str(key): redact_sensitive_metadata(nested)
+            for key, nested in value.items()
+            if not _is_sensitive_metadata_key(key)
+        }
+    if isinstance(value, list):
+        return [redact_sensitive_metadata(item) for item in value]
+    return value
 
 
 def json_dumps_or_none(value: dict[str, Any] | None) -> str | None:
@@ -407,6 +510,33 @@ def normalize_base_url(provider_key: str, base_url: str | None) -> str | None:
     return urlunparse(rebuilt).rstrip("/")
 
 
+def sanitize_base_url_for_output(base_url: str | None) -> str | None:
+    """Return a display-safe URL without credentials, query, or fragment."""
+
+    raw = (base_url or "").strip()
+    if not raw:
+        return None
+    parsed = urlparse(raw)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return None
+    try:
+        port = parsed.port
+    except ValueError:
+        return None
+    host = parsed.hostname
+    if ":" in host:
+        host = f"[{host}]"
+    netloc = f"{host}:{port}" if port is not None else host
+    return urlunparse(
+        parsed._replace(
+            netloc=netloc,
+            params="",
+            query="",
+            fragment="",
+        )
+    ).rstrip("/")
+
+
 def _resolve_host_ips(host: str) -> set[ipaddress._BaseAddress]:
     ips: set[ipaddress._BaseAddress] = set()
     try:
@@ -469,8 +599,15 @@ def validate_extra_headers(provider_key: str, headers: dict[str, Any]) -> dict[s
             "Custom headers are only supported for the generic OpenAI-compatible provider.",
         )
 
-    for forbidden in ("authorization", "x-api-key", "api-key", "host", "content-length", "connection"):
-        if forbidden in {key.lower() for key in headers}:
+    forbidden_transport_headers = {"host", "content-length", "connection"}
+    for key in headers:
+        if (
+            _normalize_metadata_key(key) in {
+                _normalize_metadata_key(header)
+                for header in forbidden_transport_headers
+            }
+            or _is_sensitive_metadata_key(key)
+        ):
             raise ProviderConfigError(
                 "FORBIDDEN_HEADER",
                 "Sensitive or hop-by-hop headers are managed by the provider profile and cannot be set manually.",
@@ -481,6 +618,9 @@ def validate_extra_headers(provider_key: str, headers: dict[str, Any]) -> dict[s
 
 def validate_base_url(provider_key: str, base_url: str | None, *, is_local: bool) -> str | None:
     normalized = normalize_base_url(provider_key, base_url)
+    # Strict offline mode requires an explicit safe endpoint even for native
+    # providers whose SDK would otherwise supply a remote default internally.
+    require_offline_llm_endpoint(normalized)
     if not normalized:
         return None
 
@@ -488,7 +628,10 @@ def validate_base_url(provider_key: str, base_url: str | None, *, is_local: bool
     parsed = urlparse(normalized)
     host = parsed.hostname
     if not host:
-        logger.warning("validate_base_url blocked: provider=%s reason=no_hostname url=%s", provider_key, base_url)
+        logger.warning(
+            "validate_base_url blocked: provider=%s reason=no_hostname",
+            provider_key,
+        )
         raise ProviderConfigError("INVALID_BASE_URL", "Base URL must include a hostname.")
     if parsed.username or parsed.password:
         logger.warning("validate_base_url blocked: provider=%s reason=credentials_in_url", provider_key)
@@ -497,7 +640,10 @@ def validate_base_url(provider_key: str, base_url: str | None, *, is_local: bool
         logger.warning("validate_base_url blocked: provider=%s reason=blocked_host host=%s", provider_key, host)
         raise ProviderConfigError("SSRF_BLOCKED", "This base URL target is not allowed.")
 
-    local_allowed = profile.local_provider and _bool_env("ALLOW_LOCAL_LLM_BASE_URLS", False)
+    offline_host_allowed = is_offline_mode() and is_offline_llm_host_allowed(host)
+    local_allowed = profile.local_provider and (
+        _bool_env("ALLOW_LOCAL_LLM_BASE_URLS", False) or is_offline_mode()
+    )
     is_local_host = _is_local_host(host)
     allowed_remote_hosts = profile.allowed_host_suffixes
     if profile.key == "openai_compatible":
@@ -509,16 +655,20 @@ def validate_base_url(provider_key: str, base_url: str | None, *, is_local: bool
         raise ProviderConfigError("INVALID_BASE_URL", "Base URL must use http or https.")
 
     if is_local_host or private_host:
-        if not (local_allowed and is_local):
+        if not ((local_allowed and is_local) or offline_host_allowed):
             logger.warning("validate_base_url blocked: provider=%s reason=ssrf_local host=%s", provider_key, host)
             raise ProviderConfigError(
                 "SSRF_BLOCKED",
                 "Local or private-network base URLs are blocked unless explicitly enabled for local providers.",
             )
-        if parsed.scheme != "http":
+        if parsed.scheme != "http" and not offline_host_allowed:
             logger.warning("validate_base_url blocked: provider=%s reason=local_https host=%s", provider_key, host)
             raise ProviderConfigError("INVALID_BASE_URL", "Local provider base URLs must use http.")
-        if not is_local_host and not _bool_env("ALLOW_LAN_LLM_BASE_URLS", False):
+        if (
+            not is_local_host
+            and not offline_host_allowed
+            and not _bool_env("ALLOW_LAN_LLM_BASE_URLS", False)
+        ):
             logger.warning("validate_base_url blocked: provider=%s reason=lan_blocked host=%s", provider_key, host)
             raise ProviderConfigError(
                 "SSRF_BLOCKED",

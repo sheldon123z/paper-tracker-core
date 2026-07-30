@@ -14,6 +14,7 @@ from ..auth.dependencies import get_current_user
 from ..control_plane.models import User
 from ..database import get_db
 from ..models import Feed, Paper, PaperTag, PaperUserState, Tag
+from ..offline import require_online_http
 from ..schemas import (
     BatchActionRequest,
     DuplicateMergeRequest,
@@ -282,6 +283,7 @@ def batch_action(
 
 @router.post("/run")
 def run_feed_ingestion(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    require_online_http("RSS feed ingestion")
     feeds = filter_visible(db.query(Feed).filter(Feed.is_active.is_(True)), Feed, user).all()
     if not feeds:
         return {"message": "No active feeds configured", "stats": {}}

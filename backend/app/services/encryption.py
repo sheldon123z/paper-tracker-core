@@ -2,13 +2,15 @@ import os
 
 from cryptography.fernet import Fernet, MultiFernet
 
+from ..settings import get_secret_value
+
 
 def _get_fernets() -> list[Fernet]:
-    key = os.getenv("ENCRYPTION_KEY", "")
+    key = get_secret_value("ENCRYPTION_KEY", "") or ""
     if not key:
-        raise ValueError("ENCRYPTION_KEY environment variable is not set")
+        raise ValueError("ENCRYPTION_KEY or ENCRYPTION_KEY_FILE is not set")
     keys = [key]
-    fallback_keys = os.getenv("ENCRYPTION_KEY_FALLBACKS", "").strip()
+    fallback_keys = (get_secret_value("ENCRYPTION_KEY_FALLBACKS", "") or "").strip()
     if fallback_keys:
         keys.extend(part.strip() for part in fallback_keys.split(",") if part.strip())
     return [Fernet(item.encode() if isinstance(item, str) else item) for item in keys]

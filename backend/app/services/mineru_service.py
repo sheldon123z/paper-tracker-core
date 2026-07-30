@@ -5,11 +5,13 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
-import os
 import zipfile
 from pathlib import Path
 
 import httpx
+
+from ..offline import require_online
+from ..settings import get_secret_value
 
 logger = logging.getLogger("paper-tracker.mineru")
 
@@ -19,7 +21,7 @@ POLL_INTERVALS = [2, 4, 8, 16, 30]  # exponential backoff, max 30s
 
 
 def _get_token() -> str:
-    token = os.getenv("MINERU_API_TOKEN", "")
+    token = get_secret_value("MINERU_API_TOKEN", "") or ""
     if not token:
         raise ValueError("MINERU_API_TOKEN 环境变量未配置，请在 .env 中设置")
     return token
@@ -37,6 +39,7 @@ async def submit_parse_task(file_path: Path, filename: str, token: str) -> str:
     2. PUT file to signed URL
     3. Return batch_id for polling
     """
+    require_online("MinerU cloud parsing")
     async with httpx.AsyncClient(timeout=60) as client:
         # Step 1: Get signed upload URL
         resp = await client.post(
@@ -80,6 +83,7 @@ async def poll_task_status(batch_id: str, token: str) -> dict:
 
     Returns: {"status": "done"|"failed", "full_zip_url": str|None, "error": str|None}
     """
+    require_online("MinerU cloud parsing")
     elapsed = 0
     interval_idx = 0
 
@@ -125,6 +129,7 @@ async def poll_task_status(batch_id: str, token: str) -> dict:
 
 async def download_and_extract_markdown(zip_url: str) -> str:
     """Download ZIP from MinerU and extract the markdown content."""
+    require_online("MinerU cloud parsing")
     async with httpx.AsyncClient(timeout=120) as client:
         resp = await client.get(zip_url)
         resp.raise_for_status()
@@ -148,6 +153,8 @@ async def parse_pdf_to_markdown(paper_id: int, file_id: int, db_factory) -> None
     Runs as a background task. Updates PaperFile.parse_status throughout.
     db_factory should be a callable that returns a new DB session (e.g. SessionLocal).
     """
+    require_online("MinerU cloud parsing")
+
     from ..models import PaperFile
     from .file_storage import read_file, save_file
 

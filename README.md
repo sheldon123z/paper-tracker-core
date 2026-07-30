@@ -10,6 +10,7 @@ A full-stack local research paper tracking system with RSS ingestion, AI-powered
 - LLM provider registry plan: `docs/llm-provider-registry-plan.md`
 - AG-UI protocol reference: `docs/llms.md`
 - Local dev & pre-test guide: `docs/local-dev.md`
+- Windows offline Docker deployment: `docs/offline-windows-docker.md`
 
 ## Features
 

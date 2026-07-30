@@ -15,14 +15,13 @@ Usage:
     checkpointer = get_checkpointer()
 """
 import logging
-import os
 
 import aiosqlite
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
-logger = logging.getLogger("paper-tracker.checkpointer")
+from ..settings import get_checkpoint_db_path
 
-_DB_PATH = os.getenv("CHECKPOINT_DB_PATH", "graph_checkpoints.db")
+logger = logging.getLogger("paper-tracker.checkpointer")
 
 _conn: aiosqlite.Connection | None = None
 _checkpointer: AsyncSqliteSaver | None = None
@@ -36,10 +35,12 @@ async def open_checkpointer() -> None:
     global _conn, _checkpointer
     if _checkpointer is not None:
         return
-    _conn = await aiosqlite.connect(_DB_PATH)
+    db_path = get_checkpoint_db_path()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    _conn = await aiosqlite.connect(str(db_path))
     _checkpointer = AsyncSqliteSaver(_conn)
     await _checkpointer.setup()
-    logger.info("LangGraph checkpointer ready at %s", _DB_PATH)
+    logger.info("LangGraph checkpointer ready at %s", db_path)
 
 
 async def close_checkpointer() -> None:

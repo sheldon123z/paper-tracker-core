@@ -9,7 +9,7 @@ vi.mock('axios', () => {
     request: { use: vi.fn() },
     response: { use: vi.fn() },
   }
-  mockAxios.defaults = { baseURL: 'http://localhost:5002' }
+  mockAxios.defaults = { baseURL: '' }
   mockAxios.get = vi.fn()
   mockAxios.post = vi.fn()
   return { default: mockAxios }
@@ -19,6 +19,7 @@ describe('API Client', () => {
   let mockAxios
 
   beforeEach(async () => {
+    vi.unstubAllEnvs()
     vi.clearAllMocks()
     localStorage.clear()
     // Clear module cache and re-import to reset state
@@ -27,31 +28,30 @@ describe('API Client', () => {
   })
 
   afterEach(() => {
+    vi.unstubAllEnvs()
     vi.restoreAllMocks()
   })
 
   describe('Instance Creation', () => {
     it('should create axios instance with default base URL', async () => {
+      vi.stubEnv('VITE_API_BASE_URL', '')
       // Import the api module which triggers axios.create
       await import('../api')
 
       expect(mockAxios.create).toHaveBeenCalled()
       const createCall = mockAxios.create.mock.calls[0][0]
-      // Base URL should either be from env or default to localhost:5002
-      expect(createCall.baseURL).toBeDefined()
+      expect(createCall.baseURL).toBe('')
       expect(createCall.timeout).toBe(10000)
       expect(createCall.withCredentials).toBe(true)
     })
 
     it('should use VITE_API_BASE_URL environment variable when set', async () => {
-      // This test verifies that the baseURL uses import.meta.env.VITE_API_BASE_URL
-      // Since we can't easily mock import.meta.env in this context,
-      // we verify the default behavior instead
+      vi.stubEnv('VITE_API_BASE_URL', 'https://paper.example.test')
       await import('../api')
 
       expect(mockAxios.create).toHaveBeenCalled()
       const createCall = mockAxios.create.mock.calls[0][0]
-      expect(createCall.baseURL).toBeDefined()
+      expect(createCall.baseURL).toBe('https://paper.example.test')
     })
   })
 

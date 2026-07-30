@@ -1221,7 +1221,7 @@
 
 .wf-metric-tile__value {
   margin-top: 12px;
-  font-family: 'Orbitron', 'Exo 2', sans-serif;
+  font-family: var(--font-display);
   font-size: 24px;
   font-weight: 700;
   line-height: 1;
@@ -1306,7 +1306,7 @@
 }
 
 .wf-paper-card__index {
-  font-family: 'Orbitron', 'Exo 2', sans-serif;
+  font-family: var(--font-display);
   color: var(--card-accent, var(--accent));
   background: color-mix(in srgb, var(--card-accent, var(--accent)) 10%, transparent);
 }
@@ -1514,7 +1514,7 @@
 }
 
 .wf-trend-metric__value {
-  font-family: 'Orbitron', 'Exo 2', sans-serif;
+  font-family: var(--font-display);
   font-size: 22px;
   font-weight: 700;
   color: var(--text-primary);
@@ -1610,7 +1610,7 @@
 }
 
 .wf-rank-item__index {
-  font-family: 'Orbitron', 'Exo 2', sans-serif;
+  font-family: var(--font-display);
   font-size: 11px;
   color: var(--text-tertiary);
 }
@@ -1717,7 +1717,7 @@
 
 .wf-chart-tooltip__value {
   margin-top: 4px;
-  font-family: 'Orbitron', 'Exo 2', sans-serif;
+  font-family: var(--font-display);
   font-size: 14px;
   font-weight: 700;
   color: var(--text-primary);

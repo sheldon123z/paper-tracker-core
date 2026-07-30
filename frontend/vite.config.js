@@ -2,9 +2,19 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { nodePolyfills } from 'vite-plugin-node-polyfills'
+import { replaceExternalFontUrls } from './vite/offlineAssets.js'
 
 export default defineConfig({
   plugins: [
+    {
+      name: 'copilotkit-offline-fonts',
+      enforce: 'pre',
+      transform(code, id) {
+        if (!id.includes('@copilotkit/web-inspector')) return null
+        const transformed = replaceExternalFontUrls(code)
+        return transformed === code ? null : { code: transformed, map: null }
+      },
+    },
     {
       name: 'copilotkit-v2-precompiled-css',
       enforce: 'pre',

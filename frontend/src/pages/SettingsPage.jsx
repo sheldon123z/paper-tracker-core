@@ -5,6 +5,7 @@ import SkillsSection from '../components/settings/SkillsSection'
 import SystemPromptsSection from '../components/settings/SystemPromptsSection'
 import TemplatesSection from '../components/settings/TemplatesSection'
 import MonitorSection from '../components/settings/MonitorSection'
+import { RUNTIME_CAPABILITIES } from '../config/runtime'
 
 const IconCpu = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -71,6 +72,21 @@ export default function SettingsPage() {
         >
           设置
         </h1>
+        {RUNTIME_CAPABILITIES.offlineMode && (
+          <div
+            role="status"
+            data-testid="offline-mode-notice"
+            className="mt-3 flex max-w-2xl items-start gap-2 rounded-xl border px-3 py-2 text-xs"
+            style={{
+              borderColor: 'var(--border)',
+              backgroundColor: 'var(--bg-secondary)',
+              color: 'var(--text-secondary)',
+            }}
+          >
+            <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>离线模式</span>
+            <span>仅显示并使用本地模型；云端文档解析已关闭。</span>
+          </div>
+        )}
       </div>
 
       <div className="flex flex-col lg:flex-row gap-5">

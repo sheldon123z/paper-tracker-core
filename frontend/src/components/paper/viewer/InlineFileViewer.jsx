@@ -7,6 +7,7 @@ import XlsxViewer from './XlsxViewer'
 import ParseButton from './ParseButton'
 import api from '../../../api'
 import useStore from '../../../store'
+import { RUNTIME_CAPABILITIES } from '../../../config/runtime'
 
 const FILE_TYPE_LABELS = {
   pdf: 'PDF',
@@ -256,7 +257,8 @@ export default function InlineFileViewer({ paperId, files, onFilesChange, onClos
           {uploading ? '上传中...' : '+ 上传'}
         </Button>
 
-        {(activeFile?.file_type === 'pdf' || activeFile?.file_type === 'markdown') && (
+        {(activeFile?.file_type === 'markdown'
+          || (activeFile?.file_type === 'pdf' && RUNTIME_CAPABILITIES.cloudDocumentParsing)) && (
           <ParseButton
             paperId={paperId}
             fileId={activeFile.id}

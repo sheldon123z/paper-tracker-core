@@ -1,0 +1,170 @@
+name: ${COMPOSE_PROJECT_NAME:-paper-tracker-offline}
+
+services:
+  backend:
+    image: paper-tracker-backend:${PAPER_TRACKER_IMAGE_TAG:-offline}
+    pull_policy: never
+    env_file:
+      - ${PAPER_TRACKER_ENV_FILE:-offline.env}
+    environment:
+      OFFLINE_MODE: "true"
+      LITELLM_LOCAL_MODEL_COST_MAP: "True"
+      PAPER_TRACKER_DATA_DIR: /app/backend/data
+      DATABASE_URL: sqlite:////app/backend/data/paper_tracker.db
+      CONTROL_DATABASE_URL: sqlite:////app/backend/data/control/control_plane.db
+      CHECKPOINT_DB_PATH: /app/backend/data/graph_checkpoints.db
+      TESSERACT_CMD: /usr/bin/tesseract
+    volumes:
+      - paper-tracker-data:/app/backend/data
+    expose:
+      - "5002"
+    networks:
+      - offline
+    depends_on:
+      model-proxy:
+        condition: service_healthy
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=1g,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen("http://127.0.0.1:5002/health", timeout=3).read()
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
+
+  model-proxy:
+    image: paper-tracker-gateway:${PAPER_TRACKER_IMAGE_TAG:-offline}
+    pull_policy: never
+    command:
+      - nginx
+      - -c
+      - /etc/nginx/model-proxy.conf
+      - -g
+      - daemon off;
+    expose:
+      - "11434"
+      - "8000"
+      - "1234"
+      - "30000"
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    networks:
+      - offline
+      - host-model-access
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - -q
+        - --spider
+        - http://127.0.0.1:18080/health
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  copilot-runtime:
+    image: paper-tracker-copilot-runtime:${PAPER_TRACKER_IMAGE_TAG:-offline}
+    pull_policy: never
+    environment:
+      NODE_ENV: production
+      PORT: "4100"
+      BACKEND_URL: http://backend:5002
+      COPILOT_RUNTIME_ENDPOINT: /api/copilotkit
+      COPILOT_RUNTIME_SECRET: ""
+      COPILOT_ALLOWED_ORIGINS: ${COPILOT_ALLOWED_ORIGINS:-http://127.0.0.1:8080,http://localhost:8080}
+      COPILOT_REQUEST_TIMEOUT_MS: ${COPILOT_REQUEST_TIMEOUT_MS:-300000}
+    expose:
+      - "4100"
+    networks:
+      - offline
+    depends_on:
+      backend:
+        condition: service_healthy
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch("http://127.0.0.1:4100/health").then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  gateway:
+    image: paper-tracker-gateway:${PAPER_TRACKER_IMAGE_TAG:-offline}
+    pull_policy: never
+    ports:
+      - 127.0.0.1:8080:8080
+    networks:
+      - offline
+    depends_on:
+      backend:
+        condition: service_healthy
+      copilot-runtime:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - -q
+        - --spider
+        - http://127.0.0.1:8080/
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+networks:
+  offline:
+    name: ${COMPOSE_PROJECT_NAME:-paper-tracker-offline}-internal
+    internal: true
+  # Only model-proxy joins this ordinary bridge. Backend remains on the
+  # internal network and can reach the Windows host solely through the proxy's
+  # four fixed local-model ports.
+  host-model-access:
+    name: ${COMPOSE_PROJECT_NAME:-paper-tracker-offline}-host-model
+
+volumes:
+  paper-tracker-data:
+    name: ${PAPER_TRACKER_DATA_VOLUME:-paper-tracker-offline-data}
+    labels:
+      io.paper-tracker.role: data
+      io.paper-tracker.project: ${COMPOSE_PROJECT_NAME:-paper-tracker-offline}

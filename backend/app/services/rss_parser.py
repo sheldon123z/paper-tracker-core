@@ -10,6 +10,7 @@ from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from ..models import Feed, Paper
+from ..offline import require_online
 from .relevance import infer_category, load_keywords_from_env, score_relevance
 
 logger = logging.getLogger(__name__)
@@ -170,11 +171,13 @@ def _extract_authors(entry: dict[str, Any]) -> str:
 
 
 def fetch_feed_entries(feed_url: str) -> list[dict[str, Any]]:
+    require_online("RSS feed fetching")
     parsed = feedparser.parse(feed_url)
     return parsed.entries or []
 
 
 def ingest_feeds(db: Session, feeds: list[Feed]) -> dict[str, int]:
+    require_online("RSS feed ingestion")
     stats = {
         "new_papers": 0,
         "skipped_duplicates": 0,
@@ -273,6 +276,7 @@ def refresh_abstracts(db: Session, feeds: list[Feed]) -> dict[str, int]:
     """Re-fetch RSS feeds and update abstracts for existing papers that have
     missing, stub, or truncated abstracts.
     """
+    require_online("RSS abstract refresh")
     stats = {"updated": 0, "feeds_processed": 0, "feed_errors": 0}
 
     for feed in feeds:

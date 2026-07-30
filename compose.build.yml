@@ -1,0 +1,27 @@
+name: paper-tracker-offline-build
+
+services:
+  backend:
+    image: paper-tracker-backend:${PAPER_TRACKER_IMAGE_TAG:-offline}
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+
+  copilot-runtime:
+    image: paper-tracker-copilot-runtime:${PAPER_TRACKER_IMAGE_TAG:-offline}
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: copilot-runtime/Dockerfile
+
+  gateway:
+    image: paper-tracker-gateway:${PAPER_TRACKER_IMAGE_TAG:-offline}
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: deploy/gateway/Dockerfile
+      args:
+        VITE_API_BASE_URL: /
+        VITE_COPILOT_RUNTIME_URL: /api/copilotkit
+        VITE_OFFLINE_MODE: "true"

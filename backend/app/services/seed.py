@@ -4,6 +4,7 @@ import os
 from sqlalchemy.orm import Session
 
 from ..models import AgentSkill, LLMConfig, PromptTemplate, SystemPromptConfig
+from ..settings import get_secret_value
 from .encryption import current_key_version, encrypt_value
 from .llm_registry import (
     get_provider_profile,
@@ -387,7 +388,7 @@ def seed_llm_configs(db: Session) -> None:
     seeded = 0
     for seed in _LLM_PROVIDER_SEEDS:
         provider = infer_provider_key(seed["provider"], seed.get("base_url_value") or os.getenv(seed.get("env_base_url", ""), None))
-        raw_api_key = os.getenv(seed["env_key"], "")
+        raw_api_key = get_secret_value(seed["env_key"], "") or ""
 
         try:
             api_key = resolve_api_key(provider, raw_api_key)

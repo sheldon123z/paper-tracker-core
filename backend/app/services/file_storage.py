@@ -4,10 +4,13 @@ import logging
 import uuid
 from pathlib import Path
 
+from ..settings import get_file_storage_dir
+
 logger = logging.getLogger("paper-tracker.file_storage")
 
-# Storage root: backend/data/paper_files/
-_STORAGE_ROOT = Path(__file__).resolve().parent.parent.parent / "data" / "paper_files"
+# Defaults to backend/data/paper_files for development, or to the configured
+# PAPER_TRACKER_DATA_DIR for container/persistent deployments.
+_STORAGE_ROOT = get_file_storage_dir()
 
 ALLOWED_CONTENT_TYPES = {
     "application/pdf": "pdf",

@@ -6,6 +6,11 @@ from typing import Any
 from langchain_core.messages import HumanMessage
 from langchain_litellm import ChatLiteLLM
 
+from ..offline import (
+    OfflineModeError,
+    configure_offline_environment,
+    require_offline_llm_endpoint,
+)
 from .llm_registry import ResolvedLLMConfig
 
 logger = logging.getLogger("paper-tracker.llm_runtime")
@@ -63,6 +68,11 @@ def extract_stream_text_from_chunk(chunk: Any) -> list[str]:
 
 
 def build_chat_llm(config: ResolvedLLMConfig, *, streaming: bool = True) -> ChatLiteLLM:
+    # This is the final shared construction point used by chat, workflows,
+    # probes, translation, and PDF analysis.  Keep this guard even though
+    # configuration validation also rejects remote endpoints.
+    configure_offline_environment()
+    require_offline_llm_endpoint(config.api_base)
     return ChatLiteLLM(
         model=config.litellm_model,
         api_key=config.api_key,
@@ -121,6 +131,8 @@ async def probe_llm(config: ResolvedLLMConfig) -> dict[str, Any]:
 
 
 def classify_runtime_error(exc: Exception) -> tuple[str, str]:
+    if isinstance(exc, OfflineModeError):
+        return exc.code, str(exc)
     message = str(exc)
     lowered = message.lower()
     if "ssrf_blocked" in lowered or "local or private-network" in lowered:

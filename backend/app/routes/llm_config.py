@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import LLMBudgetConfig, LLMConfig, LLMUsageLog
+from ..offline import OfflineModeError
 from ..schemas import (
     LLMConfigBatchAction,
     LLMConfigBrief,
@@ -20,7 +21,15 @@ from ..schemas import (
 )
 from ..security import require_llm_config_access
 from ..services.encryption import current_key_version, decrypt_value, encrypt_value
-from ..services.llm_registry import get_provider_profile, infer_provider_key, parse_json_mapping, resolve_api_key
+from ..services.llm_registry import (
+    get_provider_profile,
+    infer_provider_key,
+    parse_json_mapping,
+    redact_sensitive_metadata,
+    resolve_api_key,
+    sanitize_base_url_for_output,
+)
+from ..services.llm_runtime import classify_runtime_error
 from ..services.llm_service import (
     enrich_llm_config,
     list_provider_options,
@@ -87,6 +96,11 @@ def create_llm_config(payload: LLMConfigCreate, db: Session = Depends(get_db)):
             extra_body=payload.extra_body,
             is_local=payload.is_local,
         )
+    except OfflineModeError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": exc.code, "message": str(exc)},
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if get_provider_profile(normalized["provider"]).requires_api_key and not normalized["api_key"]:
@@ -201,6 +215,11 @@ def update_llm_config(config_id: int, payload: LLMConfigUpdate, db: Session = De
             extra_body=updates.get("extra_body", current_body),
             is_local=updates.get("is_local", bool(getattr(config, "is_local", False))),
         )
+    except OfflineModeError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": exc.code, "message": str(exc)},
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     updates["provider"] = normalized["provider"]
@@ -254,6 +273,11 @@ async def test_llm_config(config_id: int, db: Session = Depends(get_db)):
 
     try:
         resolved = resolve_llm_config(db, config_id)
+    except OfflineModeError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": exc.code, "message": str(exc)},
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -313,17 +337,29 @@ async def batch_test_llm_configs(db: Session = Depends(get_db)):
                 return {"id": config_id, "status": "ok" if result["success"] else "error", "message": result.get("message", "")}
             except Exception as exc:
                 local_db.rollback()
+                error_code, message = classify_runtime_error(exc)
+                logger.warning(
+                    "Batch LLM test failed: config_id=%s code=%s exception_type=%s",
+                    config_id,
+                    error_code,
+                    type(exc).__name__,
+                )
                 # Update error status in a clean state after rollback
                 try:
                     cfg_to_update = local_db.query(LLMConfig).filter(LLMConfig.id == config_id).first()
                     if cfg_to_update:
-                        cfg_to_update.health_status = "error"
-                        cfg_to_update.last_error = str(exc)[:200]
+                        cfg_to_update.health_status = error_code.lower()
+                        cfg_to_update.last_error = message
                         cfg_to_update.last_tested_at = datetime.now(UTC)
                         local_db.commit()
                 except Exception:
                     pass
-                return {"id": config_id, "status": "error", "message": str(exc)[:200]}
+                return {
+                    "id": config_id,
+                    "status": "error",
+                    "message": message,
+                    "error_code": error_code,
+                }
             finally:
                 local_db.close()
 
@@ -388,10 +424,14 @@ def export_llm_configs(db: Session = Depends(get_db)):
             "provider": c.provider,
             "display_name": c.display_name,
             "model_name": c.model_name,
-            "base_url": c.base_url,
+            "base_url": sanitize_base_url_for_output(c.base_url),
             "api_format": getattr(c, "api_format", None),
-            "extra_headers": json.loads(c.extra_headers) if c.extra_headers else {},
-            "extra_body": json.loads(c.extra_body) if c.extra_body else {},
+            "extra_headers": redact_sensitive_metadata(
+                parse_json_mapping(c.extra_headers, field_name="extra_headers")
+            ),
+            "extra_body": redact_sensitive_metadata(
+                parse_json_mapping(c.extra_body, field_name="extra_body")
+            ),
             "is_local": bool(getattr(c, "is_local", False)),
             "is_enabled": bool(getattr(c, "is_enabled", True)),
             "is_default": bool(c.is_default),
@@ -406,6 +446,8 @@ def import_llm_configs(payload: dict, db: Session = Depends(get_db)):
     """Import configs from JSON. mode=merge skips existing, mode=replace clears all first."""
     mode = payload.get("mode", "merge")
     items = payload.get("configs", [])
+    if mode not in {"merge", "replace"}:
+        raise HTTPException(status_code=400, detail="Import mode must be merge or replace")
     if not items:
         raise HTTPException(status_code=400, detail="No configs to import")
 
@@ -414,25 +456,46 @@ def import_llm_configs(payload: dict, db: Session = Depends(get_db)):
 
     imported = 0
     for item in items:
+        model_name = str(item.get("model_name", "")).strip()
+        if not model_name:
+            raise HTTPException(status_code=400, detail="Imported configs require model_name")
+        try:
+            normalized = normalize_config_payload(
+                item.get("provider", "openai"),
+                item.get("base_url"),
+                None,
+                model_name=model_name,
+                display_name=item.get("display_name"),
+                extra_headers=item.get("extra_headers", {}),
+                extra_body=item.get("extra_body", {}),
+                is_local=bool(item.get("is_local", False)),
+                allow_missing_api_key=True,
+            )
+        except OfflineModeError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={"code": exc.code, "message": str(exc)},
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         if mode == "merge":
             exists = db.query(LLMConfig).filter(
-                LLMConfig.provider == item.get("provider", ""),
-                LLMConfig.model_name == item.get("model_name", ""),
+                LLMConfig.provider == normalized["provider"],
+                LLMConfig.model_name == model_name,
             ).first()
             if exists:
                 continue
-        from ..services.encryption import current_key_version, encrypt_value
         config = LLMConfig(
-            provider=item.get("provider", "openai"),
+            provider=normalized["provider"],
             display_name=item.get("display_name"),
             api_key_encrypted=encrypt_value(""),  # User must set key manually
             key_version=current_key_version(),
-            model_name=item.get("model_name", ""),
-            base_url=item.get("base_url"),
-            api_format=item.get("api_format"),
-            extra_headers=json.dumps(item.get("extra_headers", {}), ensure_ascii=False) if item.get("extra_headers") else None,
-            extra_body=json.dumps(item.get("extra_body", {}), ensure_ascii=False) if item.get("extra_body") else None,
-            is_local=item.get("is_local", False),
+            model_name=model_name,
+            base_url=normalized["base_url"],
+            api_format=normalized["api_format"],
+            extra_headers=json.dumps(normalized["extra_headers"], ensure_ascii=False) if normalized["extra_headers"] else None,
+            extra_body=json.dumps(normalized["extra_body"], ensure_ascii=False) if normalized["extra_body"] else None,
+            is_local=normalized["is_local"],
             is_enabled=item.get("is_enabled", True),
             is_default=False,  # Don't import default status
             is_pinned=item.get("is_pinned", False),

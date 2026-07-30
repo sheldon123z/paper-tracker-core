@@ -5,8 +5,11 @@ import ipaddress
 import logging
 import os
 
-from fastapi import Header, HTTPException, Request, status
-from jwt import InvalidTokenError
+from fastapi import Depends, Header, HTTPException, Request, status
+
+from .auth.dependencies import get_optional_user
+from .control_plane.models import User
+from .settings import get_secret_value
 
 logger = logging.getLogger("paper-tracker.security")
 
@@ -41,54 +44,20 @@ def _extract_admin_token(authorization: str | None, x_llm_admin_token: str | Non
     return value.strip()
 
 
-def _extract_jwt_token(request: Request | None = None, authorization: str | None = None) -> str | None:
-    """Extract JWT token from cookie or Authorization header (cookie takes priority)."""
-    # 1. Try httpOnly cookie
-    if request is not None:
-        cookie_token = request.cookies.get("access_token")
-        if cookie_token:
-            return cookie_token.strip()
-
-    # 2. Fall back to Authorization header
-    if not authorization:
-        return None
-    scheme, _, value = authorization.partition(" ")
-    if scheme.lower() != "bearer" or not value.strip():
-        return None
-
-    # Avoid confusing the admin token with a JWT
-    expected_admin_token = os.getenv("LLM_CONFIG_ADMIN_TOKEN", "").strip()
-    if expected_admin_token and hmac.compare_digest(value.strip(), expected_admin_token):
-        return None
-
-    return value.strip()
-
-
-def _is_valid_jwt(authorization: str | None, request: Request | None = None) -> bool:
-    """Check if a valid JWT access token is present (cookie or Authorization header)."""
-    token = _extract_jwt_token(request=request, authorization=authorization)
-    if not token:
-        return False
-
-    try:
-        from .auth.tokens import decode_access_token
-        payload = decode_access_token(token)
-        return bool(payload.get("sub"))
-    except (InvalidTokenError, Exception):
-        return False
-
-
 def require_llm_config_access(
     request: Request,
     authorization: str | None = Header(default=None, alias="Authorization"),
     x_llm_admin_token: str | None = Header(default=None, alias="X-LLM-Admin-Token"),
+    authenticated_user: User | None = Depends(get_optional_user),
 ) -> None:
-    # 1. JWT auth: if a valid JWT access token is present (cookie or header), allow access
-    if _is_valid_jwt(authorization, request=request):
+    # Reuse the session-aware auth dependency so logout, account disablement,
+    # and session expiry take effect immediately instead of accepting a merely
+    # well-signed JWT until its access-token expiry.
+    if authenticated_user is not None:
         return
 
     # 2. Admin token: static token for API/script access (backward compat)
-    expected_token = os.getenv("LLM_CONFIG_ADMIN_TOKEN", "").strip()
+    expected_token = (get_secret_value("LLM_CONFIG_ADMIN_TOKEN", "") or "").strip()
     supplied_token = _extract_admin_token(authorization, x_llm_admin_token)
 
     if expected_token:

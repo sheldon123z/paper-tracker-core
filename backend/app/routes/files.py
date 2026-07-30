@@ -12,6 +12,7 @@ from ..auth.dependencies import get_current_user
 from ..control_plane.models import User
 from ..database import SessionLocal, get_db
 from ..models import Paper, PaperFile
+from ..offline import require_online_http
 from ..schemas import PaperFileOut, PaperFileUpdate
 from ..services.access_control import get_visible_or_404, require_writable
 from ..services.file_storage import (
@@ -222,6 +223,7 @@ def trigger_parse(
     db: Session = Depends(get_db),
 ):
     """Trigger PDF parsing for a file. engine: 'mineru' or 'doc2x'."""
+    require_online_http(f"{engine} cloud parsing")
     paper = _get_paper_or_404(paper_id, db, user)
     require_writable(paper, user)
     if engine not in ("mineru", "doc2x"):

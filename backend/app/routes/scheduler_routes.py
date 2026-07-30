@@ -8,6 +8,7 @@ from ..auth.dependencies import get_current_user, get_current_user_or_ingestion_
 from ..control_plane.models import User
 from ..database import get_db
 from ..models import Feed, Paper
+from ..offline import require_online_http
 from ..schemas import PaperOut
 from ..services.access_control import filter_visible, get_visible_or_404, paper_response, require_writable
 from ..services.rss_parser import ingest_feeds
@@ -29,6 +30,7 @@ def trigger_all_feeds(
     principal: User | None = Depends(get_current_user_or_ingestion_service),
     db: Session = Depends(get_db),
 ):
+    require_online_http("RSS scheduler triggers")
     query = db.query(Feed).filter(Feed.is_active.is_(True))
     feeds = query.all() if principal is None else filter_visible(query, Feed, principal).all()
     if principal is not None:
@@ -44,6 +46,7 @@ def trigger_feed(
     principal: User | None = Depends(get_current_user_or_ingestion_service),
     db: Session = Depends(get_db),
 ):
+    require_online_http("RSS scheduler triggers")
     if principal is None:
         feed = db.query(Feed).filter(Feed.id == feed_id).first()
         if feed is None:

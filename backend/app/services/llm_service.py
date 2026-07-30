@@ -12,6 +12,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from ..models import LLMConfig, SystemPromptConfig
+from ..settings import get_secret_value
 from .encryption import decrypt_value
 from .llm_registry import (
     ProviderProfile,
@@ -22,8 +23,11 @@ from .llm_registry import (
     infer_provider_key,
     list_provider_profiles,
     parse_json_mapping,
+    redact_sensitive_metadata,
     resolve_api_key,
+    sanitize_base_url_for_output,
     validate_base_url,
+    validate_extra_body,
     validate_extra_headers,
 )
 from .llm_runtime import classify_runtime_error, probe_llm
@@ -126,7 +130,9 @@ def _normalize_core(
     effective_is_local = bool(is_local or profile.local_provider)
     safe_base_url = validate_base_url(provider_key, base_url, is_local=effective_is_local)
     safe_headers = validate_extra_headers(provider_key, extra_headers or {})
-    safe_body = parse_json_mapping(extra_body or {}, field_name="extra_body")
+    safe_body = validate_extra_body(
+        parse_json_mapping(extra_body or {}, field_name="extra_body")
+    )
     return _NormalizedCore(
         provider_key=provider_key,
         profile=profile,
@@ -156,6 +162,7 @@ def _resolved_headers(config: LLMConfig, provider_key: str) -> dict[str, str]:
 
 
 def enrich_llm_config(config: LLMConfig) -> dict[str, Any]:
+    public_base_url = sanitize_base_url_for_output(config.base_url)
     try:
         core = _normalize_core(
             config.provider,
@@ -169,12 +176,14 @@ def enrich_llm_config(config: LLMConfig) -> dict[str, Any]:
         profile = core.profile
     except Exception as exc:
         logger.warning(
-            "validate_base_url failed for config id=%s provider=%s: %s",
-            getattr(config, "id", "?"), config.provider, exc,
+            "LLM config metadata validation failed: id=%s provider=%s exception_type=%s",
+            getattr(config, "id", "?"),
+            config.provider,
+            type(exc).__name__,
         )
-        effective_base_url = config.base_url
+        effective_base_url = public_base_url
         provider_key = infer_provider_key(
-            config.provider, config.base_url,
+            config.provider, public_base_url,
             model_name=config.model_name, display_name=config.display_name,
         )
         profile = get_provider_profile(provider_key)
@@ -184,11 +193,15 @@ def enrich_llm_config(config: LLMConfig) -> dict[str, Any]:
         "provider_label": profile.label,
         "display_name": config.display_name,
         "model_name": config.model_name,
-        "base_url": config.base_url,
+        "base_url": public_base_url,
         "effective_base_url": effective_base_url,
         "api_format": getattr(config, "api_format", None) or profile.api_format,
-        "extra_headers": _config_json(config, "extra_headers", safe=True),
-        "extra_body": _config_json(config, "extra_body", safe=True),
+        "extra_headers": redact_sensitive_metadata(
+            _config_json(config, "extra_headers", safe=True)
+        ),
+        "extra_body": redact_sensitive_metadata(
+            _config_json(config, "extra_body", safe=True)
+        ),
         "is_default": config.is_default,
         "requires_api_key": profile.requires_api_key,
         "is_local": bool(getattr(config, "is_local", False) or profile.local_provider),
@@ -241,7 +254,10 @@ def _resolve_config_values(
         api_key=runtime_api_key,
         api_base=core.effective_base_url,
         extra_headers=merged_headers,
-        model_kwargs=core.safe_body,
+        # ChatLiteLLM expands model_kwargs into top-level LiteLLM parameters.
+        # Keep user request metadata nested so keys such as ``base_url`` cannot
+        # override the separately validated transport endpoint.
+        model_kwargs={"extra_body": core.safe_body} if core.safe_body else {},
         api_format=core.api_format,
         is_local=core.is_local,
         supports_streaming=core.profile.capabilities.supports_streaming,
@@ -255,7 +271,7 @@ def _resolve_config_values(
 def _resolve_env_fallback() -> ResolvedLLMConfig:
     model_str = os.getenv("LLM_MODEL", "openai/gpt-4o-mini").strip()
     base_url = os.getenv("LLM_BASE_URL")
-    api_key = os.getenv("LLM_API_KEY")
+    api_key = get_secret_value("LLM_API_KEY")
     if "/" in model_str:
         provider_key, model_name = model_str.split("/", 1)
     else:
@@ -317,7 +333,13 @@ async def test_llm_connection(config: ResolvedLLMConfig) -> dict[str, Any]:
         }
     except Exception as exc:
         error_code, message = classify_runtime_error(exc)
-        logger.warning("LLM test failed for provider=%s model=%s: %s", config.provider_key, config.model_name, exc)
+        logger.warning(
+            "LLM test failed: provider=%s model=%s code=%s exception_type=%s",
+            config.provider_key,
+            config.model_name,
+            error_code,
+            type(exc).__name__,
+        )
         return {
             "success": False,
             "status": "error",
@@ -340,6 +362,7 @@ def normalize_config_payload(
     extra_headers: dict[str, Any] | None = None,
     extra_body: dict[str, Any] | None = None,
     is_local: bool = False,
+    allow_missing_api_key: bool = False,
 ) -> dict[str, Any]:
     model_value = (model_name or "").strip()
     if not model_value:
@@ -351,7 +374,11 @@ def normalize_config_payload(
         extra_headers=extra_headers, extra_body=extra_body,
         is_local=is_local,
     )
-    runtime_api_key = None if api_key is None else resolve_api_key(core.provider_key, api_key)
+    runtime_api_key = (
+        None
+        if api_key is None and allow_missing_api_key
+        else resolve_api_key(core.provider_key, api_key)
+    )
     return {
         "provider": core.provider_key,
         "base_url": core.effective_base_url,

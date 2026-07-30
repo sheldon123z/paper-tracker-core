@@ -65,6 +65,7 @@ describe('CopilotProvider production chrome', () => {
     )
 
     expect(screen.getByTestId('copilot-provider')).toBeInTheDocument()
+    expect(mocks.copilotProps.runtimeUrl).toBe('/api/copilotkit')
     expect(mocks.copilotProps.showDevConsole).toBe(false)
     expect(mocks.copilotProps.enableInspector).toBe(false)
   })

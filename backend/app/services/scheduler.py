@@ -7,6 +7,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from ..database import SessionLocal
 from ..models import Feed
+from ..offline import is_offline_mode, require_online
 from .rss_parser import ingest_feeds
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,7 @@ def _next_feed_run_time(feed: Feed, interval_seconds: int) -> datetime:
 
 def _run_feed_job(feed_id: int) -> None:
     """Job target: fetch a single feed by ID in a fresh DB session."""
+    require_online("RSS scheduling")
     db = SessionLocal()
     try:
         feed = db.query(Feed).filter(Feed.id == feed_id).first()
@@ -49,6 +51,7 @@ def _run_feed_job(feed_id: int) -> None:
 
 def schedule_feed(feed: Feed) -> None:
     """Add or replace the interval job for a feed."""
+    require_online("RSS scheduling")
     job_id = f"feed_{feed.id}"
     interval_seconds = max(feed.fetch_interval or 18000, 60)
     next_run_time = _next_feed_run_time(feed, interval_seconds)
@@ -81,14 +84,32 @@ def unschedule_feed(feed_id: int) -> None:
         logger.info("Unscheduled feed %d.", feed_id)
 
 
+def _remove_feed_jobs() -> None:
+    for job in list(_scheduler.get_jobs()):
+        if job.id.startswith("feed_"):
+            _scheduler.remove_job(job.id)
+
+
+def start_scheduler() -> None:
+    """Start the shared scheduler without registering any RSS jobs."""
+
+    if is_offline_mode():
+        _remove_feed_jobs()
+    if not _scheduler.running:
+        _scheduler.start()
+        logger.info("APScheduler started.")
+
+
 def init_scheduler() -> None:
     """Start the scheduler and schedule all currently active feeds."""
+    if is_offline_mode():
+        _remove_feed_jobs()
+        logger.info("OFFLINE_MODE enabled; RSS scheduler was not started.")
+        return
+
+    start_scheduler()
     db = SessionLocal()
     try:
-        if not _scheduler.running:
-            _scheduler.start()
-            logger.info("APScheduler started.")
-
         feeds = db.query(Feed).filter(Feed.is_active.is_(True)).all()
         for feed in feeds:
             schedule_feed(feed)

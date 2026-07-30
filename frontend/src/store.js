@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import api from './api'
+import { filterLlmConfigsForRuntime } from './config/runtime'
 
 // Read darkMode initial value from localStorage
 const initialDarkMode = (() => {
@@ -168,7 +169,7 @@ const useStore = create((set, get) => ({
   setLlmCatalog: (catalog) =>
     set((state) => {
       const llmCatalog = Array.isArray(catalog)
-        ? catalog
+        ? filterLlmConfigsForRuntime(catalog)
             .map((item) => ({
               ...item,
               id: Number(item.id),

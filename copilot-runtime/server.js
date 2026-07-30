@@ -20,8 +20,13 @@ import {
   copilotRuntimeNodeExpressEndpoint,
 } from "@copilotkit/runtime";
 import { HttpAgent } from "@ag-ui/client";
+import {
+  buildAgentAuthHeaders,
+  isAllowedCorsOrigin,
+} from "./request-auth.js";
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:5002";
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
 const configuredRequestTimeoutMs = Number.parseInt(
   process.env.COPILOT_REQUEST_TIMEOUT_MS || "300000",
   10,
@@ -44,21 +49,11 @@ const ALLOWED_ORIGINS = (process.env.COPILOT_ALLOWED_ORIGINS ||
 
 const corsOptions = {
   origin(origin, callback) {
-    // Allow non-browser requests (curl, server-to-server) that have no Origin header
-    if (!origin) return callback(null, true);
-    if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
-
-    // In development (no COPILOT_RUNTIME_SECRET set), also allow any localhost origin
-    if (!process.env.COPILOT_RUNTIME_SECRET) {
-      try {
-        const url = new URL(origin);
-        if (url.hostname === "localhost" || url.hostname === "127.0.0.1") {
-          return callback(null, true);
-        }
-      } catch {
-        // invalid origin — fall through to deny
-      }
-    }
+    const allowed = isAllowedCorsOrigin(origin, ALLOWED_ORIGINS, {
+      allowLocalhostDevelopment:
+        !IS_PRODUCTION && !process.env.COPILOT_RUNTIME_SECRET,
+    });
+    if (allowed) return callback(null, true);
 
     callback(new Error("CORS origin not allowed: " + origin));
   },
@@ -91,25 +86,27 @@ function secretAuth(req, res, next) {
 // ---------------------------------------------------------------------------
 const serviceAdapter = new ExperimentalEmptyAdapter();
 
-const agents = {
-  paperAgent: new HttpAgent({
-    url: `${BACKEND_URL}/api/agui/paper`,
-  }),
-  globalAgent: new HttpAgent({
-    url: `${BACKEND_URL}/api/agui/global`,
-  }),
-  assistantAgent: new HttpAgent({
-    url: `${BACKEND_URL}/api/agui/assistant`,
-  }),
-  // 多智能体科研工作流: supervisor + search_agent + analysis_agent
-  workflowAgent: new HttpAgent({
-    url: `${BACKEND_URL}/api/agui/workflow`,
-  }),
-};
-
-const runtime = new CopilotRuntime({
-  agents,
-});
+function createRequestAgents(headers) {
+  return {
+    paperAgent: new HttpAgent({
+      url: `${BACKEND_URL}/api/agui/paper`,
+      headers,
+    }),
+    globalAgent: new HttpAgent({
+      url: `${BACKEND_URL}/api/agui/global`,
+      headers,
+    }),
+    assistantAgent: new HttpAgent({
+      url: `${BACKEND_URL}/api/agui/assistant`,
+      headers,
+    }),
+    // 多智能体科研工作流: supervisor + search_agent + analysis_agent
+    workflowAgent: new HttpAgent({
+      url: `${BACKEND_URL}/api/agui/workflow`,
+      headers,
+    }),
+  };
+}
 
 const app = express();
 
@@ -117,7 +114,7 @@ app.use(cors(corsOptions));
 app.use(cookieParser());
 
 // ---------------------------------------------------------------------------
-// JWT forwarding middleware (Issue #117)
+// Request-scoped JWT forwarding (Issue #117)
 //
 // Why this is needed:
 //   HttpAgent is a server-side Node HTTP client that lives inside this Express
@@ -128,74 +125,10 @@ app.use(cookieParser());
 //   automatically relay that cookie. As a result, every AG-UI call hit the
 //   backend without auth and `get_current_user` returned 401 for all users.
 //
-// What this middleware does:
-//   Before each CopilotKit request is handed to the runtime, we read the JWT
-//   from `req.cookies.access_token` (or fall back to the incoming Authorization
-//   header), then inject it into every registered HttpAgent's `headers` map as
-//   BOTH a Bearer token and a Cookie. The backend supports either path, so
-//   sending both keeps us robust against future auth refactors.
-//   After the response finishes (or the client disconnects) we clear the
-//   injected headers so they don't leak into the next request.
-//
-// Concurrency caveat:
-//   The HttpAgent instances are module-level singletons shared by all
-//   requests. Mutating their headers per-request is SAFE for the current
-//   single-user dev deployment, but for a multi-user production deployment
-//   this must be refactored to construct request-scoped agents (e.g. build
-//   the `agents` map inside the middleware and pass a fresh CopilotRuntime
-//   per request). Two concurrent users would otherwise race on the shared
-//   header object and potentially see each other's tokens.
+// Each proxy request creates fresh HttpAgent and CopilotRuntime instances.
+// The forwarded headers therefore live only for that request, so concurrent
+// users cannot overwrite one another's credentials during streamed responses.
 // ---------------------------------------------------------------------------
-const AGENT_LIST = Object.values(agents);
-
-function extractToken(req) {
-  const cookieToken = req.cookies && req.cookies.access_token;
-  if (cookieToken) return cookieToken;
-
-  const authHeader = req.headers["authorization"] || req.headers["Authorization"];
-  if (typeof authHeader === "string" && authHeader.startsWith("Bearer ")) {
-    return authHeader.slice("Bearer ".length).trim();
-  }
-  return null;
-}
-
-function setAgentAuth(agent, token) {
-  if (!agent.headers || typeof agent.headers !== "object") {
-    agent.headers = {};
-  }
-  agent.headers["Authorization"] = `Bearer ${token}`;
-  agent.headers["Cookie"] = `access_token=${token}`;
-}
-
-function clearAgentAuth(agent) {
-  if (!agent.headers) return;
-  delete agent.headers["Authorization"];
-  delete agent.headers["Cookie"];
-}
-
-app.use((req, res, next) => {
-  const token = extractToken(req);
-
-  if (token) {
-    for (const agent of AGENT_LIST) {
-      setAgentAuth(agent, token);
-    }
-
-    let cleared = false;
-    const clear = () => {
-      if (cleared) return;
-      cleared = true;
-      for (const agent of AGENT_LIST) {
-        clearAgentAuth(agent);
-      }
-    };
-    res.on("finish", clear);
-    res.on("close", clear);
-  }
-  // If no token, fall through — backend will return 401 on protected endpoints,
-  // which is the correct behaviour for unauthenticated AG-UI calls.
-  next();
-});
 
 // ---------------------------------------------------------------------------
 // Request timeout middleware (Issue #42)
@@ -242,11 +175,17 @@ app.get("/health", (_req, res) => {
 // Express strips the mount prefix from req.url before passing it to the handler,
 // so the Hono app never sees the runtime endpoint and fails to match its routes.
 // Fix: mount at "/" and let Hono handle the full path matching itself.
-app.use("/", secretAuth, copilotRuntimeNodeExpressEndpoint({
-  runtime,
-  serviceAdapter,
-  endpoint: RUNTIME_ENDPOINT,
-}));
+app.use("/", secretAuth, (req, res, next) => {
+  const runtime = new CopilotRuntime({
+    agents: createRequestAgents(buildAgentAuthHeaders(req)),
+  });
+  const endpoint = copilotRuntimeNodeExpressEndpoint({
+    runtime,
+    serviceAdapter,
+    endpoint: RUNTIME_ENDPOINT,
+  });
+  return endpoint(req, res, next);
+});
 
 const PORT = process.env.PORT || 4100;
 app.listen(PORT, () => {

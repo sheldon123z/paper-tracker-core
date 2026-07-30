@@ -8,6 +8,8 @@ from pathlib import Path
 from cryptography.fernet import Fernet
 from dotenv import load_dotenv
 
+from .offline import configure_offline_environment, is_offline_mode
+
 _LOADED = False
 
 # ---------- Frozen / packaged mode detection ----------
@@ -18,12 +20,21 @@ def is_frozen() -> bool:
 
 
 def get_data_dir() -> Path:
-    """Return the platform-specific data directory for packaged mode.
+    """Return the persistent application data directory.
+
+    ``PAPER_TRACKER_DATA_DIR`` takes precedence in every runtime mode.  When
+    it is unset, the existing packaged-mode platform location is preserved.
 
     macOS:   ~/Library/Application Support/PaperTrackerPro
     Windows: %APPDATA%/PaperTrackerPro
     Linux:   ~/.local/share/PaperTrackerPro
     """
+    configured = os.getenv("PAPER_TRACKER_DATA_DIR", "").strip()
+    if configured:
+        data_dir = Path(configured).expanduser().resolve()
+        data_dir.mkdir(parents=True, exist_ok=True)
+        return data_dir
+
     system = platform.system()
     if system == "Darwin":
         base = Path.home() / "Library" / "Application Support"
@@ -34,6 +45,12 @@ def get_data_dir() -> Path:
     data_dir = base / "PaperTrackerPro"
     data_dir.mkdir(parents=True, exist_ok=True)
     return data_dir
+
+
+def has_configured_data_dir() -> bool:
+    """Return whether an explicit persistent data root is configured."""
+
+    return bool(os.getenv("PAPER_TRACKER_DATA_DIR", "").strip())
 
 
 # ---------- Path roots ----------
@@ -60,7 +77,10 @@ def load_environment() -> None:
             load_dotenv(env_file)
     else:
         load_dotenv(PROJECT_ROOT / ".env")
-    _configure_no_proxy()
+    if is_offline_mode():
+        configure_offline_environment()
+    else:
+        _configure_no_proxy()
     _LOADED = True
 
 
@@ -108,13 +128,90 @@ def _normalize_sqlite_url(raw_url: str) -> str:
 
 def get_database_url() -> str:
     load_environment()
-    if is_frozen():
-        # In packaged mode, always use data directory for the database
+    configured_url = os.getenv("DATABASE_URL", "").strip()
+    if configured_url:
+        return _normalize_sqlite_url(configured_url)
+    if is_frozen() or has_configured_data_dir():
+        # Packaged and explicitly persistent deployments keep the primary DB
+        # under the same durable root as attachments and checkpoints.
         data_dir = get_data_dir()
         db_path = data_dir / "paper_tracker.db"
         return f"sqlite:///{db_path}"
-    raw_url = os.getenv("DATABASE_URL", "sqlite:///./paper_tracker.db")
-    return _normalize_sqlite_url(raw_url)
+    return _normalize_sqlite_url("sqlite:///./paper_tracker.db")
+
+
+def get_control_db_dir() -> Path:
+    """Return the directory containing the control-plane database."""
+
+    load_environment()
+    if is_frozen() or has_configured_data_dir():
+        return get_data_dir() / "control"
+    return BACKEND_ROOT / "data" / "control"
+
+
+def get_checkpoint_db_path() -> Path:
+    """Return the configured/default LangGraph checkpoint database path."""
+
+    load_environment()
+    configured = os.getenv("CHECKPOINT_DB_PATH", "").strip()
+    if configured:
+        return Path(configured).expanduser()
+    if is_frozen() or has_configured_data_dir():
+        return get_data_dir() / "graph_checkpoints.db"
+    # Preserve the existing development default, which is relative to cwd.
+    return Path("graph_checkpoints.db")
+
+
+def get_file_storage_dir() -> Path:
+    """Return the root used for uploaded paper attachments."""
+
+    load_environment()
+    if is_frozen() or has_configured_data_dir():
+        return get_data_dir() / "paper_files"
+    return BACKEND_ROOT / "data" / "paper_files"
+
+
+def get_backup_dir() -> Path:
+    """Return the durable database-backup directory."""
+
+    load_environment()
+    base = get_data_dir() if is_frozen() or has_configured_data_dir() else BACKEND_ROOT / "data"
+    return base / "backups"
+
+
+class SecretFileError(RuntimeError):
+    """Raised for an unreadable or empty ``*_FILE`` secret source."""
+
+
+def get_secret_value(name: str, default: str | None = None) -> str | None:
+    """Read a secret from ``NAME`` or, if absent, ``NAME_FILE``.
+
+    Direct environment values win.  Secret-file contents are never logged or
+    included in errors; only trailing newline characters added by Docker
+    secret mounts are removed.
+    """
+
+    direct = os.getenv(name)
+    if direct:
+        return direct
+
+    file_var = f"{name}_FILE"
+    secret_path = os.getenv(file_var, "").strip()
+    if not secret_path:
+        return default
+
+    path = Path(secret_path).expanduser()
+    try:
+        value = path.read_text(encoding="utf-8").rstrip("\r\n")
+    except OSError:
+        # Do not retain the underlying OSError: its traceback/repr includes the
+        # mounted secret path, which may expose deployment layout in logs.
+        raise SecretFileError(
+            f"Unable to read secret configured by {file_var}."
+        ) from None
+    if not value:
+        raise SecretFileError(f"Secret configured by {file_var} is empty.")
+    return value
 
 
 # ---------- Secret Validation ----------
@@ -134,7 +231,7 @@ def validate_secrets() -> list[str]:
     errors = []
 
     # Check encryption key
-    encryption_key = os.getenv("ENCRYPTION_KEY", "")
+    encryption_key = get_secret_value("ENCRYPTION_KEY", "") or ""
     if not encryption_key:
         errors.append("ENCRYPTION_KEY is required - generate with: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\"")
     elif len(encryption_key) < 44:  # Fernet keys are 44 bytes when base64-encoded
@@ -147,7 +244,7 @@ def validate_secrets() -> list[str]:
             errors.append("ENCRYPTION_KEY is not a valid Fernet key - generate with: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\"")
 
     # Check encryption key fallbacks
-    fallback_keys = os.getenv("ENCRYPTION_KEY_FALLBACKS", "").strip()
+    fallback_keys = (get_secret_value("ENCRYPTION_KEY_FALLBACKS", "") or "").strip()
     if fallback_keys:
         for i, fb_key in enumerate(part.strip() for part in fallback_keys.split(",") if part.strip()):
             try:
@@ -156,7 +253,7 @@ def validate_secrets() -> list[str]:
                 errors.append(f"ENCRYPTION_KEY_FALLBACKS[{i}] is not a valid Fernet key")
 
     # Check JWT secret
-    jwt_secret = os.getenv("JWT_SECRET_KEY", "")
+    jwt_secret = get_secret_value("JWT_SECRET_KEY", "") or ""
     if not jwt_secret:
         errors.append("JWT_SECRET_KEY is required - generate with: python -c \"import secrets; print(secrets.token_urlsafe(64))\"")
     elif len(jwt_secret) < 32:
@@ -172,7 +269,7 @@ def validate_secrets() -> list[str]:
         "JWT_SECRET_KEY": ["your-jwt-secret", "change-me", "example-secret"],
     }
     for env_var, bad_values in default_values.items():
-        value = os.getenv(env_var, "")
+        value = get_secret_value(env_var, "") or ""
         if value and any(bad in value.lower() for bad in bad_values):
             errors.append(f"{env_var} appears to be a default/example value - generate a secure random key")
 
@@ -187,6 +284,6 @@ def validate_runtime_secrets() -> dict[str, bool]:
     """
     load_environment()
     return {
-        "COPILOT_RUNTIME_SECRET": bool(os.getenv("COPILOT_RUNTIME_SECRET")),
-        "LLM_CONFIG_ADMIN_TOKEN": bool(os.getenv("LLM_CONFIG_ADMIN_TOKEN")),
+        "COPILOT_RUNTIME_SECRET": bool(get_secret_value("COPILOT_RUNTIME_SECRET")),
+        "LLM_CONFIG_ADMIN_TOKEN": bool(get_secret_value("LLM_CONFIG_ADMIN_TOKEN")),
     }

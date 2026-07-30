@@ -7,6 +7,12 @@ import LLMBatchActions from './LLMBatchActions'
 import LLMConfigList from './LLMConfigList'
 import ModelCompareModal from './ModelCompareModal'
 import UsageAuditPanel from './UsageAuditPanel'
+import {
+  filterLlmConfigsForRuntime,
+  getRuntimeDefaultLlmBaseUrl,
+  prepareLlmProvidersForRuntime,
+  RUNTIME_CAPABILITIES,
+} from '../../config/runtime'
 
 const fallbackProviders = [
   { key: 'openai', label: 'OpenAI', requires_api_key: true, default_model_hint: 'gpt-4o-mini', default_base_url: 'https://api.openai.com/v1', description: 'Official OpenAI models.', is_local: false, supports_reasoning: true, supports_streaming: true, supports_tools: true, api_format: 'native' },
@@ -25,16 +31,19 @@ const fallbackProviders = [
   { key: 'openai_compatible', label: '自定义 OpenAI 兼容接口', requires_api_key: false, default_model_hint: 'custom-model', default_base_url: null, description: 'Remote OpenAI-compatible endpoint over HTTPS.', is_local: false, supports_reasoning: true, supports_streaming: true, supports_tools: true, api_format: 'openai_compatible' },
 ]
 
-const defaultForm = {
-  provider: 'openai',
-  display_name: '',
-  api_key: '',
-  model_name: '',
-  base_url: '',
-  extra_headers_json: '{}',
-  extra_body_json: '{}',
-  is_enabled: true,
-  is_default: false,
+function createDefaultForm() {
+  const provider = RUNTIME_CAPABILITIES.offlineMode ? 'ollama' : 'openai'
+  return {
+    provider,
+    display_name: '',
+    api_key: '',
+    model_name: '',
+    base_url: getRuntimeDefaultLlmBaseUrl(provider, '', RUNTIME_CAPABILITIES),
+    extra_headers_json: '{}',
+    extra_body_json: '{}',
+    is_enabled: true,
+    is_default: false,
+  }
 }
 
 /* ── Helpers ── */
@@ -57,7 +66,7 @@ function parseJsonObject(raw, fieldName) {
 export default function LLMSection() {
   const [configs, setConfigs] = useState([])
   const [providerOptions, setProviderOptions] = useState(fallbackProviders)
-  const [form, setForm] = useState(defaultForm)
+  const [form, setForm] = useState(createDefaultForm)
   const [editingId, setEditingId] = useState(null)
   const [showAddForm, setShowAddForm] = useState(false)
   const [testResult, setTestResult] = useState({})
@@ -71,11 +80,17 @@ export default function LLMSection() {
   const { addToast } = useToast()
   const refreshLlmCatalog = useStore((state) => state.refreshLlmCatalog)
 
-  const providerMap = useMemo(
-    () => Object.fromEntries(providerOptions.map((p) => [p.key, p])),
+  const availableProviderOptions = useMemo(
+    () => prepareLlmProvidersForRuntime(providerOptions, RUNTIME_CAPABILITIES),
     [providerOptions],
   )
-  const selectedProvider = providerMap[form.provider] || providerOptions[0] || fallbackProviders[0]
+  const providerMap = useMemo(
+    () => Object.fromEntries(availableProviderOptions.map((p) => [p.key, p])),
+    [availableProviderOptions],
+  )
+  const selectedProvider = providerMap[form.provider]
+    || availableProviderOptions[0]
+    || fallbackProviders.find((provider) => provider.is_local)
 
   /* ── Data loading ── */
   const loadConfigs = async () => {
@@ -105,17 +120,21 @@ export default function LLMSection() {
   useEffect(() => { loadConfigs(); loadProviders() }, [])
 
   /* ── Filtered & grouped configs ── */
+  const availableConfigs = useMemo(
+    () => filterLlmConfigsForRuntime(configs),
+    [configs],
+  )
   const filteredConfigs = useMemo(() => {
-    if (!search.trim()) return configs
+    if (!search.trim()) return availableConfigs
     const q = search.toLowerCase()
-    return configs.filter((c) =>
+    return availableConfigs.filter((c) =>
       (c.display_name || '').toLowerCase().includes(q) ||
       (c.model_name || '').toLowerCase().includes(q) ||
       (c.provider_label || c.provider || '').toLowerCase().includes(q) ||
       (c.effective_base_url || '').toLowerCase().includes(q) ||
       (c.user_tags || []).some((t) => t.toLowerCase().includes(q))
     )
-  }, [configs, search])
+  }, [availableConfigs, search])
 
   const groupedConfigs = useMemo(() => {
     const groups = {}
@@ -147,7 +166,7 @@ export default function LLMSection() {
     return payload
   }
 
-  const resetForm = () => { setEditingId(null); setShowAddForm(false); setForm(defaultForm); setFormError('') }
+  const resetForm = () => { setEditingId(null); setShowAddForm(false); setForm(createDefaultForm()); setFormError('') }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -267,7 +286,7 @@ export default function LLMSection() {
 
   const toggleAddForm = () => {
     if (showAddForm) resetForm()
-    else { setEditingId(null); setForm(defaultForm); setFormError(''); setShowAddForm(true) }
+    else { setEditingId(null); setForm(createDefaultForm()); setFormError(''); setShowAddForm(true) }
   }
 
   return (
@@ -275,7 +294,7 @@ export default function LLMSection() {
       title="LLM 配置"
       actions={
         <div className="flex items-center gap-2">
-          <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{configs.length} 个配置</span>
+          <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{availableConfigs.length} 个配置</span>
           <Button size="sm" variant="ghost" onClick={async () => {
             try {
               const r = await api.get('/api/llm-configs/export')
@@ -303,9 +322,11 @@ export default function LLMSection() {
           <Button size="sm" variant="ghost" onClick={() => setCompareOpen(true)}>
             对比
           </Button>
-          <Button size="sm" variant="ghost" onClick={handleBatchTest} disabled={batchTesting}>
-            {batchTesting ? '测试中...' : '全部测试'}
-          </Button>
+          {!RUNTIME_CAPABILITIES.offlineMode && (
+            <Button size="sm" variant="ghost" onClick={handleBatchTest} disabled={batchTesting}>
+              {batchTesting ? '测试中...' : '全部测试'}
+            </Button>
+          )}
           <Button size="sm" variant="ghost" onClick={() => { setSelectionMode(!selectionMode); setSelectedIds(new Set()) }}>
             {selectionMode ? '退出选择' : '选择'}
           </Button>
@@ -320,7 +341,7 @@ export default function LLMSection() {
       {showAddForm && (
         <div className="rounded-xl border-2 border-dashed p-4 mb-4" style={{ borderColor: 'var(--accent)', backgroundColor: 'var(--bg-secondary)' }}>
           <p className="text-sm font-medium mb-3" style={{ color: 'var(--text-primary)' }}>新增配置</p>
-          <ConfigEditForm form={form} setForm={setForm} selectedProvider={selectedProvider} providerOptions={providerOptions} providerMap={providerMap} onSubmit={handleSubmit} onCancel={resetForm} submitting={submitting} formError={formError} isNew />
+          <ConfigEditForm form={form} setForm={setForm} selectedProvider={selectedProvider} providerOptions={availableProviderOptions} providerMap={providerMap} onSubmit={handleSubmit} onCancel={resetForm} submitting={submitting} formError={formError} isNew />
         </div>
       )}
 
@@ -328,14 +349,14 @@ export default function LLMSection() {
       <LLMConfigList
         groupedConfigs={groupedConfigs}
         filteredConfigs={filteredConfigs}
-        configs={configs}
+        configs={availableConfigs}
         search={search}
         setSearch={setSearch}
         editingId={editingId}
         form={form}
         setForm={setForm}
         selectedProvider={selectedProvider}
-        providerOptions={providerOptions}
+        providerOptions={availableProviderOptions}
         providerMap={providerMap}
         onSubmit={handleSubmit}
         onCancelEdit={resetForm}
@@ -357,7 +378,7 @@ export default function LLMSection() {
       <UsageAuditPanel />
 
       {/* Model compare modal */}
-      <ModelCompareModal isOpen={compareOpen} onClose={() => setCompareOpen(false)} configs={configs} />
+      <ModelCompareModal isOpen={compareOpen} onClose={() => setCompareOpen(false)} configs={availableConfigs} />
 
       {/* Batch action bar */}
       {selectionMode && (
