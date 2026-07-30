@@ -8,7 +8,7 @@ import logging
 import time
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from ..models import LLMConfig, LLMUsageLog
@@ -123,11 +123,26 @@ def save_usage_log(db: Session, collector: dict) -> None:
 def filter_local_usage(query, *, local_only: bool = False):
     if not local_only and not is_offline_mode():
         return query
-    local_config_ids = select(LLMConfig.id).where(LLMConfig.is_local.is_(True))
+    matching_config_exists = (
+        select(LLMConfig.id)
+        .where(LLMConfig.id == LLMUsageLog.config_id)
+        .exists()
+    )
+    local_config_exists = (
+        select(LLMConfig.id)
+        .where(
+            LLMConfig.id == LLMUsageLog.config_id,
+            LLMConfig.is_local.is_(True),
+        )
+        .exists()
+    )
     return query.filter(
         or_(
-            LLMUsageLog.config_id.in_(local_config_ids),
-            LLMUsageLog.provider.in_(_LOCAL_LLM_PROVIDERS),
+            local_config_exists,
+            and_(
+                ~matching_config_exists,
+                LLMUsageLog.provider.in_(_LOCAL_LLM_PROVIDERS),
+            ),
         )
     )
 

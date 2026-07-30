@@ -549,6 +549,61 @@ class OfflineUsageTests(UsageTestBase):
             ["local-custom"],
         )
 
+    def test_config_classification_precedes_provider_fallback(self):
+        local_config = self._create_config(
+            provider="openai",
+            model_name="explicit-local",
+            display_name="Explicit Local",
+            is_local=True,
+        )
+        remote_config = self._create_config(
+            provider="ollama",
+            model_name="explicit-remote",
+            display_name="Explicit Remote",
+            is_local=False,
+        )
+        self._create_usage_log(
+            config_id=local_config.id,
+            provider="openai",
+            model_name="explicit-local",
+            total_tokens=100,
+        )
+        self._create_usage_log(
+            config_id=remote_config.id,
+            provider="ollama",
+            model_name="explicit-remote",
+            total_tokens=900,
+        )
+        self._create_usage_log(
+            config_id=None,
+            provider="vllm",
+            model_name="unconfigured-local",
+            total_tokens=50,
+        )
+        self._create_usage_log(
+            config_id=999_999,
+            provider="lmstudio",
+            model_name="deleted-config-local",
+            total_tokens=25,
+        )
+
+        with patched_env(OFFLINE_MODE="true"):
+            response = self.client.get("/api/usage/by-model")
+
+        self.assertEqual(response.status_code, 200)
+        items = {
+            item["model_name"]: item["total_tokens"]
+            for item in response.json()
+        }
+        self.assertEqual(
+            items,
+            {
+                "explicit-local": 100,
+                "unconfigured-local": 50,
+                "deleted-config-local": 25,
+            },
+        )
+
 
 class UsageRecentTests(UsageTestBase):
     """Tests for GET /api/usage/recent endpoint."""
