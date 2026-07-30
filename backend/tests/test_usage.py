@@ -52,7 +52,13 @@ class UsageTestBase(unittest.TestCase):
         self.db.commit()
         self.db.close()
 
-    def _create_config(self, provider="openai", model_name="gpt-4o", display_name="GPT-4o"):
+    def _create_config(
+        self,
+        provider="openai",
+        model_name="gpt-4o",
+        display_name="GPT-4o",
+        is_local=False,
+    ):
         """Helper to create an LLMConfig for testing."""
         config = LLMConfig(
             provider=provider,
@@ -60,6 +66,7 @@ class UsageTestBase(unittest.TestCase):
             display_name=display_name,
             api_key_encrypted="encrypted-key",
             is_enabled=True,
+            is_local=is_local,
         )
         self.db.add(config)
         self.db.commit()
@@ -441,6 +448,43 @@ class UsageTimelineTests(UsageTestBase):
         # Old log should not be included
         total_tokens = sum(p["tokens"] for p in data)
         self.assertEqual(total_tokens, 0)
+
+    def test_local_only_aggregates_exclude_remote_history(self):
+        local_config = self._create_config(
+            provider="openai_compatible",
+            model_name="local-custom",
+            display_name="Local Custom",
+            is_local=True,
+        )
+        remote_config = self._create_config()
+        self._create_usage_log(
+            config_id=local_config.id,
+            provider="openai_compatible",
+            model_name="local-custom",
+            prompt_tokens=80,
+            completion_tokens=20,
+            total_tokens=100,
+        )
+        self._create_usage_log(
+            config_id=remote_config.id,
+            total_tokens=900,
+        )
+
+        summary = self.client.get("/api/usage/summary?local_only=true")
+        by_model = self.client.get("/api/usage/by-model?local_only=true")
+        timeline = self.client.get("/api/usage/timeline?local_only=true")
+
+        self.assertEqual(summary.status_code, 200)
+        self.assertEqual(summary.json()["total_calls"], 1)
+        self.assertEqual(summary.json()["total_tokens"], 100)
+        self.assertEqual(by_model.status_code, 200)
+        self.assertEqual(
+            [item["model_name"] for item in by_model.json()],
+            ["local-custom"],
+        )
+        self.assertEqual(timeline.status_code, 200)
+        self.assertEqual(sum(point["calls"] for point in timeline.json()), 1)
+        self.assertEqual(sum(point["tokens"] for point in timeline.json()), 100)
 
 
 class UsageRecentTests(UsageTestBase):

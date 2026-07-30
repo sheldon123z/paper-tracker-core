@@ -212,6 +212,16 @@ class OfflineOutboundServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 503)
         self.assertEqual(response.json()["detail"]["code"], OFFLINE_ERROR_CODE)
 
+    async def test_invalid_parse_engine_returns_400_in_offline_mode(self):
+        app = FastAPI()
+        app.include_router(files_routes.router)
+        app.dependency_overrides[files_routes.get_current_user] = lambda: object()
+        app.dependency_overrides[files_routes.get_db] = lambda: None
+
+        with patched_env(OFFLINE_MODE="true"):
+            response = TestClient(app).post("/api/papers/1/files/1/parse?engine=invalid")
+        self.assertEqual(response.status_code, 400)
+
 
 class OfflineStartupTests(unittest.TestCase):
     def test_offline_app_rejects_wildcard_cors(self):

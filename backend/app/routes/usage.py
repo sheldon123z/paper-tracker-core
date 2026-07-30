@@ -27,19 +27,32 @@ router = APIRouter(prefix="/api/usage", tags=["usage"], dependencies=[Depends(ge
 def usage_summary(
     days: int = Query(default=30, ge=1, le=365),
     config_id: int | None = Query(default=None),
+    local_only: bool = Query(default=False),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    return get_usage_summary(db, days=days, config_id=config_id, user_id=None if is_manager(user) else user.id)
+    return get_usage_summary(
+        db,
+        days=days,
+        config_id=config_id,
+        local_only=local_only,
+        user_id=None if is_manager(user) else user.id,
+    )
 
 
 @router.get("/by-model", response_model=list[UsageByModelItem])
 def usage_by_model(
     days: int = Query(default=30, ge=1, le=365),
+    local_only: bool = Query(default=False),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    return get_usage_by_model(db, days=days, user_id=None if is_manager(user) else user.id)
+    return get_usage_by_model(
+        db,
+        days=days,
+        local_only=local_only,
+        user_id=None if is_manager(user) else user.id,
+    )
 
 
 @router.get("/by-agent")
@@ -55,10 +68,17 @@ def usage_by_agent(
 def usage_timeline(
     days: int = Query(default=30, ge=1, le=365),
     interval: str = Query(default="day", pattern="^(day|hour)$"),
+    local_only: bool = Query(default=False),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    return get_usage_timeline(db, days=days, interval=interval, user_id=None if is_manager(user) else user.id)
+    return get_usage_timeline(
+        db,
+        days=days,
+        interval=interval,
+        local_only=local_only,
+        user_id=None if is_manager(user) else user.id,
+    )
 
 
 @router.get("/recent", response_model=list[LLMUsageLogOut])

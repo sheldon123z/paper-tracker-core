@@ -223,11 +223,11 @@ def trigger_parse(
     db: Session = Depends(get_db),
 ):
     """Trigger PDF parsing for a file. engine: 'mineru' or 'doc2x'."""
+    if engine not in ("mineru", "doc2x"):
+        raise HTTPException(status_code=400, detail=f"不支持的解析引擎: {engine}")
     require_online_http(f"{engine} cloud parsing")
     paper = _get_paper_or_404(paper_id, db, user)
     require_writable(paper, user)
-    if engine not in ("mineru", "doc2x"):
-        raise HTTPException(status_code=400, detail=f"不支持的解析引擎: {engine}")
 
     paper_file = (
         db.query(PaperFile)

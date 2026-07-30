@@ -17,10 +17,14 @@ export default function MonitorSection() {
   const [days, setDays] = useState(30)
 
   useEffect(() => {
+    const usageParams = {
+      days,
+      local_only: RUNTIME_CAPABILITIES.offlineMode,
+    }
     Promise.all([
-      api.get('/api/usage/summary', { params: { days } }),
-      api.get('/api/usage/by-model', { params: { days } }),
-      api.get('/api/usage/timeline', { params: { days } }),
+      api.get('/api/usage/summary', { params: usageParams }),
+      api.get('/api/usage/by-model', { params: usageParams }),
+      api.get('/api/usage/timeline', { params: usageParams }),
       api.get('/api/llm-configs'),
       RUNTIME_CAPABILITIES.offlineMode
         ? Promise.resolve({ data: null })
