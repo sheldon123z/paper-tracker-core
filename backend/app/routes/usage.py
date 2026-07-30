@@ -13,6 +13,7 @@ from ..schemas import LLMUsageLogOut, PaginationMeta, UsageByModelItem, UsageSum
 from ..services.access_control import is_manager
 from ..services.pricing import get_cost_summary
 from ..services.usage_tracker import (
+    filter_local_usage,
     get_recent_usage,
     get_usage_by_agent,
     get_usage_by_model,
@@ -58,10 +59,16 @@ def usage_by_model(
 @router.get("/by-agent")
 def usage_by_agent(
     days: int = Query(default=30, ge=1, le=365),
+    local_only: bool = Query(default=False),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    return get_usage_by_agent(db, days=days, user_id=None if is_manager(user) else user.id)
+    return get_usage_by_agent(
+        db,
+        days=days,
+        local_only=local_only,
+        user_id=None if is_manager(user) else user.id,
+    )
 
 
 @router.get("/timeline", response_model=list[UsageTimelinePoint])
@@ -84,10 +91,16 @@ def usage_timeline(
 @router.get("/recent", response_model=list[LLMUsageLogOut])
 def recent_usage(
     limit: int = Query(default=50, ge=1, le=200),
+    local_only: bool = Query(default=False),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    return get_recent_usage(db, limit=limit, user_id=None if is_manager(user) else user.id)
+    return get_recent_usage(
+        db,
+        limit=limit,
+        local_only=local_only,
+        user_id=None if is_manager(user) else user.id,
+    )
 
 
 @router.get("/audit")
@@ -97,10 +110,12 @@ def usage_audit(
     config_id: int | None = Query(default=None),
     agent_type: str | None = Query(default=None),
     status: str | None = Query(default=None),
+    local_only: bool = Query(default=False),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     q = db.query(LLMUsageLog)
+    q = filter_local_usage(q, local_only=local_only)
     if not is_manager(user):
         q = q.filter(LLMUsageLog.user_id == user.id)
     if config_id is not None:
@@ -121,9 +136,10 @@ def usage_audit(
 def usage_cost(
     days: int = Query(default=30, ge=1, le=365),
     config_id: int | None = Query(default=None),
+    local_only: bool = Query(default=False),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     if not is_manager(user):
         raise HTTPException(status_code=403, detail="Manager access required")
-    return get_cost_summary(db, days=days, config_id=config_id)
+    return get_cost_summary(db, days=days, config_id=config_id, local_only=local_only)

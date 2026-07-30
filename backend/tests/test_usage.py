@@ -12,7 +12,7 @@ import backend.tests  # noqa: F401
 from backend.app.auth.dependencies import get_current_user
 from backend.app.models import LLMConfig, LLMUsageLog
 from backend.app.routes import usage as usage_module
-from backend.tests.support import make_fake_user, make_test_session_factory
+from backend.tests.support import make_fake_user, make_test_session_factory, patched_env
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -485,6 +485,69 @@ class UsageTimelineTests(UsageTestBase):
         self.assertEqual(timeline.status_code, 200)
         self.assertEqual(sum(point["calls"] for point in timeline.json()), 1)
         self.assertEqual(sum(point["tokens"] for point in timeline.json()), 100)
+
+
+class OfflineUsageTests(UsageTestBase):
+    def test_all_endpoints_exclude_remote_history_without_local_only(self):
+        local_config = self._create_config(
+            provider="openai_compatible",
+            model_name="local-custom",
+            display_name="Local Custom",
+            is_local=True,
+        )
+        remote_config = self._create_config()
+        self._create_usage_log(
+            config_id=local_config.id,
+            provider="openai_compatible",
+            model_name="local-custom",
+            agent_type="local-agent",
+            prompt_tokens=80,
+            completion_tokens=20,
+            total_tokens=100,
+        )
+        self._create_usage_log(
+            config_id=remote_config.id,
+            agent_type="remote-agent",
+            total_tokens=900,
+        )
+
+        with patched_env(OFFLINE_MODE="true"):
+            summary = self.client.get("/api/usage/summary")
+            by_model = self.client.get("/api/usage/by-model")
+            by_agent = self.client.get("/api/usage/by-agent")
+            timeline = self.client.get("/api/usage/timeline")
+            recent = self.client.get("/api/usage/recent")
+            audit = self.client.get("/api/usage/audit")
+            cost = self.client.get("/api/usage/cost")
+
+        self.assertEqual(summary.status_code, 200)
+        self.assertEqual(summary.json()["total_calls"], 1)
+        self.assertEqual(summary.json()["total_tokens"], 100)
+        self.assertEqual(by_model.status_code, 200)
+        self.assertEqual(
+            [item["model_name"] for item in by_model.json()],
+            ["local-custom"],
+        )
+        self.assertEqual(by_agent.status_code, 200)
+        self.assertEqual(
+            [item["agent_type"] for item in by_agent.json()],
+            ["local-agent"],
+        )
+        self.assertEqual(timeline.status_code, 200)
+        self.assertEqual(sum(point["calls"] for point in timeline.json()), 1)
+        self.assertEqual(recent.status_code, 200)
+        self.assertEqual(
+            [item["model_name"] for item in recent.json()],
+            ["local-custom"],
+        )
+        self.assertEqual(audit.status_code, 200)
+        self.assertEqual(audit.json()["meta"]["total"], 1)
+        self.assertEqual(audit.json()["items"][0]["model_name"], "local-custom")
+        self.assertEqual(cost.status_code, 200)
+        self.assertEqual(
+            [item["model_name"] for item in cost.json()["breakdown"]],
+            ["local-custom"],
+        )
 
 
 class UsageRecentTests(UsageTestBase):

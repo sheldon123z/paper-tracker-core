@@ -15,6 +15,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..models import LLMUsageLog
+from .usage_tracker import filter_local_usage
 
 logger = logging.getLogger("paper-tracker.pricing")
 
@@ -73,7 +74,13 @@ def estimate_cost(provider: str, model: str, prompt_tokens: int, completion_toke
     )
 
 
-def get_cost_summary(db: Session, *, days: int = 30, config_id: int | None = None) -> dict:
+def get_cost_summary(
+    db: Session,
+    *,
+    days: int = 30,
+    config_id: int | None = None,
+    local_only: bool = False,
+) -> dict:
     cutoff = datetime.now(UTC) - timedelta(days=days)
     q = db.query(
         LLMUsageLog.provider,
@@ -85,6 +92,7 @@ def get_cost_summary(db: Session, *, days: int = 30, config_id: int | None = Non
     ).filter(LLMUsageLog.created_at >= cutoff)
     if config_id is not None:
         q = q.filter(LLMUsageLog.config_id == config_id)
+    q = filter_local_usage(q, local_only=local_only)
     rows = q.group_by(LLMUsageLog.provider, LLMUsageLog.model_name).all()
 
     total_cost = 0.0
