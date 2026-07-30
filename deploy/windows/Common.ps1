@@ -25,6 +25,48 @@ function Resolve-OfflinePath {
     return [System.IO.Path]::GetFullPath((Join-Path -Path $BasePath -ChildPath $Path))
 }
 
+function Get-OfflineBundleLayout {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Root
+    )
+
+    $resolvedRoot = Resolve-OfflinePath -Path $Root
+    $manifestPath = Join-Path $resolvedRoot "bundle-manifest.json"
+    $isSeeded = $false
+    $imageTag = $null
+    if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
+        try {
+            $manifest = Get-Content -LiteralPath $manifestPath -Raw |
+                ConvertFrom-Json
+        }
+        catch {
+            throw "Bundle manifest is not valid JSON: $manifestPath"
+        }
+        $isSeeded = $manifest.PSObject.Properties.Name -contains "seed"
+        if ($manifest.PSObject.Properties.Name -contains "imageTag") {
+            $imageTag = [string]$manifest.imageTag
+        }
+    }
+
+    if ($isSeeded) {
+        $defaultEnvFile = Join-Path (
+            Split-Path -Parent $resolvedRoot
+        ) "runtime\offline.env"
+    }
+    else {
+        $defaultEnvFile = Join-Path $resolvedRoot "offline.env"
+    }
+
+    return [pscustomobject]@{
+        Root = $resolvedRoot
+        ManifestPath = $manifestPath
+        IsSeeded = $isSeeded
+        ImageTag = $imageTag
+        DefaultEnvFile = $defaultEnvFile
+    }
+}
+
 function Assert-PathWithin {
     param(
         [Parameter(Mandatory = $true)]

@@ -15,7 +15,17 @@ $ErrorActionPreference = "Stop"
 
 $root = Get-OfflineDeploymentRoot
 if ([string]::IsNullOrWhiteSpace($EnvFile)) {
-    $EnvFile = Join-Path $root "offline.env"
+    $layout = Get-OfflineBundleLayout -Root $root
+    $EnvFile = $layout.DefaultEnvFile
+    if (
+        $layout.IsSeeded -and
+        -not (Test-Path -LiteralPath $EnvFile -PathType Leaf)
+    ) {
+        throw (
+            "Seeded runtime environment not found: $EnvFile. " +
+            "Run Install-Offline.ps1 before backing up this bundle."
+        )
+    }
 }
 if ([string]::IsNullOrWhiteSpace($BackupDirectory)) {
     $BackupDirectory = Join-Path (Split-Path -Parent $root) "paper-tracker-offline-backups"

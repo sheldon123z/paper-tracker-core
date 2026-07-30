@@ -117,6 +117,65 @@ try {
     $newOfflineEnvScript = Join-Path $testScripts "New-OfflineEnv.ps1"
     . $commonScript
 
+    $nonSeededRoot = Join-Path $testRoot "layout-nonseeded\package"
+    [void](New-Item -ItemType Directory -Path $nonSeededRoot -Force)
+    [System.IO.File]::WriteAllText(
+        (Join-Path $nonSeededRoot "bundle-manifest.json"),
+        (@{
+            schemaVersion = 1
+            imageTag = "regular-layout"
+        } | ConvertTo-Json),
+        (New-Object System.Text.UTF8Encoding($false))
+    )
+    $nonSeededLayout = Get-OfflineBundleLayout -Root $nonSeededRoot
+    if (
+        $nonSeededLayout.IsSeeded -or
+        $nonSeededLayout.ImageTag -cne "regular-layout" -or
+        $nonSeededLayout.DefaultEnvFile -cne
+            (Join-Path $nonSeededRoot "offline.env")
+    ) {
+        throw "Non-seeded bundle did not select its root offline.env."
+    }
+
+    $seededRoot = Join-Path $testRoot "layout-seeded\package"
+    [void](New-Item -ItemType Directory -Path $seededRoot -Force)
+    [System.IO.File]::WriteAllText(
+        (Join-Path $seededRoot "bundle-manifest.json"),
+        (@{
+            schemaVersion = 1
+            imageTag = "seeded-layout"
+            seed = @{
+                schemaVersion = 1
+            }
+        } | ConvertTo-Json -Depth 4),
+        (New-Object System.Text.UTF8Encoding($false))
+    )
+    $seededLayout = Get-OfflineBundleLayout -Root $seededRoot
+    $expectedSeededEnv = Join-Path (
+        Split-Path -Parent $seededRoot
+    ) "runtime\offline.env"
+    if (
+        -not $seededLayout.IsSeeded -or
+        $seededLayout.ImageTag -cne "seeded-layout" -or
+        $seededLayout.DefaultEnvFile -cne $expectedSeededEnv
+    ) {
+        throw "Seeded bundle did not select its sibling runtime offline.env."
+    }
+    foreach ($scriptName in @(
+        "Start-Offline.ps1",
+        "Stop-Offline.ps1",
+        "Status-Offline.ps1",
+        "Backup-OfflineData.ps1",
+        "Restore-OfflineData.ps1"
+    )) {
+        $scriptText = Get-Content -LiteralPath (
+            Join-Path $sourceRoot "deploy\windows\$scriptName"
+        ) -Raw
+        if ($scriptText -notmatch "\bGet-OfflineBundleLayout\b") {
+            throw "$scriptName does not use the shared bundle layout resolver."
+        }
+    }
+
     $aclBundle = Join-Path $testRoot "acl-bundle"
     $aclOutside = Join-Path $testRoot "acl-outside"
     [void](New-Item -ItemType Directory -Path $aclBundle, $aclOutside)

@@ -11,29 +11,15 @@ $ErrorActionPreference = "Stop"
 
 $root = Get-OfflineDeploymentRoot
 if ([string]::IsNullOrWhiteSpace($EnvFile)) {
-    $manifestPath = Join-Path $root "bundle-manifest.json"
-    $isSeededBundle = $false
-    if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
-        try {
-            $manifest = Get-Content -LiteralPath $manifestPath -Raw |
-                ConvertFrom-Json
-            $isSeededBundle = $manifest.PSObject.Properties.Name -contains "seed"
-        }
-        catch {
-            throw "Bundle manifest is not valid JSON: $manifestPath"
-        }
-    }
-    if ($isSeededBundle) {
-        $EnvFile = Join-Path (Split-Path -Parent $root) "runtime\offline.env"
+    $layout = Get-OfflineBundleLayout -Root $root
+    $EnvFile = $layout.DefaultEnvFile
+    if ($layout.IsSeeded) {
         if (-not (Test-Path -LiteralPath $EnvFile -PathType Leaf)) {
             throw (
                 "Seeded runtime environment not found: $EnvFile. " +
                 "Run Install-Offline.ps1 before stopping this bundle."
             )
         }
-    }
-    else {
-        $EnvFile = Join-Path $root "offline.env"
     }
 }
 $resolvedEnv = Resolve-OfflinePath -Path $EnvFile

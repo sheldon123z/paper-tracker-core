@@ -13,29 +13,11 @@ $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "Common.ps1")
 
 $root = Get-OfflineDeploymentRoot
-$manifestPath = Join-Path $root "bundle-manifest.json"
-$isSeededBundle = $false
-$seededImageTag = $null
-if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
-    try {
-        $manifest = Get-Content -LiteralPath $manifestPath -Raw |
-            ConvertFrom-Json
-        $isSeededBundle = $manifest.PSObject.Properties.Name -contains "seed"
-        if ($isSeededBundle) {
-            $seededImageTag = [string]$manifest.imageTag
-        }
-    }
-    catch {
-        throw "Bundle manifest is not valid JSON: $manifestPath"
-    }
-}
+$layout = Get-OfflineBundleLayout -Root $root
+$isSeededBundle = $layout.IsSeeded
+$seededImageTag = $layout.ImageTag
 if ([string]::IsNullOrWhiteSpace($EnvFile)) {
-    if ($isSeededBundle) {
-        $EnvFile = Join-Path (Split-Path -Parent $root) "runtime\offline.env"
-    }
-    else {
-        $EnvFile = Join-Path $root "offline.env"
-    }
+    $EnvFile = $layout.DefaultEnvFile
 }
 $resolvedEnv = Resolve-OfflinePath -Path $EnvFile
 
