@@ -31,6 +31,8 @@ describe('runtime configuration', () => {
       { id: 1, provider: 'openai', is_local: false },
       { id: 2, provider: 'ollama', is_local: true },
       { id: 3, provider: 'lmstudio' },
+      { id: 4, provider: 'ollama', is_local: false },
+      { id: 5, provider: 'ollama', is_local: null },
     ]
 
     expect(capabilities).toMatchObject({

@@ -46,7 +46,9 @@ export function createRuntimeCapabilities(env = {}) {
 
 export function isLocalLlmConfig(config) {
   if (!config || typeof config !== 'object') return false
-  if (config.is_local === true) return true
+  if (Object.prototype.hasOwnProperty.call(config, 'is_local')) {
+    return config.is_local === true
+  }
   return LOCAL_LLM_PROVIDERS.has(config.provider || config.key)
 }
 
