@@ -7,6 +7,10 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
+      args:
+        DEBIAN_MIRROR: ${PAPER_TRACKER_DEBIAN_MIRROR:-http://deb.debian.org/debian}
+        DEBIAN_SECURITY_MIRROR: ${PAPER_TRACKER_DEBIAN_SECURITY_MIRROR:-http://deb.debian.org/debian-security}
+        PYPI_INDEX_URL: ${PAPER_TRACKER_PYPI_INDEX_URL:-https://pypi.org/simple}
 
   copilot-runtime:
     image: paper-tracker-copilot-runtime:${PAPER_TRACKER_IMAGE_TAG:-offline}
@@ -14,6 +18,8 @@ services:
     build:
       context: .
       dockerfile: copilot-runtime/Dockerfile
+      args:
+        NPM_REGISTRY: ${PAPER_TRACKER_NPM_REGISTRY:-https://registry.npmjs.org}
 
   gateway:
     image: paper-tracker-gateway:${PAPER_TRACKER_IMAGE_TAG:-offline}
@@ -22,6 +28,7 @@ services:
       context: .
       dockerfile: deploy/gateway/Dockerfile
       args:
+        NPM_REGISTRY: ${PAPER_TRACKER_NPM_REGISTRY:-https://registry.npmjs.org}
         VITE_API_BASE_URL: ""
         VITE_COPILOT_RUNTIME_URL: /api/copilotkit
         VITE_OFFLINE_MODE: "true"

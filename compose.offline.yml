@@ -127,6 +127,7 @@ services:
       - 127.0.0.1:8080:8080
     networks:
       - offline
+      - ingress
     depends_on:
       backend:
         condition: service_healthy
@@ -156,11 +157,20 @@ networks:
   offline:
     name: ${COMPOSE_PROJECT_NAME:-paper-tracker-offline}-internal
     internal: true
-  # Only model-proxy joins this ordinary bridge. Backend remains on the
-  # internal network and can reach the Windows host solely through the proxy's
-  # four fixed local-model ports.
+  # Docker does not publish host ports for containers attached only to an
+  # internal network. This isolated ingress bridge enables the loopback
+  # binding while disabling outbound NAT from gateway.
+  ingress:
+    name: ${COMPOSE_PROJECT_NAME:-paper-tracker-offline}-ingress
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"
+  # Only model-proxy joins this no-NAT bridge. It can still reach the Windows
+  # host through host.docker.internal for the four fixed local-model ports,
+  # without receiving an ordinary masqueraded Internet path.
   host-model-access:
     name: ${COMPOSE_PROJECT_NAME:-paper-tracker-offline}-host-model
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"
 
 volumes:
   paper-tracker-data:

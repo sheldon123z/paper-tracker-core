@@ -2,11 +2,13 @@
 
 FROM node:22-bookworm-slim AS node-deps
 
+ARG NPM_REGISTRY=https://registry.npmjs.org
+
 ENV NODE_ENV=production
 WORKDIR /app
 
 COPY copilot-runtime/package.json copilot-runtime/package-lock.json ./
-RUN npm ci --omit=dev \
+RUN npm ci --omit=dev --registry="${NPM_REGISTRY}" \
     && npm cache clean --force
 
 

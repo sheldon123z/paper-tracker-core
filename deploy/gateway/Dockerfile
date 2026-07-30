@@ -5,6 +5,7 @@ FROM node:22-bookworm-slim AS frontend-build
 ARG VITE_API_BASE_URL=/
 ARG VITE_COPILOT_RUNTIME_URL=/api/copilotkit
 ARG VITE_OFFLINE_MODE=true
+ARG NPM_REGISTRY=https://registry.npmjs.org
 
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL} \
     VITE_COPILOT_RUNTIME_URL=${VITE_COPILOT_RUNTIME_URL} \
@@ -12,8 +13,9 @@ ENV VITE_API_BASE_URL=${VITE_API_BASE_URL} \
 
 WORKDIR /src/frontend
 COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci
+RUN npm ci --registry="${NPM_REGISTRY}"
 
+COPY shared/ /src/shared/
 COPY frontend/ ./
 RUN npm run build
 
