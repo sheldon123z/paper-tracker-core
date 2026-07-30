@@ -40,7 +40,8 @@ if ([string]::IsNullOrWhiteSpace($SafetyBackupDirectory)) {
 
 $resolvedEnv = Resolve-OfflinePath -Path $EnvFile
 $resolvedArchive = Resolve-OfflinePath -Path $ArchivePath
-$resolvedSafetyDirectory = Resolve-OfflinePath -Path $SafetyBackupDirectory
+$resolvedSafetyDirectory = Assert-OfflineLocalPathNoReparse `
+    -Path $SafetyBackupDirectory
 
 if (-not (Test-Path -LiteralPath $resolvedArchive -PathType Leaf)) {
     throw "Restore archive not found: $resolvedArchive"
@@ -95,58 +96,75 @@ if (-not $approved) {
     return
 }
 
+[void](Assert-OfflineLocalPathNoReparse -Path $resolvedSafetyDirectory)
 [void](New-Item -ItemType Directory -Path $resolvedSafetyDirectory -Force)
+[void](Assert-OfflineLocalPathNoReparse -Path $resolvedSafetyDirectory)
+Protect-OfflineSensitiveDirectory -Path $resolvedSafetyDirectory
 $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $suffix = [Guid]::NewGuid().ToString("N").Substring(0, 8)
 $safetyName = "pre-restore-$timestamp-$suffix.tar.gz"
-$safetyArchive = Join-Path $resolvedSafetyDirectory $safetyName
+$safetyArchive = Assert-OfflineLocalPathNoReparse -Path (
+    Join-Path $resolvedSafetyDirectory $safetyName
+)
 
 $runningServices = @()
-$volumeLock = Enter-OfflineVolumeLock -VolumeName $volumeName
-
+$projectLock = Enter-OfflineProjectLock `
+    -ProjectName $envValues["COMPOSE_PROJECT_NAME"]
 try {
-    $runningServices = @(Get-RunningOfflineServices -EnvFile $resolvedEnv)
-    # Stop all possible request paths and the sole writer unconditionally.
-    # Compose stop is idempotent and also catches a backend in "restarting".
-    Invoke-OfflineCompose -EnvFile $resolvedEnv -ComposeArgs @(
-        "stop", "gateway", "copilot-runtime", "backend"
-    )
-
-    # This mandatory pre-restore archive is created while the writer is
-    # stopped. The formal replacement does not begin unless its hash verifies.
-    Invoke-VolumeArchiveTool `
-        -Mode backup `
-        -ImageName $backendImage `
-        -VolumeName $volumeName `
-        -ArchivePath $safetyArchive
-    $safetySha256 = Get-Sha256 -Path $safetyArchive
-    Write-Utf8NoBom `
-        -Path "$safetyArchive.sha256" `
-        -Content "$safetySha256  $safetyName`r`n"
-    if ((Get-Sha256 -Path $safetyArchive) -ne $safetySha256) {
-        throw "Mandatory pre-restore backup failed SHA-256 verification."
-    }
-
-    # Detect replacement or corruption after the initial source verification.
-    if ((Get-Sha256 -Path $resolvedArchive) -ne $ExpectedSha256) {
-        throw "Restore archive changed after the initial SHA-256 verification."
-    }
-
-    Invoke-VolumeArchiveTool `
-        -Mode restore `
-        -ImageName $backendImage `
-        -VolumeName $volumeName `
-        -ArchivePath $resolvedArchive
-}
-finally {
+    $volumeLock = Enter-OfflineVolumeLock -VolumeName $volumeName
     try {
-        if ($runningServices.Count -gt 0) {
-            Start-PreviouslyRunningServices -EnvFile $resolvedEnv -Services $runningServices
+        $runningServices = @(Get-RunningOfflineServices -EnvFile $resolvedEnv)
+        # Stop all possible request paths and the sole writer unconditionally.
+        # Compose stop is idempotent and also catches a backend in "restarting".
+        Invoke-OfflineCompose -EnvFile $resolvedEnv -ComposeArgs @(
+            "stop", "gateway", "copilot-runtime", "backend"
+        )
+
+        # This mandatory pre-restore archive is created while the writer is
+        # stopped. The formal replacement does not begin unless its hash verifies.
+        [void](Assert-OfflineLocalPathNoReparse -Path $resolvedSafetyDirectory)
+        [void](Assert-OfflineLocalPathNoReparse -Path $safetyArchive)
+        Invoke-VolumeArchiveTool `
+            -Mode backup `
+            -ImageName $backendImage `
+            -VolumeName $volumeName `
+            -ArchivePath $safetyArchive
+        Protect-OfflineSecretFile -Path $safetyArchive
+        $safetySha256 = Get-Sha256 -Path $safetyArchive
+        $safetyShaPath = Assert-OfflineLocalPathNoReparse `
+            -Path "$safetyArchive.sha256"
+        Write-Utf8NoBom `
+            -Path $safetyShaPath `
+            -Content "$safetySha256  $safetyName`r`n"
+        Protect-OfflineSecretFile -Path $safetyShaPath
+        if ((Get-Sha256 -Path $safetyArchive) -ne $safetySha256) {
+            throw "Mandatory pre-restore backup failed SHA-256 verification."
         }
+
+        # Detect replacement or corruption after the initial source verification.
+        if ((Get-Sha256 -Path $resolvedArchive) -ne $ExpectedSha256) {
+            throw "Restore archive changed after the initial SHA-256 verification."
+        }
+
+        Invoke-VolumeArchiveTool `
+            -Mode restore `
+            -ImageName $backendImage `
+            -VolumeName $volumeName `
+            -ArchivePath $resolvedArchive
     }
     finally {
-        Exit-OfflineVolumeLock -Mutex $volumeLock
+        try {
+            if ($runningServices.Count -gt 0) {
+                Start-PreviouslyRunningServices -EnvFile $resolvedEnv -Services $runningServices
+            }
+        }
+        finally {
+            Exit-OfflineVolumeLock -Mutex $volumeLock
+        }
     }
+}
+finally {
+    Exit-OfflineVolumeLock -Mutex $projectLock
 }
 
 Write-Host "Restore completed from: $resolvedArchive"

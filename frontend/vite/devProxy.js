@@ -8,3 +8,7 @@ export const DEV_API_PROXY = {
     changeOrigin: true,
   },
 }
+
+export const LOCAL_PREVIEW_CONFIG = Object.freeze({
+  proxy: DEV_API_PROXY,
+})

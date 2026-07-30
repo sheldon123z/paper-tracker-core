@@ -50,34 +50,41 @@ if (
 Assert-DockerLinux
 Assert-OfflineImages -EnvValues $envValues
 
-$volumeLock = Enter-OfflineVolumeLock `
-    -VolumeName $envValues["PAPER_TRACKER_DATA_VOLUME"]
+$projectLock = Enter-OfflineProjectLock `
+    -ProjectName $envValues["COMPOSE_PROJECT_NAME"]
 try {
-    Invoke-OfflineCompose -EnvFile $resolvedEnv -ComposeArgs @("config", "--quiet")
-    Invoke-OfflineCompose -EnvFile $resolvedEnv -ComposeArgs @(
-        "up",
-        "--detach",
-        "--no-build",
-        "--pull", "never",
-        "--wait",
-        "--wait-timeout", "$TimeoutSeconds"
-    )
-
+    $volumeLock = Enter-OfflineVolumeLock `
+        -VolumeName $envValues["PAPER_TRACKER_DATA_VOLUME"]
     try {
-        $response = Invoke-WebRequest `
-            -UseBasicParsing `
-            -Uri "http://127.0.0.1:8080/" `
-            -TimeoutSec 10
-        if ($response.StatusCode -ne 200) {
-            throw "Gateway returned HTTP $($response.StatusCode)."
+        Invoke-OfflineCompose -EnvFile $resolvedEnv -ComposeArgs @("config", "--quiet")
+        Invoke-OfflineCompose -EnvFile $resolvedEnv -ComposeArgs @(
+            "up",
+            "--detach",
+            "--no-build",
+            "--pull", "never",
+            "--wait",
+            "--wait-timeout", "$TimeoutSeconds"
+        )
+
+        try {
+            $response = Invoke-WebRequest `
+                -UseBasicParsing `
+                -Uri "http://127.0.0.1:8080/" `
+                -TimeoutSec 10
+            if ($response.StatusCode -ne 200) {
+                throw "Gateway returned HTTP $($response.StatusCode)."
+            }
+        }
+        catch {
+            throw "Containers started, but the loopback gateway check failed: $($_.Exception.Message)"
         }
     }
-    catch {
-        throw "Containers started, but the loopback gateway check failed: $($_.Exception.Message)"
+    finally {
+        Exit-OfflineVolumeLock -Mutex $volumeLock
     }
 }
 finally {
-    Exit-OfflineVolumeLock -Mutex $volumeLock
+    Exit-OfflineVolumeLock -Mutex $projectLock
 }
 
 Write-Host "Paper Tracker is ready at http://127.0.0.1:8080/"

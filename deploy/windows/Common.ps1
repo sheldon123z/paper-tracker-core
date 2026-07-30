@@ -244,6 +244,16 @@ function Resolve-OfflineManifestPath {
     return $resolvedPath
 }
 
+function Get-OfflineDriveType {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$PathRoot
+    )
+
+    $driveInfo = New-Object System.IO.DriveInfo($PathRoot)
+    return $driveInfo.DriveType
+}
+
 function Assert-OfflineLocalPathNoReparse {
     param(
         [Parameter(Mandatory = $true)]
@@ -255,6 +265,12 @@ function Assert-OfflineLocalPathNoReparse {
         throw "Sensitive runtime paths must be on a local Windows volume: $resolved"
     }
     $pathRoot = [System.IO.Path]::GetPathRoot($resolved)
+    if (
+        (Get-OfflineDriveType -PathRoot $pathRoot) -eq
+            [System.IO.DriveType]::Network
+    ) {
+        throw "Sensitive runtime paths must not use a mapped network drive: $resolved"
+    }
     $relative = $resolved.Substring($pathRoot.Length).TrimStart(
         [System.IO.Path]::DirectorySeparatorChar,
         [System.IO.Path]::AltDirectorySeparatorChar

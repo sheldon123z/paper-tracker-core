@@ -2,7 +2,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { nodePolyfills } from 'vite-plugin-node-polyfills'
-import { DEV_API_PROXY } from './vite/devProxy.js'
+import { DEV_API_PROXY, LOCAL_PREVIEW_CONFIG } from './vite/devProxy.js'
 import { replaceExternalFontUrls } from './vite/offlineAssets.js'
 
 export default defineConfig({
@@ -57,6 +57,11 @@ export default defineConfig({
       allow: ['..'],
     },
   },
+  // Production builds use same-origin /api URLs. Keep the standalone preview
+  // command useful by forwarding those routes to the same local services as
+  // the development server. The Docker image serves dist/ through nginx, so
+  // this preview-only setting does not affect the offline gateway.
+  preview: LOCAL_PREVIEW_CONFIG,
   test: {
     globals: true,
     environment: 'jsdom',

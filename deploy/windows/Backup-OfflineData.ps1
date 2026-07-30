@@ -32,11 +32,14 @@ if ([string]::IsNullOrWhiteSpace($BackupDirectory)) {
 }
 
 $resolvedEnv = Resolve-OfflinePath -Path $EnvFile
-$resolvedBackupDirectory = Resolve-OfflinePath -Path $BackupDirectory
+$resolvedBackupDirectory = Assert-OfflineLocalPathNoReparse -Path $BackupDirectory
 if ($resolvedBackupDirectory -eq [System.IO.Path]::GetPathRoot($resolvedBackupDirectory)) {
     throw "Backup directory must not be a drive root."
 }
+[void](Assert-OfflineLocalPathNoReparse -Path $resolvedBackupDirectory)
 [void](New-Item -ItemType Directory -Path $resolvedBackupDirectory -Force)
+[void](Assert-OfflineLocalPathNoReparse -Path $resolvedBackupDirectory)
+Protect-OfflineSensitiveDirectory -Path $resolvedBackupDirectory
 
 $envValues = Assert-OfflineEnv -EnvFile $resolvedEnv
 Assert-DockerLinux
@@ -52,48 +55,62 @@ Assert-DataVolume `
 $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $suffix = [Guid]::NewGuid().ToString("N").Substring(0, 8)
 $archiveName = "paper-tracker-data-$timestamp-$suffix.tar.gz"
-$archivePath = Join-Path $resolvedBackupDirectory $archiveName
-$temporaryPath = "$archivePath.partial"
+$archivePath = Assert-OfflineLocalPathNoReparse -Path (
+    Join-Path $resolvedBackupDirectory $archiveName
+)
+$temporaryPath = Assert-OfflineLocalPathNoReparse -Path "$archivePath.partial"
 
 $runningServices = @()
-$volumeLock = Enter-OfflineVolumeLock -VolumeName $volumeName
-
+$projectLock = Enter-OfflineProjectLock `
+    -ProjectName $envValues["COMPOSE_PROJECT_NAME"]
 try {
-    $runningServices = @(Get-RunningOfflineServices -EnvFile $resolvedEnv)
-    # Stop all possible request paths and the sole writer unconditionally.
-    # Compose stop is idempotent and also catches a backend in "restarting".
-    Invoke-OfflineCompose -EnvFile $resolvedEnv -ComposeArgs @(
-        "stop", "gateway", "copilot-runtime", "backend"
-    )
-
-    Invoke-VolumeArchiveTool `
-        -Mode backup `
-        -ImageName $backendImage `
-        -VolumeName $volumeName `
-        -ArchivePath $temporaryPath
-
-    if (-not (Test-Path -LiteralPath $temporaryPath -PathType Leaf)) {
-        throw "Backup helper returned without creating: $temporaryPath"
-    }
-    Move-Item -LiteralPath $temporaryPath -Destination $archivePath
-
-    $sha256 = Get-Sha256 -Path $archivePath
-    $shaPath = "$archivePath.sha256"
-    Write-Utf8NoBom -Path $shaPath -Content "$sha256  $archiveName`r`n"
-
-    if ((Get-Sha256 -Path $archivePath) -ne $sha256) {
-        throw "Backup changed while its checksum was being written."
-    }
-}
-finally {
+    $volumeLock = Enter-OfflineVolumeLock -VolumeName $volumeName
     try {
-        if ($runningServices.Count -gt 0) {
-            Start-PreviouslyRunningServices -EnvFile $resolvedEnv -Services $runningServices
+        $runningServices = @(Get-RunningOfflineServices -EnvFile $resolvedEnv)
+        # Stop all possible request paths and the sole writer unconditionally.
+        # Compose stop is idempotent and also catches a backend in "restarting".
+        Invoke-OfflineCompose -EnvFile $resolvedEnv -ComposeArgs @(
+            "stop", "gateway", "copilot-runtime", "backend"
+        )
+
+        [void](Assert-OfflineLocalPathNoReparse -Path $resolvedBackupDirectory)
+        [void](Assert-OfflineLocalPathNoReparse -Path $temporaryPath)
+        Invoke-VolumeArchiveTool `
+            -Mode backup `
+            -ImageName $backendImage `
+            -VolumeName $volumeName `
+            -ArchivePath $temporaryPath
+
+        if (-not (Test-Path -LiteralPath $temporaryPath -PathType Leaf)) {
+            throw "Backup helper returned without creating: $temporaryPath"
+        }
+        Protect-OfflineSecretFile -Path $temporaryPath
+        [void](Assert-OfflineLocalPathNoReparse -Path $archivePath)
+        Move-Item -LiteralPath $temporaryPath -Destination $archivePath
+        Protect-OfflineSecretFile -Path $archivePath
+
+        $sha256 = Get-Sha256 -Path $archivePath
+        $shaPath = Assert-OfflineLocalPathNoReparse -Path "$archivePath.sha256"
+        Write-Utf8NoBom -Path $shaPath -Content "$sha256  $archiveName`r`n"
+        Protect-OfflineSecretFile -Path $shaPath
+
+        if ((Get-Sha256 -Path $archivePath) -ne $sha256) {
+            throw "Backup changed while its checksum was being written."
         }
     }
     finally {
-        Exit-OfflineVolumeLock -Mutex $volumeLock
+        try {
+            if ($runningServices.Count -gt 0) {
+                Start-PreviouslyRunningServices -EnvFile $resolvedEnv -Services $runningServices
+            }
+        }
+        finally {
+            Exit-OfflineVolumeLock -Mutex $volumeLock
+        }
     }
+}
+finally {
+    Exit-OfflineVolumeLock -Mutex $projectLock
 }
 
 Write-Host "Offline data backup created: $archivePath"

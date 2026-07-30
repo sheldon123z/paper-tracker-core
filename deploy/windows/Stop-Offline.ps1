@@ -26,7 +26,22 @@ $resolvedEnv = Resolve-OfflinePath -Path $EnvFile
 
 $envValues = Assert-OfflineEnv -EnvFile $resolvedEnv
 Assert-DockerLinux
-Invoke-OfflineCompose -EnvFile $resolvedEnv -ComposeArgs @("stop")
+
+$projectLock = Enter-OfflineProjectLock `
+    -ProjectName $envValues["COMPOSE_PROJECT_NAME"]
+try {
+    $volumeLock = Enter-OfflineVolumeLock `
+        -VolumeName $envValues["PAPER_TRACKER_DATA_VOLUME"]
+    try {
+        Invoke-OfflineCompose -EnvFile $resolvedEnv -ComposeArgs @("stop")
+    }
+    finally {
+        Exit-OfflineVolumeLock -Mutex $volumeLock
+    }
+}
+finally {
+    Exit-OfflineVolumeLock -Mutex $projectLock
+}
 
 Write-Host "Paper Tracker services are stopped."
 Write-Host "Compose project: $($envValues["COMPOSE_PROJECT_NAME"])"

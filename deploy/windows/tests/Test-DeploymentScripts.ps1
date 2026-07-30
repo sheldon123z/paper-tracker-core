@@ -117,6 +117,39 @@ try {
     $newOfflineEnvScript = Join-Path $testScripts "New-OfflineEnv.ps1"
     . $commonScript
 
+    $originalDriveTypeHelper = (
+        Get-Command Get-OfflineDriveType -CommandType Function
+    ).ScriptBlock
+    try {
+        Set-Item -Path Function:Get-OfflineDriveType -Value {
+            param(
+                [Parameter(Mandatory = $true)]
+                [string]$PathRoot
+            )
+
+            return [System.IO.DriveType]::Network
+        }
+        $mappedDriveFailure = $null
+        try {
+            [void](Assert-OfflineLocalPathNoReparse `
+                -Path (Join-Path $testRoot "mapped-drive"))
+        }
+        catch {
+            $mappedDriveFailure = $_
+        }
+        if (
+            -not $mappedDriveFailure -or
+            $mappedDriveFailure.Exception.Message -notmatch
+                "mapped network drive"
+        ) {
+            throw "Sensitive-path validation did not reject a mapped network drive."
+        }
+    }
+    finally {
+        Set-Item -Path Function:Get-OfflineDriveType `
+            -Value $originalDriveTypeHelper
+    }
+
     $stagingTestBundle = Join-Path $testRoot (
         "deep\bundle\destination\package"
     )
