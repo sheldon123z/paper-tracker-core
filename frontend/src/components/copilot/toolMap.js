@@ -21,7 +21,6 @@ export { default as ErrorBoundary } from './ErrorBoundary'
 const ComparePapersRenderer = React.lazy(() => import('./tool-renderers/ComparePapersRenderer'))
 const DuplicateDetectionRenderer = React.lazy(() => import('./tool-renderers/DuplicateDetectionRenderer'))
 const FavoritesOverviewRenderer = React.lazy(() => import('./tool-renderers/FavoritesOverviewRenderer'))
-const FeedStatusRenderer = React.lazy(() => import('./tool-renderers/FeedStatusRenderer'))
 const PaperDetailRenderer = React.lazy(() => import('./tool-renderers/PaperDetailRenderer'))
 const PaperHighlightsRenderer = React.lazy(() => import('./tool-renderers/PaperHighlightsRenderer'))
 const PaperNotesRenderer = React.lazy(() => import('./tool-renderers/PaperNotesRenderer'))
@@ -40,7 +39,6 @@ const TOOL_MAP = {
   get_research_stats: { label: '研究统计', Renderer: ResearchStatsRenderer },
   compare_papers: { label: '对比论文', Renderer: ComparePapersRenderer },
   get_category_papers: { label: '分类论文', Renderer: SearchPapersRenderer },
-  get_feed_status: { label: 'RSS 源状态', Renderer: FeedStatusRenderer },
   get_paper_timeline: { label: '论文时间线', Renderer: TimelineRenderer },
   get_tag_analysis: { label: '标签分析', Renderer: TagAnalysisRenderer },
   get_reading_progress: { label: '阅读进度', Renderer: ReadingProgressRenderer },

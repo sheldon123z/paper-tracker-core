@@ -58,6 +58,7 @@ backend/graph_checkpoints.db-wal
 backend/=*
 workers.json
 results/
+.playwright-cli/
 
 # Agent / plugin configs (local only)
 .agents/

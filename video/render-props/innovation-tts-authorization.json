@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "authorized": true,
+  "authorizedAt": "2026-07-29",
+  "purpose": "为 Paper Tracker 创新性讲解视频生成全片统一的中文技术旁白",
+  "captionHashMode": "canonical-json-v1",
+  "captionSha256": "0C2F2D266B2433C2BEDF0BBDC07B61D3342911C749562984EBB68588BE71F3FC",
+  "provider": "火山引擎",
+  "endpoint": "https://openspeech.bytedance.com/api/v3/tts/unidirectional",
+  "captions": {
+    "file": "src/videos/innovation-explainer/data/captions.json",
+    "sha256": "0C2F2D266B2433C2BEDF0BBDC07B61D3342911C749562984EBB68588BE71F3FC",
+    "hashMode": "canonical-json-v1",
+    "count": 49
+  },
+  "model": {
+    "resourceId": "seed-tts-2.0"
+  },
+  "application": {
+    "appKey": "aGjiRDfUWi"
+  },
+  "voice": {
+    "name": "温暖阿虎 2.0",
+    "speaker": "zh_male_wennuanahu_uranus_bigtts"
+  },
+  "request": {
+    "user": {
+      "uid": "video-narration"
+    },
+    "audioParams": {
+      "format": "pcm",
+      "sampleRate": 24000,
+      "speechRate": 0,
+      "loudnessRate": 0
+    },
+    "additions": {
+      "explicitLanguage": "zh-cn",
+      "silenceDuration": 300,
+      "disableMarkdownFilter": true,
+      "disableEmojiFilter": true,
+      "contextTexts": [
+        "自然、温和、清晰地说，像技术负责人在会议中平实说明。保持音色本身的特点，不使用播音腔或广告腔，不刻意加重，语速正常，停顿自然。"
+      ]
+    }
+  },
+  "credentialPolicy": {
+    "environmentVariable": "VOLCENGINE_TTS_API_KEY",
+    "persisted": false,
+    "logged": false
+  },
+  "retiming": {
+    "sourceCaptionSha256": "9BAADCAABB1241D62C6DB84E880144238EB3DEA68330DB5690E20591401B0B0B",
+    "sourceDurationSeconds": 205,
+    "authorizedDurationSeconds": 249.9,
+    "reason": "按 speech_rate=0 的实测语音统一延长场景，禁止逐句变速",
+    "noPerSegmentTimeStretching": true
+  },
+  "mediaPolicy": {
+    "generatedFilesAreGitIgnored": true,
+    "commitGeneratedAudio": false
+  }
+}

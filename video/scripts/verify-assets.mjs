@@ -38,13 +38,11 @@ const assetsByVideo = {
   innovation: [
     "innovation-explainer/audio/final-mix.wav",
     "shared/stills/department-library.png",
-    "shared/stills/final-report.png",
     "shared/stills/public-library.png",
     "shared/recordings/03-import-analyzing.mp4",
     "shared/recordings/04-import-review.mp4",
-    "shared/recordings/10-assistant-result.mp4",
-    "shared/recordings/12-workflow-templates_running.mp4",
-    "shared/recordings/14-workflow-result.mp4",
+    "innovation-explainer/recordings/high-altitude-workflow-running.mp4",
+    "innovation-explainer/recordings/high-altitude-workflow-result.mp4",
     "shared/recordings/15-access-control.mp4",
   ],
   workflow: [
@@ -211,10 +209,35 @@ const validateInnovationReviewData = () => {
   const timeline = JSON.parse(fs.readFileSync(timelinePath, "utf8"));
   const captions = JSON.parse(fs.readFileSync(captionsPath, "utf8"));
 
-  if (timeline.fps !== 30 || timeline.durationInFrames !== 6150) {
+  if (timeline.fps !== 30 || timeline.durationInFrames !== 7497) {
     throw new Error(
-      `Innovation review timeline must be exactly 6150 frames at 30 fps; ` +
+      `Innovation voiced timeline must be exactly 7497 frames at 30 fps; ` +
         `received ${timeline.durationInFrames} frames at ${timeline.fps} fps.`,
+    );
+  }
+
+  const expectedSceneOrder = [
+    "scene-intro",
+    "scene-06",
+    "scene-00",
+    "scene-01",
+    "scene-02",
+    "scene-04",
+    "scene-architecture",
+    "scene-03",
+    "scene-07",
+    "scene-outro",
+  ];
+  const actualSceneOrder = timeline.scenes.map((scene) => scene.id);
+  if (
+    actualSceneOrder.length !== expectedSceneOrder.length ||
+    actualSceneOrder.some(
+      (sceneId, index) => sceneId !== expectedSceneOrder[index],
+    )
+  ) {
+    throw new Error(
+      `Innovation review scene order must put security-by-design first: ` +
+        `${expectedSceneOrder.join(" -> ")}.`,
     );
   }
 
@@ -249,7 +272,7 @@ const validateInnovationReviewData = () => {
       caption.startMs >= previousEndMs &&
       caption.endMs <= durationMs &&
       captionDuration >= 2500 &&
-      captionDuration <= 4500 &&
+      captionDuration <= 7000 &&
       caption.timestampMs === null &&
       caption.confidence === null;
     if (!validCaption) {
@@ -288,16 +311,13 @@ const validateInnovationEvidenceSources = () => {
     [
       "S04ResearchAgentCore.tsx",
       [
-        "shared/recordings/12-workflow-templates_running.mp4",
-        "shared/recordings/14-workflow-result.mp4",
+        "innovation-explainer/recordings/high-altitude-workflow-running.mp4",
+        "innovation-explainer/recordings/high-altitude-workflow-result.mp4",
       ],
     ],
     [
       "S03EvidenceSynthesis.tsx",
-      [
-        "shared/recordings/10-assistant-result.mp4",
-        "shared/stills/final-report.png",
-      ],
+      ["innovation-explainer/recordings/high-altitude-workflow-result.mp4"],
     ],
     ["S06SafeGovernance.tsx", ["shared/recordings/15-access-control.mp4"]],
   ]);
@@ -305,7 +325,8 @@ const validateInnovationEvidenceSources = () => {
     projectRoot,
     "src/videos/innovation-explainer/scenes",
   );
-  const mediaPattern = /shared\/(?:recordings|stills)\/[^"'`)\s]+/g;
+  const mediaPattern =
+    /(?:shared|innovation-explainer)\/(?:recordings|stills)\/[^"'`)\s]+/g;
 
   for (const [sceneFile, expectedSources] of expectedMediaSources) {
     const sceneSource = fs.readFileSync(
@@ -337,7 +358,7 @@ const validateInnovationEvidenceSemantics = () => {
       file: "S02KnowledgeAssets.tsx",
       required: [
         /PROCESS SCHEMATIC · 流程示意/,
-        /真实系统页面/,
+        /真实服务页面/,
         /03-import-analyzing\.mp4/,
         /04-import-review\.mp4/,
         /public-library\.png/,
@@ -348,14 +369,16 @@ const validateInnovationEvidenceSemantics = () => {
     {
       file: "S04ResearchAgentCore.tsx",
       required: [
-        /科研智能体正在自主执行/,
+        /研究智能体正在按流程执行/,
         /任务拆解/,
         /报告合成/,
         /报告生成完成/,
-        /14-workflow-result\.mp4/,
+        /高海拔地区电力设备选型/,
+        /high-altitude-workflow-running\.mp4/,
+        /high-altitude-workflow-result\.mp4/,
         /专家在环/,
       ],
-      forbidden: [/HUMAN-IN-THE-LOOP/],
+      forbidden: [/HUMAN-IN-THE-LOOP/, /CompletedReportCanvas/],
     },
     {
       file: "S05AgentArchitecture.tsx",
@@ -373,8 +396,21 @@ const validateInnovationEvidenceSemantics = () => {
     },
     {
       file: "S03EvidenceSynthesis.tsx",
-      required: [/技术路线/, /结论差异/, /约束与空白/, /结构化综述初稿/],
-      forbidden: [],
+      required: [
+        /技术路线/,
+        /结论差异/,
+        /约束与空白/,
+        /结构化综述初稿/,
+        /高海拔地区电力设备选型/,
+        /high-altitude-workflow-result\.mp4/,
+        /真实工作流页面/,
+      ],
+      forbidden: [
+        /ServiceReportCanvas/,
+        /REPORT_SECTIONS/,
+        /10-assistant-result\.mp4/,
+        /final-report\.png/,
+      ],
     },
     {
       file: "S06SafeGovernance.tsx",
@@ -472,6 +508,52 @@ const validateInnovationSubtitleLayout = () => {
   }
 };
 
+const validateInnovationServicePositioning = () => {
+  const innovationRoot = path.join(
+    projectRoot,
+    "src/videos/innovation-explainer",
+  );
+  const sceneRoot = path.join(innovationRoot, "scenes");
+  const sourcePaths = [
+    path.join(innovationRoot, "brand.ts"),
+    path.join(innovationRoot, "data/scenes.ts"),
+    path.join(innovationRoot, "data/captions.json"),
+    ...fs
+      .readdirSync(sceneRoot)
+      .filter((file) => file.endsWith(".tsx"))
+      .map((file) => path.join(sceneRoot, file)),
+  ];
+  const sources = sourcePaths.map((sourcePath) => ({
+    sourcePath,
+    source: fs.readFileSync(sourcePath, "utf8"),
+  }));
+  const forbiddenTerms = [/国家电网/u, /平台/u, /软件/u, /系统/u];
+
+  for (const { sourcePath, source } of sources) {
+    for (const pattern of forbiddenTerms) {
+      if (pattern.test(source)) {
+        throw new Error(
+          `Innovation service copy contains forbidden positioning in ${path.relative(projectRoot, sourcePath)}: ${pattern}.`,
+        );
+      }
+    }
+  }
+
+  const combinedSource = sources.map(({ source }) => source).join("\n");
+  const requiredTerms = [
+    /专业领域大模型智能文献检索与知识服务/u,
+    /重大工程技术/u,
+    /知识服务/u,
+  ];
+  for (const pattern of requiredTerms) {
+    if (!pattern.test(combinedSource)) {
+      throw new Error(
+        `Innovation service copy is missing required positioning: ${pattern}.`,
+      );
+    }
+  }
+};
+
 const validateTimelineStructure = (video) => {
   const timelineRelativePath = audioByVideo[video].timeline;
   const timelinePath = path.join(projectRoot, timelineRelativePath);
@@ -547,6 +629,9 @@ const sourceCaptionCounts = Object.fromEntries(
   selectedVideos.map((video) => [video, validateTimelineStructure(video)]),
 );
 let reviewCaptionCount = null;
+if (selectedVideos.includes("innovation")) {
+  validateInnovationServicePositioning();
+}
 if (selectedVideos.includes("innovation") && reviewMode) {
   validateInnovationEvidenceSources();
   validateInnovationEvidenceSemantics();

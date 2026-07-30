@@ -33,6 +33,8 @@ export const TOOL_CALL_RENDERERS = [
   defineToolCallRenderer({
     name: '*',
     render: ({ name, args, status, result }) => {
+      if (name === 'get_feed_status') return null
+
       const entry = TOOL_MAP[name]
       const label = entry?.label || name
       const Renderer = entry?.Renderer || DefaultRenderer

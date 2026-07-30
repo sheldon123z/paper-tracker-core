@@ -1,1 +1,1 @@
-export const SYSTEM_NAME = "国家电网电力科研智能平台";
+export const SERVICE_NAME = "专业领域大模型智能文献检索与知识服务";

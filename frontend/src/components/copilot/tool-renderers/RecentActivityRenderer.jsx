@@ -33,10 +33,6 @@ export default function RecentActivityRenderer({ label, status, result }) {
     return []
   }
 
-  const feedActivity = Array.isArray(data.feed_activity) ? data.feed_activity
-    : (data.feeds && Array.isArray(data.feeds.items)) ? data.feeds.items
-    : Array.isArray(data.feeds) ? data.feeds : []
-
   return (
     <CardShell>
       <CardHeader palette={PALETTES.activity} icon={<AppIcon name="copy" size={15} />} title={label}
@@ -78,45 +74,6 @@ export default function RecentActivityRenderer({ label, status, result }) {
         )
       })}
 
-      {/* Feed activity */}
-      {feedActivity.length > 0 && (
-        <div>
-          <div style={{
-            padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 6,
-            backgroundColor: 'var(--bg-primary)',
-          }}>
-            <span style={{ color: '#8b5cf6' }}><AppIcon name="feeds" size={14} /></span>
-            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>RSS 源</span>
-            <span style={{
-              fontSize: 10, padding: '1px 8px', borderRadius: 12,
-              backgroundColor: '#8b5cf620', color: '#8b5cf6',
-              fontWeight: 600, marginLeft: 'auto',
-            }}>
-              {feedActivity.length}
-            </span>
-          </div>
-          <div style={{ padding: '8px 16px' }}>
-            {feedActivity.map((feed, i) => (
-              <div key={feed.id || i} style={{
-                display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0',
-                borderBottom: i < feedActivity.length - 1 ? '1px solid var(--border)' : 'none',
-              }}>
-                <span style={{
-                  width: 8, height: 8, borderRadius: '50%',
-                  backgroundColor: feed.is_active !== false ? '#22c55e' : '#ef4444',
-                  flexShrink: 0,
-                }} />
-                <span style={{ fontSize: 11, color: 'var(--text-primary)', flex: 1 }}>{feed.name}</span>
-                {feed.last_fetched && (
-                  <span style={{ fontSize: 10, color: 'var(--text-secondary)' }}>
-                    {feed.last_fetched.slice(0, 10)}
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </CardShell>
   )
 }

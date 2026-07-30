@@ -211,7 +211,7 @@ const TaskControlPane: React.FC<{
             letterSpacing: 1.8,
           }}
         >
-          RESEARCH GOAL · 示例课题
+          ENGINEERING GOAL · 示例课题
         </div>
         <div
           style={{
@@ -221,7 +221,7 @@ const TaskControlPane: React.FC<{
             fontWeight: 790,
           }}
         >
-          新能源并网条件下的频率稳定研究进展与潜在研究方向
+          高海拔地区电力设备选型
         </div>
       </div>
 
@@ -300,9 +300,11 @@ const WorkflowEvidencePane: React.FC<{
       }}
     >
       <Video
-        src={staticFile("shared/recordings/12-workflow-templates_running.mp4")}
-        trimBefore={Math.round(33.5 * fps)}
-        playbackRate={0.22}
+        src={staticFile(
+          "innovation-explainer/recordings/high-altitude-workflow-running.mp4",
+        )}
+        trimBefore={Math.round(7.2 * fps)}
+        playbackRate={0.4}
         muted
         objectFit="cover"
         style={{
@@ -310,7 +312,7 @@ const WorkflowEvidencePane: React.FC<{
           height: "100%",
           objectPosition: "center center",
           scale: 1.255,
-          translate: "-146px 16px",
+          translate: "-146px 103px",
           filter: "contrast(1.025) saturate(1.015)",
           opacity: 1 - completionProgress,
         }}
@@ -322,7 +324,10 @@ const WorkflowEvidencePane: React.FC<{
         style={{ opacity: completionProgress }}
       >
         <Video
-          src={staticFile("shared/recordings/14-workflow-result.mp4")}
+          src={staticFile(
+            "innovation-explainer/recordings/high-altitude-workflow-result.mp4",
+          )}
+          trimBefore={Math.round(2.7 * fps)}
           playbackRate={0.58}
           muted
           objectFit="cover"
@@ -331,7 +336,7 @@ const WorkflowEvidencePane: React.FC<{
             height: "100%",
             objectPosition: "center center",
             scale: 1.255,
-            translate: "-146px 16px",
+            translate: "-146px 103px",
             filter: "contrast(1.025) saturate(1.015)",
           }}
         />
@@ -357,13 +362,13 @@ const WorkflowEvidencePane: React.FC<{
         <div>
           <div style={{ fontSize: 26, fontWeight: 810 }}>
             {workflowComplete
-              ? "科研智能体已完成报告"
-              : "科研智能体正在自主执行"}
+              ? "研究智能体已完成报告"
+              : "研究智能体正在按流程执行"}
           </div>
           <div style={{ marginTop: 3, color: COLORS.muted, fontSize: 16 }}>
             {workflowComplete
-              ? "真实结果页面 · 报告已生成并可继续审阅"
-              : "真实工作流页面 · 阶段状态与中间结果"}
+              ? "服务实景 · 报告已生成并可继续审阅"
+              : "服务实景 · 阶段状态与中间结果"}
           </div>
         </div>
         <div
@@ -507,8 +512,8 @@ export const S04ResearchAgentCore: React.FC<{
   return (
     <SceneFrame
       durationInFrames={durationInFrames}
-      eyebrow="04 · RESEARCH AGENT"
-      title="科研智能体，自主执行并主动推进"
+      eyebrow="05 · RESEARCH AGENT"
+      title="专业研究智能体，按目标与模板连续推进"
     >
       <div
         style={{

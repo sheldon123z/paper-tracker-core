@@ -114,7 +114,7 @@ const GoalCard: React.FC<{ frame: number }> = ({ frame }) => {
           fontWeight: 810,
         }}
       >
-        科研目标
+        工程技术目标
       </div>
       <div
         style={{
@@ -126,7 +126,7 @@ const GoalCard: React.FC<{ frame: number }> = ({ frame }) => {
       >
         授权论文库
         <br />
-        专业科研模板
+        专业分析模板
         <br />
         用户约束条件
       </div>
@@ -290,7 +290,7 @@ const LangGraphPane: React.FC<{ frame: number }> = ({ frame }) => {
             Supervisor
           </div>
           <div style={{ marginTop: 4, color: COLORS.muted, fontSize: 16 }}>
-            按科研模板编排阶段并调度工具
+            按专业模板编排阶段并调度工具
           </div>
         </div>
         <KeywordBadge
@@ -506,8 +506,8 @@ export const S05AgentArchitecture: React.FC<{
   return (
     <SceneFrame
       durationInFrames={durationInFrames}
-      eyebrow="05 · AGENTIC ARCHITECTURE"
-      title="有状态、可观察、可续接的智能体架构"
+      eyebrow="06 · AGENTIC ARCHITECTURE"
+      title="专业领域大模型驱动的智能体工作流"
     >
       <div
         style={{
@@ -555,7 +555,7 @@ export const S05AgentArchitecture: React.FC<{
               textAlign: "right",
             }}
           >
-            从科研目标进入有状态任务图，再把执行过程流式交还专家
+            从工程技术目标进入有状态任务图，再把执行过程流式交还专家
           </div>
         </div>
 

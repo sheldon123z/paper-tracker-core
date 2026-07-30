@@ -1,13 +1,14 @@
 import { Video } from "@remotion/media";
-import { Easing, Img, interpolate, staticFile, useVideoConfig } from "remotion";
+import { Easing, interpolate, staticFile, useVideoConfig } from "remotion";
 import { FeatureGlyph } from "../../../shared/components/FeatureGlyph";
 import { SceneFrame } from "../../../shared/components/SceneFrame";
 import { COLORS, FONT_FAMILY } from "../../../shared/theme";
 import { useScaledSceneFrame } from "../utils/sceneTiming";
 
 const REFERENCE_DURATION_IN_FRAMES = 26 * 30;
-// The source recording starts scrolling at about 7.34s. With a 6s trim and
-// 0.6x playback, that lands at scene-local frame 67. Keep every accompanying
+// The real result page begins scrolling shortly after the stable completed
+// overview. With a 2.85s trim and 0.75x playback, that lands near frame 67.
+// Keep every accompanying
 // emphasis animation anchored to the same frame so picture and UI cannot drift.
 const ANALYSIS_SCROLL_CUE_FRAME = 67;
 
@@ -169,7 +170,7 @@ const EvidenceBoard: React.FC<{ frame: number }> = ({ frame }) => {
               fontWeight: 760,
             }}
           >
-            新能源并网条件下的频率稳定
+            高海拔地区电力设备选型
           </div>
         </div>
       </div>
@@ -227,12 +228,6 @@ const AssistantWorkbench: React.FC<{ frame: number }> = ({ frame }) => {
       extrapolateRight: "clamp",
     },
   );
-  const reportOpacity = interpolate(frame, [602, 652], [0, 1], {
-    easing: Easing.bezier(0.16, 1, 0.3, 1),
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-  });
-
   return (
     <div
       style={{
@@ -250,34 +245,20 @@ const AssistantWorkbench: React.FC<{ frame: number }> = ({ frame }) => {
       }}
     >
       <Video
-        src={staticFile("shared/recordings/10-assistant-result.mp4")}
-        trimBefore={Math.round(6 * fps)}
-        playbackRate={0.6}
+        src={staticFile(
+          "innovation-explainer/recordings/high-altitude-workflow-result.mp4",
+        )}
+        trimBefore={Math.round(2.85 * fps)}
+        playbackRate={0.75}
         muted
-        objectFit="cover"
-        style={{
-          width: "100%",
-          height: "100%",
-          objectPosition: "center center",
-          scale: 1.656,
-          translate: "-374px 232px",
-          filter: `contrast(1.025) saturate(${0.88 + reveal * 0.13})`,
-        }}
-      />
-
-      <Img
-        src={staticFile("shared/stills/final-report.png")}
+        objectFit="fill"
         style={{
           position: "absolute",
-          inset: 0,
-          width: "100%",
-          height: "100%",
-          objectFit: "cover",
-          objectPosition: "center center",
-          scale: 1.247,
-          translate: "-141px 96px",
-          opacity: reportOpacity,
-          filter: "contrast(1.03) saturate(1.01)",
+          width: 1414,
+          height: 795,
+          left: -274,
+          top: 0,
+          filter: `contrast(1.025) saturate(${0.88 + reveal * 0.13})`,
         }}
       />
 
@@ -306,9 +287,7 @@ const AssistantWorkbench: React.FC<{ frame: number }> = ({ frame }) => {
           translate: `0 ${interpolate(resultCardEnter, [0, 1], [10, 0])}px`,
         }}
       >
-        {reportOpacity > 0.5
-          ? "真实系统页面 · 结构化综述初稿"
-          : "真实系统页面 · 持续分析"}
+        真实工作流页面 · 结构化综述初稿
       </div>
     </div>
   );
@@ -335,7 +314,7 @@ export const S03EvidenceSynthesis: React.FC<{ durationInFrames: number }> = ({
   return (
     <SceneFrame
       durationInFrames={durationInFrames}
-      eyebrow="06 · RESEARCH OUTCOME"
+      eyebrow="07 · RESEARCH OUTCOME"
       title="从跨文献证据，到结构化综述初稿"
     >
       <div style={{ opacity }}>

@@ -56,7 +56,7 @@ _BODY_INDENT_XML = '<w:ind w:left="0" w:leftChars="0" w:firstLine="640" w:firstL
 
 
 class WorkflowExportError(RuntimeError):
-    """Raised when Paper Tracker cannot produce a workflow report export."""
+    """Raised when 专业领域大模型智能文献检索与知识服务 cannot produce a workflow report export."""
 
 
 def _pandoc_path() -> Path:
@@ -64,16 +64,16 @@ def _pandoc_path() -> Path:
         import pypandoc
     except ImportError as exc:
         raise WorkflowExportError(
-            "Paper Tracker's Pandoc dependency is missing. Install backend requirements."
+            "专业领域大模型智能文献检索与知识服务缺少 Pandoc 依赖，请安装后端依赖。"
         ) from exc
     try:
         path = Path(pypandoc.get_pandoc_path()).resolve()
     except OSError as exc:
-        raise WorkflowExportError("Paper Tracker's bundled Pandoc executable is unavailable.") from exc
+        raise WorkflowExportError("专业领域大模型智能文献检索与知识服务内置的 Pandoc 不可用。") from exc
     if os.name == "nt" and not path.is_file():
         path = path.with_suffix(".exe")
     if not path.is_file():
-        raise WorkflowExportError(f"Paper Tracker's bundled Pandoc executable was not found: {path}")
+        raise WorkflowExportError(f"未找到专业领域大模型智能文献检索与知识服务内置的 Pandoc：{path}")
     return path
 
 
@@ -253,7 +253,9 @@ def _postprocess_docx(docx_path: Path) -> None:
         ValueError,
         zipfile.BadZipFile,
     ) as exc:
-        raise WorkflowExportError("Paper Tracker failed to post-process the generated Word document.") from exc
+        raise WorkflowExportError(
+            "专业领域大模型智能文献检索与知识服务 failed to post-process the generated Word document."
+        ) from exc
     finally:
         replacement_path.unlink(missing_ok=True)
 
@@ -318,7 +320,7 @@ def _sanitize_docx_metadata(docx_path: Path) -> None:
         UnicodeError,
         zipfile.BadZipFile,
     ) as exc:
-        raise WorkflowExportError("Paper Tracker failed to remove personal metadata from the Word document.") from exc
+        raise WorkflowExportError("专业领域大模型智能文献检索与知识服务无法移除 Word 文档中的个人元数据。") from exc
     finally:
         replacement_path.unlink(missing_ok=True)
 
@@ -357,7 +359,7 @@ def _refresh_docx_fields(docx_path: Path) -> None:
 
 def _generate_docx(markdown_path: Path, output_path: Path) -> None:
     if not REFERENCE_DOC.is_file():
-        raise WorkflowExportError(f"Paper Tracker's workflow export template is missing: {REFERENCE_DOC}")
+        raise WorkflowExportError(f"缺少专业领域大模型智能文献检索与知识服务工作流导出模板：{REFERENCE_DOC}")
     command = [
         str(_pandoc_path()),
         str(markdown_path),
@@ -385,7 +387,7 @@ def _generate_docx(markdown_path: Path, output_path: Path) -> None:
     )
     if result.returncode != 0 or not output_path.is_file() or output_path.stat().st_size == 0:
         raise WorkflowExportError(
-            "Paper Tracker failed to generate the Word document:\n"
+            "专业领域大模型智能文献检索与知识服务无法生成 Word 文档：\n"
             + (result.stdout.strip() or "Pandoc did not produce an output file.")
         )
     _postprocess_docx(output_path)
@@ -409,7 +411,7 @@ def _terminate_word_from_pid_file(pid_file: Path) -> None:
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except (OSError, subprocess.TimeoutExpired):
-        logger.warning("Paper Tracker could not terminate the timed-out Microsoft Word process.")
+        logger.warning("专业领域大模型智能文献检索与知识服务无法终止超时的 Microsoft Word 进程。")
 
 
 def _export_pdf(docx_path: Path, pdf_path: Path) -> None:
@@ -444,7 +446,7 @@ def _export_pdf(docx_path: Path, pdf_path: Path) -> None:
             _terminate_word_from_pid_file(pid_file)
         if result.returncode != 0 or not pdf_path.is_file() or pdf_path.stat().st_size == 0:
             raise WorkflowExportError(
-                "Paper Tracker failed to export PDF through Microsoft Word:\n"
+                "专业领域大模型智能文献检索与知识服务 failed to export PDF through Microsoft Word:\n"
                 + (result.stdout.strip() or "Word did not produce an output file.")
             )
     finally:
@@ -452,7 +454,7 @@ def _export_pdf(docx_path: Path, pdf_path: Path) -> None:
 
 
 def export_workflow_report(markdown: str, output_format: str) -> Path:
-    """Create an export using only Paper Tracker-owned code, assets, and environment."""
+    """Create an export using only project-owned code, assets, and environment."""
     output_format = output_format.lower().strip()
     if output_format not in SUPPORTED_FORMATS:
         raise WorkflowExportError(f"Unsupported workflow export format: {output_format}")

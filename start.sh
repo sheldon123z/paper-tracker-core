@@ -174,7 +174,7 @@ if ((start_frontend)); then
 fi
 
 echo ""
-echo "-- Paper Tracker Core --"
+echo "-- 专业领域大模型智能文献检索与知识服务 --"
 echo "Frontend:  http://localhost:3457"
 echo "Backend:   http://localhost:5002"
 echo "Copilot:   http://localhost:4100"

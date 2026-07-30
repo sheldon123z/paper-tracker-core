@@ -202,7 +202,7 @@ _DEFAULT_SYSTEM_PROMPTS = {
     "assistant": {
         "name": "Paper Tracker 助手",
         "prompt_text": (
-            "你是 Paper Tracker Core 的论文研究助手。你的核心能力：\n\n"
+            "你是论文研究助手。你的核心能力：\n\n"
             "1. **论文数据库访问**：搜索、筛选、分析用户论文数据库\n"
             "2. **深度分析**：摘要、方法论分析、关键发现提取、比较研究\n"
             "3. **研究统计**：论文库统计、趋势分析、分类分布\n\n"

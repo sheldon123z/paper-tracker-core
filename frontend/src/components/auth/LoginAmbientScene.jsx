@@ -57,17 +57,16 @@ export default function LoginAmbientScene() {
 
       {/* Subcopy */}
       <p className="login-hero-sub">
-        登录以访问您的论文数据库、同步订阅源
-        和 AI 辅助研究工作区。
+        登录以访问您的本地论文数据库和 AI 辅助研究工作区。
       </p>
 
       {/* Floating data chips */}
       <div className="login-chips">
         <DataChip
-          icon={<FeedIcon />}
+          icon={<LibraryIcon />}
           color="cyan"
-          label="订阅信号"
-          value="实时采集"
+          label="本地文献"
+          value="离线管理"
         />
         <DataChip
           icon={<GraphIcon />}
@@ -100,12 +99,11 @@ function DataChip({ icon, color, label, value }) {
 }
 
 /* ---- Inline SVG Icons (Lucide-style) ---- */
-function FeedIcon() {
+function LibraryIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M4 11a9 9 0 0 1 9 9" />
-      <path d="M4 4a16 16 0 0 1 16 16" />
-      <circle cx="5" cy="19" r="1" />
+      <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21.5Z" />
+      <path d="M4 5.5V20" />
     </svg>
   )
 }

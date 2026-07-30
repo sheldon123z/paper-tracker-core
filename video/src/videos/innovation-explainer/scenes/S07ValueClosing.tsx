@@ -5,12 +5,12 @@ import {
 } from "../../../shared/components/FeatureGlyph";
 import { SceneFrame } from "../../../shared/components/SceneFrame";
 import { COLORS, FONT_FAMILY } from "../../../shared/theme";
-import { SYSTEM_NAME } from "../brand";
+import { SERVICE_NAME } from "../brand";
 
 const SHIFTS: { from: string; to: string; type: GlyphType }[] = [
   { from: "分散论文", to: "领域知识资产", type: "grid" },
-  { from: "个人积累", to: "组织科研能力", type: "governance" },
-  { from: "被动查找", to: "智能体主动推进", type: "model" },
+  { from: "个人积累", to: "组织工程创新能力", type: "governance" },
+  { from: "被动查找", to: "智能体按流程推进", type: "model" },
 ];
 
 export const S07ValueClosing: React.FC<{ durationInFrames: number }> = ({
@@ -26,8 +26,8 @@ export const S07ValueClosing: React.FC<{ durationInFrames: number }> = ({
   return (
     <SceneFrame
       durationInFrames={durationInFrames}
-      eyebrow={SYSTEM_NAME}
-      title="把个人积累转化为组织科研能力"
+      eyebrow={SERVICE_NAME}
+      title="把个人积累转化为组织工程创新能力"
       showHeader={false}
     >
       <div
@@ -63,7 +63,7 @@ export const S07ValueClosing: React.FC<{ durationInFrames: number }> = ({
             fontWeight: 720,
           }}
         >
-          {SYSTEM_NAME}
+          {SERVICE_NAME}
         </div>
         <div
           style={{
@@ -74,7 +74,7 @@ export const S07ValueClosing: React.FC<{ durationInFrames: number }> = ({
             fontWeight: 780,
           }}
         >
-          面向电力科研的智能科研基础设施
+          面向重大工程技术的专业知识服务
         </div>
       </div>
 

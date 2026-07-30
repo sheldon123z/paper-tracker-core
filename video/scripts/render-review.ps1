@@ -1,3 +1,8 @@
+param(
+  [ValidateRange(1, 64)]
+  [int]$Concurrency = 2
+)
+
 $ErrorActionPreference = "Stop"
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
@@ -21,6 +26,9 @@ $outputDir = Join-Path $projectRoot "output"
 $target = Join-Path $outputDir "paper-tracker-innovation-explainer-silent-review.mp4"
 $taggedTarget = Join-Path $outputDir "paper-tracker-innovation-explainer-silent-review.bt709.tmp.mp4"
 $reviewProps = Join-Path $projectRoot "render-props\innovation-review.json"
+$timelinePath = Join-Path $projectRoot "src\videos\innovation-explainer\data\timeline.json"
+$timeline = Get-Content -Raw -Encoding UTF8 -LiteralPath $timelinePath | ConvertFrom-Json
+$expectedDurationSeconds = [double]$timeline.durationInFrames / [double]$timeline.fps
 New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
 
 Push-Location $projectRoot
@@ -41,7 +49,7 @@ try {
     --pixel-format=yuv420p `
     --color-space=bt709 `
     --props=$reviewProps `
-    --concurrency=2
+    --concurrency=$Concurrency
   if ($LASTEXITCODE -ne 0) {
     throw "Silent-review render failed."
   }
@@ -107,8 +115,8 @@ try {
     $duration,
     [System.Globalization.CultureInfo]::InvariantCulture
   )
-  if ([Math]::Abs($durationSeconds - 205.0) -gt 0.05) {
-    throw "Silent-review duration must be 205 seconds; received $durationSeconds."
+  if ([Math]::Abs($durationSeconds - $expectedDurationSeconds) -gt 0.05) {
+    throw "Silent-review duration must be $expectedDurationSeconds seconds; received $durationSeconds."
   }
 
   $videoStreamJson = (& npx.cmd remotion ffprobe `

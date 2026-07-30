@@ -65,10 +65,52 @@ output/paper-tracker-innovation-explainer-voiced-no-bgm.mp4
 会拒绝使用与当前 Remotion 源码不匹配的旧母版。该指纹从当前版本开始防止继续
 漂移，但不能追溯证明历史二进制最初由哪个 Git commit 渲染。
 
-当前 205 秒 V2-10 Composition 仍处于静音审片阶段，外部
-`innovation-explainer/audio/final-mix.wav` 尚未与该时间轴同步。获得明确
-TTS 授权并更新音频前，`render:innovation` 的正式配音入口应保持锁定；已有
-7022 帧 voiced 工作包是独立冻结的历史母版，不代表对当前审片文案的授权。
+当前创新性讲解 Composition 已按自然语速重排为 249.9 秒（7497 帧），49 段
+火山引擎旁白已经生成、审计并发布到外部
+`innovation-explainer/audio/final-mix.wav`；`render:innovation` 会校验授权、
+字幕哈希和音频时长后生成当前有声版本。已有 7022 帧 voiced 工作包仍是独立
+冻结的历史母版，不应与本次授权和成片混用。
+
+### 火山引擎统一旁白
+
+当前 49 段创新性讲解字幕已获得一次明确的火山引擎 TTS 生成授权，授权范围和
+字幕语义内容的 canonical JSON SHA-256 固定记录在
+`render-props/innovation-tts-authorization.json`。生成器拒绝处理哈希不一致的
+字幕，也不会因缩进或换行变化误判；它不会自动改写文案、语速、音色或情绪参数。
+
+先只探测第 1 段，确认账号授权、模型资源和音色均可用：
+
+```powershell
+npm.cmd run narration:innovation:probe
+```
+
+探测只生成并校验单段缓存，不发布正式 `final-mix.wav`。确认探测通过后，再串行
+生成全片：
+
+```powershell
+npm.cmd run narration:innovation:generate
+```
+
+安全包装脚本会以隐藏输入方式读取凭据，只在当前子进程中设置
+`VOLCENGINE_TTS_API_KEY`，并在结束时移除环境变量、释放显式分配的非托管凭据
+缓冲区。PowerShell 运行期仍可能短暂创建无法保证立即物理清零的托管字符串；
+API Key 不写入源码、授权文件、manifest、审计报告或日志。不要把凭据直接写进
+命令行、PowerShell 历史、`.env` 或 `package.json`，也不要在不可信的共享主机
+上执行生成流程。
+
+生成可断点续跑；再次执行时会复用参数指纹、字幕哈希和文件哈希均一致的缓存。
+离线复核缓存、manifest、分段音频指标及正式 WAV：
+
+```powershell
+npm.cmd run narration:innovation:verify
+```
+
+默认正式输出位于仓库外的
+`../../video-assets/render-inputs/innovation-explainer/audio/final-mix.wav`；
+可用 `VIDEO_ASSETS_DIR` 改变 `video-assets` 根目录。覆盖已有正式音频前会先备份。
+分段 PCM、24 kHz 母版、manifest、审计报告、备份及最终 WAV 都属于 Git
+忽略的本地媒体工作包；只提交生成脚本、授权元数据和配置，绝不提交音频或渲染
+产物。
 
 ## 工作流程视频
 
