@@ -1,18 +1,37 @@
 # Paper Tracker Windows 离线安装与运维
 
-本文面向已经拿到“带种子数据的离线包”的 Windows 运维人员。以下示例把完整离线包放在
-`D:\PaperTracker\bundle`。安装器会把运行时配置写到离线包同级的
-`D:\PaperTracker\runtime\offline.env`，不会把密钥写回可分发的离线包。
+本文面向已经拿到“带种子数据的离线包”的 Windows 运维人员。本次交付的完整离线包位于
+`D:\Program\Pycharm\paper-tracker\docker\package`。安装器会把运行时配置写到离线包同级的
+`D:\Program\Pycharm\paper-tracker\docker\runtime\offline.env`，不会把密钥写回可分发的
+离线包。
 
-推荐目录结构：
+当前目录结构：
 
 ```text
-D:\PaperTracker\
-├── bundle\                         # 完整离线包，只读保存
+D:\Program\Pycharm\paper-tracker\docker\
+├── package\                        # 完整离线包，只读保存
 ├── runtime\
 │   └── offline.env                 # 安装器创建，含运行时密钥
-└── backups\                        # 人工指定的业务数据备份目录
+└── paper-tracker-offline-backups\  # 业务数据备份与恢复前安全备份
 ```
+
+每次新开一个 PowerShell 窗口，先执行以下变量定义。若将整个交付目录复制到另一台机器或其他
+位置，只修改 `$DockerRoot`；`package`、`runtime` 和备份目录保持上述相对位置：
+
+```powershell
+$DockerRoot = "D:\Program\Pycharm\paper-tracker\docker"
+$Bundle = Join-Path $DockerRoot "package"
+$EnvFile = Join-Path $DockerRoot "runtime\offline.env"
+$BackupDir = Join-Path $DockerRoot "paper-tracker-offline-backups"
+
+if (-not (Test-Path -LiteralPath (Join-Path $Bundle "bundle-manifest.json"))) {
+  throw "找不到完整离线包：$Bundle"
+}
+```
+
+日常操作请使用包内脚本。不要手工设置 `$env:PAPER_TRACKER_ENV_FILE`，也不要再拼写
+`docker compose --env-file ...`；包内脚本会按 seeded bundle 布局自动选择并校验
+`runtime\offline.env`，避免 PowerShell 续行或空变量导致参数错位。
 
 ## 1. 敏感数据警告
 
@@ -77,10 +96,8 @@ docker compose version
 首次安装只能用于尚未创建目标 Compose 项目和数据卷的主机。不要用它覆盖或升级现有部署。
 
 ```powershell
-Set-Location D:\PaperTracker\bundle
-
 powershell -ExecutionPolicy Bypass `
-  -File .\deploy\windows\Install-Offline.ps1
+  -File "$Bundle\deploy\windows\Install-Offline.ps1"
 ```
 
 安装器会按以下顺序执行：
@@ -115,11 +132,8 @@ http://127.0.0.1:8080/
 先启动 Docker Desktop 并确认 Linux 引擎可用，然后执行：
 
 ```powershell
-Set-Location D:\PaperTracker\bundle
-
 powershell -ExecutionPolicy Bypass `
-  -File .\deploy\windows\Start-Offline.ps1 `
-  -EnvFile D:\PaperTracker\runtime\offline.env
+  -File "$Bundle\deploy\windows\Start-Offline.ps1"
 ```
 
 脚本只使用本地镜像，以 `--no-build --pull never` 启动服务并等待健康检查。
@@ -132,10 +146,8 @@ manifest 含 `seed` 时，`Start-Offline.ps1`、`Stop-Offline.ps1` 和
 ## 6. 查看状态
 
 ```powershell
-Set-Location D:\PaperTracker\bundle
-
 powershell -ExecutionPolicy Bypass `
-  -File .\deploy\windows\Status-Offline.ps1
+  -File "$Bundle\deploy\windows\Status-Offline.ps1"
 ```
 
 默认读取离线包同级的 `runtime\offline.env`，显示 Compose 项目、数据卷、所有容器的运行/
@@ -143,8 +155,8 @@ powershell -ExecutionPolicy Bypass `
 
 ```powershell
 powershell -ExecutionPolicy Bypass `
-  -File .\deploy\windows\Status-Offline.ps1 `
-  -EnvFile D:\PaperTracker\runtime\offline.env
+  -File "$Bundle\deploy\windows\Status-Offline.ps1" `
+  -EnvFile $EnvFile
 ```
 
 Docker Desktop 未运行时，状态脚本会明确报错，而不是把引擎不可达误报为“服务已停止”。
@@ -152,10 +164,8 @@ Docker Desktop 未运行时，状态脚本会明确报错，而不是把引擎�
 ## 7. 停止 Paper Tracker
 
 ```powershell
-Set-Location D:\PaperTracker\bundle
-
 powershell -ExecutionPolicy Bypass `
-  -File .\deploy\windows\Stop-Offline.ps1
+  -File "$Bundle\deploy\windows\Stop-Offline.ps1"
 ```
 
 该命令停止全部 Paper Tracker 容器，但保留容器、网络、镜像和命名数据卷。下次使用
@@ -180,12 +190,9 @@ Desktop并确认引擎返回 `linux`，再运行 `Start-Offline.ps1`。
 创建一致性备份：
 
 ```powershell
-Set-Location D:\PaperTracker\bundle
-
 powershell -ExecutionPolicy Bypass `
-  -File .\deploy\windows\Backup-OfflineData.ps1 `
-  -EnvFile D:\PaperTracker\runtime\offline.env `
-  -BackupDirectory D:\PaperTracker\backups
+  -File "$Bundle\deploy\windows\Backup-OfflineData.ps1" `
+  -BackupDirectory $BackupDir
 ```
 
 备份脚本会临时停止请求入口和唯一的 backend 写入者，生成
@@ -201,12 +208,12 @@ powershell -ExecutionPolicy Bypass `
 `-EnvFile` 指向正确部署：
 
 ```powershell
-Set-Location D:\PaperTracker\bundle
+$Archive = Join-Path $BackupDir `
+  "paper-tracker-data-YYYYMMDD-HHMMSS-xxxxxxxx.tar.gz"
 
 powershell -ExecutionPolicy Bypass `
-  -File .\deploy\windows\Restore-OfflineData.ps1 `
-  -EnvFile D:\PaperTracker\runtime\offline.env `
-  -ArchivePath D:\PaperTracker\backups\paper-tracker-data-YYYYMMDD-HHMMSS-xxxxxxxx.tar.gz
+  -File "$Bundle\deploy\windows\Restore-OfflineData.ps1" `
+  -ArchivePath $Archive
 ```
 
 交互式确认不要跳过。脚本会先校验来源 SHA-256，停止写入者，创建并验证一份强制的
