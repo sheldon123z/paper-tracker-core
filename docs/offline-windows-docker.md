@@ -82,7 +82,8 @@ PAPER_TRACKER_ALLOW_PUBLIC_REGISTRATION=0
 ```
 
 然后再次运行 `Start-Offline.ps1` 使配置生效。不要删除或重新生成
-`ENCRYPTION_KEY`；它用于解密数据库中已保存的本地配置。
+`ENCRYPTION_KEY`；它用于解密数据库中已保存的本地配置。刷新登录页后，
+注册入口会通过后端运行时能力接口同步隐藏。
 
 ## 5. 本地模型
 

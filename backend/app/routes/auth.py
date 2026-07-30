@@ -2,7 +2,7 @@ import os
 import secrets
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
@@ -60,12 +60,24 @@ def _clear_auth_cookies(response: JSONResponse) -> None:
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
+def _public_registration_enabled() -> bool:
+    value = os.getenv("PAPER_TRACKER_ALLOW_PUBLIC_REGISTRATION", "").strip().lower()
+    return value in {"1", "true", "yes"}
+
+
+@router.get("/capabilities")
+def get_auth_capabilities(response: Response):
+    """Expose non-sensitive runtime auth switches to the login screen."""
+
+    response.headers["Cache-Control"] = "no-store"
+    return {"public_registration_enabled": _public_registration_enabled()}
+
+
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit("10/minute")
 def register(request: Request, body: RegisterRequest, db: Session = Depends(get_control_db)):
     """Public registration is disabled; managers provision accounts."""
-    allow_registration = os.getenv("PAPER_TRACKER_ALLOW_PUBLIC_REGISTRATION", "").strip().lower()
-    if allow_registration not in {"1", "true", "yes"}:
+    if not _public_registration_enabled():
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Public registration is disabled")
     # Validate password strength
     try:

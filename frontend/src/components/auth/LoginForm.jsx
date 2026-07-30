@@ -1,9 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../../api'
 import useStore from '../../store'
-
-const registrationEnabled = import.meta.env.VITE_ALLOW_PUBLIC_REGISTRATION === '1'
 
 /**
  * Glass login/register card with mode toggle.
@@ -11,6 +9,7 @@ const registrationEnabled = import.meta.env.VITE_ALLOW_PUBLIC_REGISTRATION === '
  */
 export default function LoginForm() {
   const [mode, setMode] = useState('login') // 'login' | 'register'
+  const [registrationEnabled, setRegistrationEnabled] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(null)
@@ -25,6 +24,24 @@ export default function LoginForm() {
 
   const navigate = useNavigate()
   const setAuth = useStore((s) => s.setAuth)
+
+  useEffect(() => {
+    let active = true
+
+    api.get('/api/auth/capabilities')
+      .then((response) => {
+        if (active) {
+          setRegistrationEnabled(response.data?.public_registration_enabled === true)
+        }
+      })
+      .catch(() => {
+        if (active) setRegistrationEnabled(false)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [])
 
   const resetForm = () => {
     setError(null)
@@ -96,6 +113,10 @@ export default function LoginForm() {
       setAuth(userData)
       navigate('/', { replace: true })
     } catch (err) {
+      if (err.response?.status === 403) {
+        setRegistrationEnabled(false)
+        setMode('login')
+      }
       const detail = err.response?.data?.detail || '注册失败，请重试。'
       setError(detail)
     } finally {

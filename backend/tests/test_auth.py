@@ -334,6 +334,21 @@ class AuthAPITestBase(unittest.IsolatedAsyncioTestCase):
 
 
 class RegisterTests(AuthAPITestBase):
+    async def test_capabilities_reflect_runtime_registration_setting(self):
+        enabled = await self.client.get("/api/auth/capabilities")
+        self.assertEqual(enabled.status_code, 200)
+        self.assertEqual(enabled.json(), {"public_registration_enabled": True})
+        self.assertEqual(enabled.headers["cache-control"], "no-store")
+
+        with patch.dict(
+            os.environ,
+            {"PAPER_TRACKER_ALLOW_PUBLIC_REGISTRATION": "0"},
+        ):
+            disabled = await self.client.get("/api/auth/capabilities")
+
+        self.assertEqual(disabled.status_code, 200)
+        self.assertEqual(disabled.json(), {"public_registration_enabled": False})
+
     async def test_register_success(self):
         res = await self._register()
         self.assertEqual(res.status_code, 201)
