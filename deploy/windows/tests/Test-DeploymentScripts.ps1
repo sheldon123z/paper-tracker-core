@@ -140,6 +140,27 @@ try {
     }
     [System.IO.Directory]::Delete($stagingSelection.Path)
 
+    $stagingOutside = Join-Path $testRoot "staging-outside"
+    $stagingJunction = Join-Path $testRoot "staging-junction"
+    [void](New-Item -ItemType Directory -Path $stagingOutside)
+    [void](New-Item -ItemType Junction -Path $stagingJunction `
+        -Target $stagingOutside)
+    $stagingJunctionFailure = $null
+    try {
+        [void](New-OfflineStagingDirectory `
+            -BundleRoot (Join-Path $stagingJunction "package"))
+    }
+    catch {
+        $stagingJunctionFailure = $_
+    }
+    if (
+        -not $stagingJunctionFailure -or
+        $stagingJunctionFailure.Exception.Message -notmatch "reparse point"
+    ) {
+        throw "Staging selection did not reject a junction ancestor."
+    }
+    [System.IO.Directory]::Delete($stagingJunction)
+
     $nonSeededRoot = Join-Path $testRoot "layout-nonseeded\package"
     [void](New-Item -ItemType Directory -Path $nonSeededRoot -Force)
     [System.IO.File]::WriteAllText(

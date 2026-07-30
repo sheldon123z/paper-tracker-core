@@ -210,6 +210,16 @@ $stagingPrefix = $staging.Prefix
 
 try {
     Protect-OfflineSensitiveDirectory -Path $stagingRoot
+    try {
+        Assert-OfflineSecretAcl -Path $stagingParent
+    }
+    catch {
+        Write-Warning (
+            "The selected staging parent is not restricted to the current " +
+            "operator, SYSTEM, and Administrators. Continue only on a trusted " +
+            "single-operator build host: $stagingParent"
+        )
+    }
     $sourceCopyRelative = $null
     $sourceCopyRoot = $null
     $snapshotSeedExport = $null
@@ -219,28 +229,46 @@ try {
         # The second source hash pass and the destination comparison ensure
         # the snapshot is one coherent, immutable input for both src and seed.
         $sourceBefore = @(Get-OfflineTreeSnapshot -Path $resolvedDataImport)
+        $sourceTreeItems = @(
+            Get-OfflineNoReparseTreeItems -Path $resolvedDataImport
+        )
         $sourceCopyRelative = "src"
         $sourceCopyRoot = Join-Path $stagingRoot $sourceCopyRelative
-        $maximumSnapshotPathLength = (
-            $sourceBefore |
-            ForEach-Object {
-                (
-                    Join-Path $sourceCopyRoot (
-                        ([string]$_.path).Replace(
-                            "/",
-                            [System.IO.Path]::DirectorySeparatorChar
-                        )
-                    )
-                ).Length
-            } |
-            Measure-Object -Maximum
+        $finalSourceCopyRoot = Join-Path $bundleRoot $sourceCopyRelative
+        $dataImportPrefixForPaths = $resolvedDataImport.TrimEnd(
+            [System.IO.Path]::DirectorySeparatorChar,
+            [System.IO.Path]::AltDirectorySeparatorChar
+        ) + [System.IO.Path]::DirectorySeparatorChar
+        $snapshotPathLengths = @(
+            foreach ($sourceItem in $sourceTreeItems) {
+                $relativeItemPath = $sourceItem.FullName.Substring(
+                    $dataImportPrefixForPaths.Length
+                )
+                [pscustomobject]@{
+                    Staging = (
+                        Join-Path $sourceCopyRoot $relativeItemPath
+                    ).Length
+                    Final = (
+                        Join-Path $finalSourceCopyRoot $relativeItemPath
+                    ).Length
+                }
+            }
+        )
+        $maximumStagingPathLength = (
+            $snapshotPathLengths | Measure-Object Staging -Maximum
         ).Maximum
-        if ([long]$maximumSnapshotPathLength -gt 259) {
+        $maximumFinalPathLength = (
+            $snapshotPathLengths | Measure-Object Final -Maximum
+        ).Maximum
+        if (
+            [long]$maximumStagingPathLength -gt 259 -or
+            [long]$maximumFinalPathLength -gt 259
+        ) {
             throw (
-                "The shortest writable staging path still exceeds the " +
-                "Windows PowerShell 5.1 path limit for this data set " +
-                "($maximumSnapshotPathLength characters). Choose a shorter " +
-                "bundle output location."
+                "The data tree exceeds the Windows PowerShell 5.1 path limit " +
+                "(staging=$maximumStagingPathLength, " +
+                "final=$maximumFinalPathLength characters). Choose a shorter " +
+                "bundle output location or shorten the source path names."
             )
         }
         [void](New-Item -ItemType Directory -Path $sourceCopyRoot)
@@ -511,11 +539,33 @@ Write-Utf8NoBom `
     -Path $manifestSidecarPath `
     -Content "$(Get-Sha256 -Path $manifestPath)  bundle-manifest.json`r`n"
 Protect-OfflineSensitiveTree -Path $stagingRoot
+$stagedTreeItems = @(Get-OfflineNoReparseTreeItems -Path $stagingRoot)
+$maximumCompletedFinalPathLength = (
+    $stagedTreeItems |
+    ForEach-Object {
+        $relativePath = $_.FullName.Substring($stagingRoot.Length).TrimStart(
+            [System.IO.Path]::DirectorySeparatorChar,
+            [System.IO.Path]::AltDirectorySeparatorChar
+        )
+        (Join-Path $bundleRoot $relativePath).Length
+    } |
+    Measure-Object -Maximum
+).Maximum
+if ([long]$maximumCompletedFinalPathLength -gt 259) {
+    throw (
+        "The completed bundle would exceed the Windows PowerShell 5.1 path " +
+        "limit ($maximumCompletedFinalPathLength characters). Choose a " +
+        "shorter output location."
+    )
+}
 
 $backupRoot = $null
 if (Test-Path -LiteralPath $bundleRoot) {
-    $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
-    $backupRoot = "$bundleRoot.bak-$timestamp-$([Guid]::NewGuid().ToString('N').Substring(0, 8))"
+    do {
+        $backupRoot = Join-Path $bundleParent (
+            ".old-$([Guid]::NewGuid().ToString('N').Substring(0, 8))"
+        )
+    } while (Test-Path -LiteralPath $backupRoot)
     Move-Item -LiteralPath $bundleRoot -Destination $backupRoot
 }
 try {
@@ -559,7 +609,27 @@ catch {
             ) -and
             $stagingLeaf.Substring($stagingPrefix.Length) -match "^[0-9a-f]{32}$"
         ) {
-            Remove-Item -LiteralPath $resolvedStaging -Recurse -Force
+            try {
+                $stagingItem = Get-Item -LiteralPath $resolvedStaging -Force
+                if (
+                    ($stagingItem.Attributes -band
+                        [System.IO.FileAttributes]::ReparsePoint) -ne 0
+                ) {
+                    throw "staging root is a reparse point"
+                }
+                else {
+                    [void](Get-OfflineNoReparseTreeItems `
+                        -Path $resolvedStaging)
+                    Remove-Item -LiteralPath $resolvedStaging -Recurse -Force
+                }
+            }
+            catch {
+                Write-Warning (
+                    "Failed staging tree could not be proven reparse-free " +
+                    "and was left for safe manual inspection: " +
+                    "$resolvedStaging"
+                )
+            }
         }
     }
     throw $buildError

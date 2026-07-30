@@ -94,7 +94,9 @@ function New-OfflineStagingDirectory {
     )
 
     $resolvedBundle = Resolve-OfflinePath -Path $BundleRoot
-    $bundleParent = Split-Path -Parent $resolvedBundle
+    $bundleParent = Assert-OfflineLocalPathNoReparse -Path (
+        Split-Path -Parent $resolvedBundle
+    )
     $volumeRoot = [System.IO.Path]::GetPathRoot($resolvedBundle)
     $candidateParents = @()
     $current = $bundleParent
