@@ -175,6 +175,17 @@ const parseArguments = (tokens) => {
   if (parsed.offline && parsed.force) {
     fail("--offline and --force cannot be used together.");
   }
+  if (
+    parsed.verify &&
+    (parsed.offline ||
+      parsed.force ||
+      parsed.only !== null ||
+      parsed.target !== null)
+  ) {
+    fail(
+      "--verify cannot be combined with --offline, --force, --only, or --target.",
+    );
+  }
   return parsed;
 };
 

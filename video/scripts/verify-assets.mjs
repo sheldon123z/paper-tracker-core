@@ -38,11 +38,9 @@ const assetsByVideo = {
   innovation: [
     "innovation-explainer/audio/final-mix.wav",
     "shared/stills/department-library.png",
-    "shared/stills/final-report.png",
     "shared/stills/public-library.png",
     "shared/recordings/03-import-analyzing.mp4",
     "shared/recordings/04-import-review.mp4",
-    "shared/recordings/10-assistant-result.mp4",
     "innovation-explainer/recordings/high-altitude-workflow-running.mp4",
     "innovation-explainer/recordings/high-altitude-workflow-result.mp4",
     "shared/recordings/15-access-control.mp4",
