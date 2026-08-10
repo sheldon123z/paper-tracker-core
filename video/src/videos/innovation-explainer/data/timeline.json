@@ -1,77 +1,77 @@
 {
   "fps": 30,
-  "durationInFrames": 7497,
-  "durationSeconds": 249.9,
+  "durationInFrames": 7575,
+  "durationSeconds": 252.5,
   "mode": "volcengine-tts-voiced",
   "scenes": [
     {
       "id": "scene-intro",
       "startFrame": 0,
-      "durationInFrames": 704,
+      "durationInFrames": 733,
       "startSeconds": 0,
-      "durationSeconds": 23.466667
-    },
-    {
-      "id": "scene-06",
-      "startFrame": 704,
-      "durationInFrames": 1125,
-      "startSeconds": 23.466667,
-      "durationSeconds": 37.5
+      "durationSeconds": 24.433333
     },
     {
       "id": "scene-00",
-      "startFrame": 1829,
+      "startFrame": 733,
       "durationInFrames": 494,
-      "startSeconds": 60.966667,
+      "startSeconds": 24.433333,
       "durationSeconds": 16.466667
     },
     {
       "id": "scene-01",
-      "startFrame": 2323,
+      "startFrame": 1227,
       "durationInFrames": 420,
-      "startSeconds": 77.433333,
+      "startSeconds": 40.9,
       "durationSeconds": 14
     },
     {
       "id": "scene-02",
-      "startFrame": 2743,
-      "durationInFrames": 660,
-      "startSeconds": 91.433333,
-      "durationSeconds": 22
+      "startFrame": 1647,
+      "durationInFrames": 675,
+      "startSeconds": 54.9,
+      "durationSeconds": 22.5
     },
     {
       "id": "scene-04",
-      "startFrame": 3403,
+      "startFrame": 2322,
       "durationInFrames": 970,
-      "startSeconds": 113.433333,
+      "startSeconds": 77.4,
       "durationSeconds": 32.333333
     },
     {
       "id": "scene-architecture",
-      "startFrame": 4373,
-      "durationInFrames": 1189,
-      "startSeconds": 145.766667,
-      "durationSeconds": 39.633333
+      "startFrame": 3292,
+      "durationInFrames": 1216,
+      "startSeconds": 109.733333,
+      "durationSeconds": 40.533333
     },
     {
       "id": "scene-03",
-      "startFrame": 5562,
+      "startFrame": 4508,
       "durationInFrames": 820,
-      "startSeconds": 185.4,
+      "startSeconds": 150.266667,
       "durationSeconds": 27.333333
     },
     {
+      "id": "scene-06",
+      "startFrame": 5328,
+      "durationInFrames": 1132,
+      "startSeconds": 177.6,
+      "durationSeconds": 37.733333
+    },
+    {
       "id": "scene-07",
-      "startFrame": 6382,
+      "startFrame": 6460,
       "durationInFrames": 923,
-      "startSeconds": 212.733333,
+      "startSeconds": 215.333333,
       "durationSeconds": 30.766667
     },
     {
       "id": "scene-outro",
-      "startFrame": 7305,
+      "startFrame": 7383,
       "durationInFrames": 192,
-      "startSeconds": 243.5,
+      "startSeconds": 246.1,
       "durationSeconds": 6.4
     }
   ]

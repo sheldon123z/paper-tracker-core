@@ -95,7 +95,7 @@ export const S00ResearchPain: React.FC<{ durationInFrames: number }> = ({
   return (
     <SceneFrame
       durationInFrames={durationInFrames}
-      eyebrow="02 · RESEARCH FRICTION"
+      eyebrow="01 · RESEARCH FRICTION"
       title="资料分散，让工程研究时间耗在重复调研"
     >
       <div

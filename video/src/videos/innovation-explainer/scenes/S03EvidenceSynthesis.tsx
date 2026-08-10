@@ -314,7 +314,7 @@ export const S03EvidenceSynthesis: React.FC<{ durationInFrames: number }> = ({
   return (
     <SceneFrame
       durationInFrames={durationInFrames}
-      eyebrow="07 · RESEARCH OUTCOME"
+      eyebrow="06 · RESEARCH OUTCOME"
       title="从跨文献证据，到结构化综述初稿"
     >
       <div style={{ opacity }}>

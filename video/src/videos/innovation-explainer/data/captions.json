@@ -2,343 +2,343 @@
   {
     "text": "面向重大工程技术攻关，研究课题正进入更加复杂的新阶段。",
     "startMs": 300,
-    "endMs": 5400,
+    "endMs": 5766.667,
     "timestampMs": null,
     "confidence": null
   },
   {
     "text": "资料更庞杂，技术迭代节奏更快。",
-    "startMs": 5600,
-    "endMs": 8400,
+    "startMs": 5966.667,
+    "endMs": 9266.667,
     "timestampMs": null,
     "confidence": null
   },
   {
     "text": "专业领域大模型智能文献检索与知识服务，以领域知识资产为基础，",
-    "startMs": 8600,
-    "endMs": 13766.667,
+    "startMs": 9466.667,
+    "endMs": 14900,
     "timestampMs": null,
     "confidence": null
   },
   {
     "text": "以专业领域大模型和研究智能体为核心，在专家设定的目标内，",
-    "startMs": 13966.667,
-    "endMs": 18733.333,
+    "startMs": 15100,
+    "endMs": 19866.667,
     "timestampMs": null,
     "confidence": null
   },
   {
     "text": "提供可信可控、可持续复用的智能知识服务。",
-    "startMs": 18933.333,
-    "endMs": 22866.667,
-    "timestampMs": null,
-    "confidence": null
-  },
-  {
-    "text": "服务坚持安全内生，而不是事后附加。",
-    "startMs": 23666.667,
-    "endMs": 26933.333,
-    "timestampMs": null,
-    "confidence": null
-  },
-  {
-    "text": "论文、数据、模型推理、工作流状态和研究成果，",
-    "startMs": 27133.333,
-    "endMs": 32166.667,
-    "timestampMs": null,
-    "confidence": null
-  },
-  {
-    "text": "全部在本地离线环境中闭环流转，科研资料不出本地。",
-    "startMs": 32366.667,
-    "endMs": 36933.333,
-    "timestampMs": null,
-    "confidence": null
-  },
-  {
-    "text": "统一身份、角色和部门属性，共同确定数据访问范围。",
-    "startMs": 37133.333,
-    "endMs": 42133.333,
-    "timestampMs": null,
-    "confidence": null
-  },
-  {
-    "text": "部门专属科研资料作为内部受控科研资产，纳入独立资料域严格隔离。",
-    "startMs": 42333.333,
-    "endMs": 47933.333,
-    "timestampMs": null,
-    "confidence": null
-  },
-  {
-    "text": "对非本部门用户默认不可见；未经授权，不得跨部门访问、调用或流转。",
-    "startMs": 48133.333,
-    "endMs": 54133.333,
-    "timestampMs": null,
-    "confidence": null
-  },
-  {
-    "text": "智能体继承用户权限边界，关键操作与模型调用全程留痕、可审计、可追溯。",
-    "startMs": 54333.333,
-    "endMs": 60866.667,
+    "startMs": 20066.667,
+    "endMs": 23833.333,
     "timestampMs": null,
     "confidence": null
   },
   {
     "text": "在关键装备、复杂工况、协同控制等研究中，",
-    "startMs": 61166.667,
-    "endMs": 65400,
+    "startMs": 24633.333,
+    "endMs": 28733.333,
     "timestampMs": null,
     "confidence": null
   },
   {
     "text": "论文和既有成果往往分散在不同人员、部门和文件中。",
-    "startMs": 65600,
-    "endMs": 70533.333,
+    "startMs": 28933.333,
+    "endMs": 34166.667,
     "timestampMs": null,
     "confidence": null
   },
   {
     "text": "相似调研反复开展，关键证据难关联，个人积累也难持续复用。",
-    "startMs": 70733.333,
-    "endMs": 76933.333,
+    "startMs": 34366.667,
+    "endMs": 40100,
     "timestampMs": null,
     "confidence": null
   },
   {
     "text": "普通PDF阅读器解决的是“看一篇”；",
-    "startMs": 77633.333,
-    "endMs": 80566.667,
+    "startMs": 41100,
+    "endMs": 44000,
     "timestampMs": null,
     "confidence": null
   },
   {
     "text": "知识服务关注的是围绕一个工程技术问题，",
-    "startMs": 80766.667,
-    "endMs": 84066.667,
+    "startMs": 44200,
+    "endMs": 47200,
     "timestampMs": null,
     "confidence": null
   },
   {
     "text": "持续形成有证据支撑的答案，",
-    "startMs": 84266.667,
-    "endMs": 86933.333,
+    "startMs": 47400,
+    "endMs": 50066.667,
     "timestampMs": null,
     "confidence": null
   },
   {
     "text": "贯通跨文献证据、综合分析与成果输出。",
-    "startMs": 87133.333,
-    "endMs": 91066.667,
+    "startMs": 50266.667,
+    "endMs": 53966.667,
     "timestampMs": null,
     "confidence": null
   },
   {
     "text": "批量导入的论文，在本地完成解析、OCR与去重分析，",
-    "startMs": 91633.333,
-    "endMs": 96233.333,
+    "startMs": 55100,
+    "endMs": 60433.333,
     "timestampMs": null,
     "confidence": null
   },
   {
     "text": "复核后按照权限进入公共论文库或部门论文库。",
-    "startMs": 96433.333,
-    "endMs": 100800,
+    "startMs": 60633.333,
+    "endMs": 64733.333,
     "timestampMs": null,
     "confidence": null
   },
   {
     "text": "论文全文、元数据、研究记录和分析成果由此统一关联。",
-    "startMs": 101000,
-    "endMs": 106133.333,
+    "startMs": 64933.333,
+    "endMs": 69966.667,
     "timestampMs": null,
     "confidence": null
   },
   {
     "text": "一次整理，持续复用，让分散论文沉淀为重大工程专业知识资产。",
-    "startMs": 106333.333,
-    "endMs": 111833.333,
+    "startMs": 70166.667,
+    "endMs": 75800,
     "timestampMs": null,
     "confidence": null
   },
   {
     "text": "服务的核心创新之一，是专业领域大模型与研究智能体协同。",
-    "startMs": 113633.333,
-    "endMs": 118433.333,
+    "startMs": 77600,
+    "endMs": 82300,
     "timestampMs": null,
     "confidence": null
   },
   {
     "text": "工程技术人员提出目标并确认约束后，",
-    "startMs": 118633.333,
-    "endMs": 121700,
+    "startMs": 82500,
+    "endMs": 85400,
     "timestampMs": null,
     "confidence": null
   },
   {
     "text": "智能体在当前授权论文库范围内，按模板拆解任务、编排步骤，",
-    "startMs": 121900,
-    "endMs": 126766.667,
+    "startMs": 85600,
+    "endMs": 90766.667,
     "timestampMs": null,
     "confidence": null
   },
   {
     "text": "连续完成文献检索、证据筛选和跨文献组织，",
-    "startMs": 126966.667,
-    "endMs": 130933.333,
+    "startMs": 90966.667,
+    "endMs": 94866.667,
     "timestampMs": null,
     "confidence": null
   },
   {
     "text": "归纳技术路线、识别研究约束、分析潜在线索并合成报告。",
-    "startMs": 131133.333,
-    "endMs": 136200,
+    "startMs": 95066.667,
+    "endMs": 100300,
     "timestampMs": null,
     "confidence": null
   },
   {
     "text": "它不是一次简单问答，而是能够保持任务状态、调用专业工具，",
-    "startMs": 136400,
-    "endMs": 141466.667,
+    "startMs": 100500,
+    "endMs": 105100,
     "timestampMs": null,
     "confidence": null
   },
   {
     "text": "在专家监督下持续推进研究流程的智能协作者。",
-    "startMs": 141666.667,
-    "endMs": 145566.667,
+    "startMs": 105300,
+    "endMs": 109333.333,
     "timestampMs": null,
     "confidence": null
   },
   {
     "text": "服务采用Agentic Workflow，也就是智能体工作流架构。",
-    "startMs": 145966.667,
-    "endMs": 150166.667,
+    "startMs": 109933.333,
+    "endMs": 113766.667,
     "timestampMs": null,
     "confidence": null
   },
   {
     "text": "LangGraph承载有状态任务图，Supervisor按专业模板完成阶段编排。",
-    "startMs": 150366.667,
-    "endMs": 156400,
+    "startMs": 113966.667,
+    "endMs": 121133.333,
     "timestampMs": null,
     "confidence": null
   },
   {
     "text": "检索、筛选、分析和报告合成，由Supervisor调度工具增强执行。",
-    "startMs": 156600,
-    "endMs": 163100,
+    "startMs": 121333.333,
+    "endMs": 127533.333,
     "timestampMs": null,
     "confidence": null
   },
   {
     "text": "持久化检查点记录任务状态，为复杂长任务的中断续接提供基础。",
-    "startMs": 163300,
-    "endMs": 168900,
+    "startMs": 127733.333,
+    "endMs": 133233.333,
     "timestampMs": null,
     "confidence": null
   },
   {
     "text": "AG-UI以流式方式实时呈现执行步骤、工具动作和中间结果，",
-    "startMs": 169100,
-    "endMs": 174800,
+    "startMs": 133433.333,
+    "endMs": 139833.333,
     "timestampMs": null,
     "confidence": null
   },
   {
     "text": "使智能体工作全过程可观察、可干预、可追溯。",
-    "startMs": 175000,
-    "endMs": 179633.333,
+    "startMs": 140033.333,
+    "endMs": 144566.667,
     "timestampMs": null,
     "confidence": null
   },
   {
     "text": "专家可以随时审阅、追问和修正，并始终保留最终判断权。",
-    "startMs": 179833.333,
-    "endMs": 185200,
+    "startMs": 144766.667,
+    "endMs": 150066.667,
     "timestampMs": null,
     "confidence": null
   },
   {
     "text": "例如，围绕“高海拔地区电力设备选型”，",
-    "startMs": 185600,
-    "endMs": 188900,
+    "startMs": 150466.667,
+    "endMs": 153966.667,
     "timestampMs": null,
     "confidence": null
   },
   {
     "text": "智能体可以在多篇授权文献中组织证据、对比不同技术路线，",
-    "startMs": 189100,
-    "endMs": 194133.333,
+    "startMs": 154166.667,
+    "endMs": 159033.333,
     "timestampMs": null,
     "confidence": null
   },
   {
     "text": "识别结论差异、适用条件和研究约束，并生成结构化的综述初稿。",
-    "startMs": 194333.333,
-    "endMs": 199866.667,
+    "startMs": 159233.333,
+    "endMs": 164833.333,
     "timestampMs": null,
     "confidence": null
   },
   {
     "text": "效率提升，并不只是把页面翻得更快。",
-    "startMs": 200066.667,
-    "endMs": 202933.333,
+    "startMs": 165033.333,
+    "endMs": 167900,
     "timestampMs": null,
     "confidence": null
   },
   {
     "text": "更重要的是，减少反复查找、信息搬运和重复汇总，",
-    "startMs": 203133.333,
-    "endMs": 207866.667,
+    "startMs": 168100,
+    "endMs": 172666.667,
     "timestampMs": null,
     "confidence": null
   },
   {
     "text": "把工程技术人员的时间真正还给专业判断与创新思考。",
-    "startMs": 208066.667,
-    "endMs": 212533.333,
+    "startMs": 172866.667,
+    "endMs": 177100,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "服务坚持安全内生，而不是事后附加。",
+    "startMs": 177800,
+    "endMs": 181133.333,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "论文、数据、模型推理、工作流状态和研究成果，",
+    "startMs": 181333.333,
+    "endMs": 186333.333,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "全部在本地离线环境中闭环流转，科研资料不出本地。",
+    "startMs": 186533.333,
+    "endMs": 191133.333,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "统一身份、角色和部门属性，共同确定数据访问范围。",
+    "startMs": 191333.333,
+    "endMs": 196133.333,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "部门专属科研资料作为内部受控科研资产，纳入独立资料域严格隔离。",
+    "startMs": 196333.333,
+    "endMs": 201866.667,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "对非本部门用户默认不可见；未经授权，不得跨部门访问、调用或流转。",
+    "startMs": 202066.667,
+    "endMs": 208266.667,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "智能体继承用户权限边界，关键操作与模型调用全程留痕、可审计、可追溯。",
+    "startMs": 208466.667,
+    "endMs": 215233.333,
     "timestampMs": null,
     "confidence": null
   },
   {
     "text": "专业领域大模型智能文献检索与知识服务，连接文献、知识与工程任务，",
-    "startMs": 212933.333,
-    "endMs": 219200,
+    "startMs": 215533.333,
+    "endMs": 221533.333,
     "timestampMs": null,
     "confidence": null
   },
   {
     "text": "面向重大工程技术攻关，提供持续的智能知识服务。",
-    "startMs": 219400,
-    "endMs": 224033.333,
+    "startMs": 221733.333,
+    "endMs": 226133.333,
     "timestampMs": null,
     "confidence": null
   },
   {
     "text": "它把分散论文沉淀为领域知识，把个人积累转化为组织工程创新能力。",
-    "startMs": 224233.333,
-    "endMs": 230400,
+    "startMs": 226333.333,
+    "endMs": 232533.333,
     "timestampMs": null,
     "confidence": null
   },
   {
     "text": "把被动查找资料升级为目标约束、智能体执行、专家在环的协同研究。",
-    "startMs": 230600,
-    "endMs": 236433.333,
+    "startMs": 232733.333,
+    "endMs": 238600,
     "timestampMs": null,
     "confidence": null
   },
   {
     "text": "未来还可拓展专题持续跟踪与研究线索发现，支撑重大工程技术创新。",
-    "startMs": 236633.333,
-    "endMs": 243400,
+    "startMs": 238800,
+    "endMs": 245400,
     "timestampMs": null,
     "confidence": null
   },
   {
     "text": "让资料成为知识，让知识服务重大工程技术创新。",
-    "startMs": 244000,
-    "endMs": 248900,
+    "startMs": 246600,
+    "endMs": 250966.667,
     "timestampMs": null,
     "confidence": null
   }

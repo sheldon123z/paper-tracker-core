@@ -117,7 +117,7 @@ export const S01NotJustReader: React.FC<{ durationInFrames: number }> = ({
   return (
     <SceneFrame
       durationInFrames={durationInFrames}
-      eyebrow="03 · FROM READING TO RESEARCH"
+      eyebrow="02 · FROM READING TO RESEARCH"
       title="从阅读单篇论文，到研究一个工程技术问题"
     >
       <div

@@ -506,7 +506,7 @@ export const S05AgentArchitecture: React.FC<{
   return (
     <SceneFrame
       durationInFrames={durationInFrames}
-      eyebrow="06 · AGENTIC ARCHITECTURE"
+      eyebrow="05 · AGENTIC ARCHITECTURE"
       title="专业领域大模型驱动的智能体工作流"
     >
       <div

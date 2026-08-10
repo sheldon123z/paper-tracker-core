@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,6 +10,22 @@ const assetRoot = path.resolve(
     path.join(projectRoot, "..", "..", "video-assets"),
 );
 const renderInputRoot = path.join(assetRoot, "render-inputs");
+
+const canonicalJson = (value) => {
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalJson).join(",")}]`;
+  }
+  if (value !== null && typeof value === "object") {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+};
+
+const sha256 = (value) =>
+  createHash("sha256").update(value).digest("hex").toUpperCase();
 
 const sharedRecordings = [
   "shared/recordings/01-dashboard-overview.mp4",
@@ -206,25 +223,47 @@ const validateInnovationReviewData = () => {
     projectRoot,
     "src/videos/innovation-explainer/data/captions.json",
   );
+  const authorizationPath = path.join(
+    projectRoot,
+    "render-props/innovation-tts-authorization.json",
+  );
   const timeline = JSON.parse(fs.readFileSync(timelinePath, "utf8"));
   const captions = JSON.parse(fs.readFileSync(captionsPath, "utf8"));
+  const authorization = JSON.parse(fs.readFileSync(authorizationPath, "utf8"));
+  const captionsSha256 = sha256(canonicalJson(captions));
+  const authorizedDurationSeconds =
+    authorization?.retiming?.authorizedDurationSeconds;
+  const authorizedDurationInFrames = authorizedDurationSeconds * 30;
 
-  if (timeline.fps !== 30 || timeline.durationInFrames !== 7497) {
+  if (
+    authorization?.authorized !== true ||
+    authorization?.captionHashMode !== "canonical-json-v1" ||
+    authorization?.captionSha256 !== captionsSha256 ||
+    authorization?.captions?.hashMode !== "canonical-json-v1" ||
+    authorization?.captions?.sha256 !== captionsSha256 ||
+    authorization?.captions?.count !== 49 ||
+    timeline.fps !== 30 ||
+    timeline.mode !== "volcengine-tts-voiced" ||
+    !Number.isFinite(authorizedDurationSeconds) ||
+    !Number.isInteger(authorizedDurationInFrames) ||
+    timeline.durationInFrames !== authorizedDurationInFrames ||
+    timeline.durationSeconds !== authorizedDurationSeconds
+  ) {
     throw new Error(
-      `Innovation voiced timeline must be exactly 7497 frames at 30 fps; ` +
+      `Innovation review data must match its explicit TTS authorization; ` +
         `received ${timeline.durationInFrames} frames at ${timeline.fps} fps.`,
     );
   }
 
   const expectedSceneOrder = [
     "scene-intro",
-    "scene-06",
     "scene-00",
     "scene-01",
     "scene-02",
     "scene-04",
     "scene-architecture",
     "scene-03",
+    "scene-06",
     "scene-07",
     "scene-outro",
   ];
@@ -236,7 +275,7 @@ const validateInnovationReviewData = () => {
     )
   ) {
     throw new Error(
-      `Innovation review scene order must put security-by-design first: ` +
+      `Innovation review scene order must put security-by-design seventh before the final summary: ` +
         `${expectedSceneOrder.join(" -> ")}.`,
     );
   }
@@ -256,9 +295,9 @@ const validateInnovationReviewData = () => {
 
   const durationMs = (timeline.durationInFrames / timeline.fps) * 1000;
   let previousEndMs = 0;
-  if (captions.length > 50) {
+  if (captions.length !== 49) {
     throw new Error(
-      `Innovation review captions must stay at or below 50 cues; received ${captions.length}.`,
+      `Innovation review captions must contain exactly 49 cues; received ${captions.length}.`,
     );
   }
   for (const [index, caption] of captions.entries()) {
@@ -272,7 +311,7 @@ const validateInnovationReviewData = () => {
       caption.startMs >= previousEndMs &&
       caption.endMs <= durationMs &&
       captionDuration >= 2500 &&
-      captionDuration <= 7000 &&
+      captionDuration <= 7500 &&
       caption.timestampMs === null &&
       caption.confidence === null;
     if (!validCaption) {
@@ -281,17 +320,29 @@ const validateInnovationReviewData = () => {
     previousEndMs = caption.endMs;
   }
 
+  const captionSceneMemberships = Array(captions.length).fill(0);
   for (const scene of timeline.scenes) {
     const sceneStartMs = (scene.startFrame / timeline.fps) * 1000;
     const sceneEndMs =
       ((scene.startFrame + scene.durationInFrames) / timeline.fps) * 1000;
-    const sceneCaptions = captions.filter(
-      (caption) =>
-        caption.startMs >= sceneStartMs && caption.endMs <= sceneEndMs,
-    );
-    if (sceneCaptions.length === 0) {
+    let sceneCaptionCount = 0;
+    for (const [index, caption] of captions.entries()) {
+      if (caption.startMs >= sceneStartMs && caption.endMs <= sceneEndMs) {
+        captionSceneMemberships[index]++;
+        sceneCaptionCount++;
+      }
+    }
+    if (sceneCaptionCount === 0) {
       throw new Error(`Innovation review scene has no captions: ${scene.id}.`);
     }
+  }
+  const invalidMembershipIndex = captionSceneMemberships.findIndex(
+    (membershipCount) => membershipCount !== 1,
+  );
+  if (invalidMembershipIndex !== -1) {
+    throw new Error(
+      `Innovation review caption ${invalidMembershipIndex + 1} must belong to exactly one scene.`,
+    );
   }
 
   return captions.length;

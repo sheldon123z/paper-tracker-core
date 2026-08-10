@@ -494,7 +494,7 @@ export const S02KnowledgeAssets: React.FC<{ durationInFrames: number }> = ({
   return (
     <SceneFrame
       durationInFrames={durationInFrames}
-      eyebrow="04 · DOMAIN KNOWLEDGE ASSET"
+      eyebrow="03 · DOMAIN KNOWLEDGE ASSET"
       title="一次整理，沉淀专业领域知识资产"
     >
       <ProcessSchematic frame={frame} />

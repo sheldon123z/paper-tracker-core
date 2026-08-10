@@ -207,8 +207,9 @@ Options:
   --help         Show this help.
 
 Generation requires VOLCENGINE_TTS_API_KEY. The key is never written to disk or
-included in child-process environments. Full generation creates an exact
-249.9-second, 48 kHz, stereo PCM WAV and backs up an existing target before publish.`);
+included in child-process environments. Full generation creates a 48 kHz,
+stereo PCM WAV whose duration matches the explicit authorization and backs up
+an existing target before publish.`);
 };
 
 const loadInputs = () => {
@@ -222,13 +223,19 @@ const loadInputs = () => {
       `Expected exactly 49 innovation captions; received ${captions?.length}.`,
     );
   }
+  const authorizedDurationSeconds =
+    authorization?.retiming?.authorizedDurationSeconds;
+  const authorizedDurationInFrames = authorizedDurationSeconds * 30;
   if (
     timeline?.fps !== 30 ||
-    timeline?.durationInFrames !== 7497 ||
-    timeline?.durationSeconds !== 249.9
+    timeline?.mode !== "volcengine-tts-voiced" ||
+    !Number.isFinite(authorizedDurationSeconds) ||
+    !Number.isInteger(authorizedDurationInFrames) ||
+    timeline?.durationInFrames !== authorizedDurationInFrames ||
+    timeline?.durationSeconds !== authorizedDurationSeconds
   ) {
     fail(
-      "Innovation narration requires the authorized 7497-frame/249.9-second voiced timeline.",
+      "Innovation narration requires a voiced timeline whose duration matches the explicit TTS authorization.",
     );
   }
   const captionsSha256 = sha256(canonicalJson(captions));
