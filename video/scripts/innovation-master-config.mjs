@@ -2,6 +2,11 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
+export const INNOVATION_H264_METADATA_FILTER =
+  "h264_metadata=video_full_range_flag=0:colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1";
+export const INNOVATION_VIDEO_STREAM_HASH_POLICY =
+  "annex-b-h264-bt709-limited-v1";
+
 const assert = (condition, message) => {
   if (!condition) {
     throw new Error(message);
@@ -111,8 +116,13 @@ export const loadInnovationMasterConfig = (projectRoot) => {
   const renderProps = JSON.parse(fs.readFileSync(renderPropsPath, "utf8"));
   const mastering = renderProps.mastering;
   assert(
-    mastering?.schemaVersion === 1,
+    mastering?.schemaVersion === 2,
     "Innovation final render props have no supported mastering metadata.",
+  );
+  assert(
+    mastering.videoStreamHashPolicy ===
+      INNOVATION_VIDEO_STREAM_HASH_POLICY,
+    "Innovation mastering uses an unsupported video-stream hash policy.",
   );
   assert(
     Number.isInteger(mastering.outputDurationInFrames) &&

@@ -1,7 +1,9 @@
 param(
   [Parameter(Mandatory = $true)]
   [ValidateSet("innovation", "workflow")]
-  [string]$Video
+  [string]$Video,
+
+  [string]$NarrationPath
 )
 
 $ErrorActionPreference = "Stop"
@@ -30,6 +32,36 @@ $assetRoot = if ([System.IO.Path]::IsPathRooted($assetSetting)) {
   [System.IO.Path]::GetFullPath((Join-Path $projectRoot $assetSetting))
 }
 $env:VIDEO_ASSETS_DIR = $assetRoot
+$browserExecutable = @(
+  (Join-Path $env:ProgramFiles "Google\Chrome\Application\chrome.exe"),
+  (Join-Path ${env:ProgramFiles(x86)} "Google\Chrome\Application\chrome.exe"),
+  (Join-Path $env:LOCALAPPDATA "Google\Chrome\Application\chrome.exe")
+) | Where-Object {
+  -not [string]::IsNullOrWhiteSpace($_) -and
+  (Test-Path -LiteralPath $_ -PathType Leaf)
+} | Select-Object -First 1
+if ([string]::IsNullOrWhiteSpace($browserExecutable)) {
+  throw "A local Google Chrome executable is required for deterministic video rendering."
+}
+
+$customNarration = $null
+if (-not [string]::IsNullOrWhiteSpace($NarrationPath)) {
+  if ($Video -ne "innovation") {
+    throw "-NarrationPath is supported only for the innovation video."
+  }
+  $candidate = if ([System.IO.Path]::IsPathRooted($NarrationPath)) {
+    $NarrationPath
+  } else {
+    Join-Path $projectRoot $NarrationPath
+  }
+  $customNarration = [System.IO.Path]::GetFullPath($candidate)
+  if (-not (Test-Path -LiteralPath $customNarration -PathType Leaf)) {
+    throw "Narration WAV not found: $customNarration"
+  }
+  if ([System.IO.Path]::GetExtension($customNarration) -ine ".wav") {
+    throw "NarrationPath must identify a WAV file."
+  }
+}
 
 if (-not (Test-Path -LiteralPath $assetRoot -PathType Container)) {
   throw "Video asset root not found: $assetRoot"
@@ -46,17 +78,29 @@ if ($Video -eq "innovation") {
     throw "Formal innovation render is locked: TTS authorization is not true."
   }
 
-  $narrationVerifier = Join-Path $projectRoot "scripts\generate-volcengine-narration.mjs"
-  & node $narrationVerifier --verify
-  if ($LASTEXITCODE -ne 0) {
-    throw "Formal innovation render is locked: narration authorization or media verification failed."
+  if ($null -eq $customNarration) {
+    $narrationVerifier = Join-Path $projectRoot "scripts\generate-volcengine-narration.mjs"
+    & node $narrationVerifier --verify
+    if ($LASTEXITCODE -ne 0) {
+      throw "Formal innovation render is locked: narration authorization or media verification failed."
+    }
+  } else {
+    $hybridVerifier = Join-Path $projectRoot "scripts\assemble-innovation-hybrid-narration.mjs"
+    & node $hybridVerifier --verify --wav $customNarration
+    if ($LASTEXITCODE -ne 0) {
+      throw "Formal innovation render is locked: custom narration failed hybrid verification."
+    }
   }
 }
 
 if ($Video -eq "innovation") {
   $assetFolder = "innovation-explainer"
   $composition = "PaperTrackerInnovationExplainer"
-  $baseName = "paper-tracker-innovation-explainer-2k"
+  $baseName = if ($null -ne $customNarration) {
+    "paper-tracker-innovation-explainer-opening-restructure-2k"
+  } else {
+    "paper-tracker-innovation-explainer-2k"
+  }
   $timelinePath = Join-Path $projectRoot "src\videos\innovation-explainer\data\timeline.json"
   $compositionProps = Join-Path $projectRoot "render-props\innovation-final.json"
 } else {
@@ -82,7 +126,11 @@ if ($fps -le 0) {
 }
 
 $outputDir = Join-Path $assetRoot "$assetFolder\renders"
-$cleanMix = Join-Path $assetRoot "render-inputs\$assetFolder\audio\final-mix.wav"
+$cleanMix = if ($null -ne $customNarration) {
+  $customNarration
+} else {
+  Join-Path $assetRoot "render-inputs\$assetFolder\audio\final-mix.wav"
+}
 $raw = Join-Path $outputDir "$baseName-raw.mp4"
 $final = Join-Path $outputDir "$baseName.mp4"
 
@@ -94,7 +142,11 @@ New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
 
 Push-Location $projectRoot
 try {
-  & node scripts/verify-assets.mjs --video $Video
+  $assetVerifyArgs = @("scripts/verify-assets.mjs", "--video", $Video)
+  if ($null -ne $customNarration) {
+    $assetVerifyArgs += "--review"
+  }
+  & node @assetVerifyArgs
   if ($LASTEXITCODE -ne 0) {
     throw "Render asset validation failed."
   }
@@ -107,6 +159,7 @@ try {
     --pixel-format=yuv420p `
     --color-space=bt709 `
     --props=$compositionProps `
+    --browser-executable=$browserExecutable `
     --concurrency=2
   if ($LASTEXITCODE -ne 0) {
     throw "$composition raw render failed."

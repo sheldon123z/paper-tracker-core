@@ -1,17 +1,25 @@
 {
   "schemaVersion": 1,
   "authorized": true,
-  "authorizedAt": "2026-08-10",
-  "purpose": "为 Paper Tracker 创新性讲解视频生成全片统一的中文技术旁白",
+  "authorizedAt": "2026-08-11",
+  "purpose": "为重构后的 Paper Tracker 创新性讲解视频生成新开头第 1 至 5 条旁白，并复用用户已确认的后续旁白",
   "captionHashMode": "canonical-json-v1",
-  "captionSha256": "F0B70D2566E28CE222F2FA7C0FF258A915ABB46FB46A96489692C0365BE5F280",
+  "captionSha256": "95E6E3374CE5615CBB4B0DAB7E69FAC5A1F0E6AC2DCBFA972AE3BE76CA63A966",
   "provider": "火山引擎",
   "endpoint": "https://openspeech.bytedance.com/api/v3/tts/unidirectional",
   "captions": {
     "file": "src/videos/innovation-explainer/data/captions.json",
-    "sha256": "F0B70D2566E28CE222F2FA7C0FF258A915ABB46FB46A96489692C0365BE5F280",
+    "sha256": "95E6E3374CE5615CBB4B0DAB7E69FAC5A1F0E6AC2DCBFA972AE3BE76CA63A966",
     "hashMode": "canonical-json-v1",
-    "count": 49
+    "count": 37
+  },
+  "timeline": {
+    "file": "src/videos/innovation-explainer/data/timeline.json",
+    "sha256": "6C95AC244CB9FF4A7CE96A5CE31997769F135B28341FCF8C729C83443F070B57",
+    "hashMode": "canonical-json-v1",
+    "fps": 30,
+    "durationInFrames": 5778,
+    "durationSeconds": 192.6
   },
   "model": {
     "resourceId": "seed-tts-2.0"
@@ -43,16 +51,39 @@
       ]
     }
   },
+  "generationStatus": {
+    "state": "complete",
+    "newTtsCues": [1, 2, 3, 4, 5],
+    "plannedReusedSourceCues": ["13-43", "49"],
+    "generatedInThisRevision": true,
+    "verifiedInThisRevision": true,
+    "finalMixGenerated": true,
+    "finalMixVerified": true
+  },
+  "reusePolicy": {
+    "acceptedMaster24kMono": "output/innovation-section05-tts-v3/section05-tts-v3-master-24k-mono.wav",
+    "acceptedMasterSha256": "47E30AD6869A9D70A704A2078D22805B425E486B18E80BE511C374ED1BBA9E3B",
+    "bodyPrefixPcmSha256": "C537AB938FFC7107C5E3BE27E42D6292EB9E4DA7454B69B901AF3739C7B1CCFB",
+    "bodySuffixPcmSha256": "9E818B965E0FBA83E536601F11197CBEC867DA3D9CF43A7CACC1B051D6BF62FF",
+    "removedSilencePcmSha256": "16FA66A7DC98D93F2A4C5D20BAF5177F59C4C37FC62FACE65690C11C15FE6FF9",
+    "removedSilenceSourceFrames": [3596, 3628],
+    "retimedBodyPcmSha256": "92C306E32C928872F483AF08D1BA1487954C3767D53CBF7DE9400C7931288195",
+    "outroPcmSha256": "FAB093499CDB049B50AD647E4306A70F029CD987A21B52D469A333E2828ABFF3",
+    "preserveAcceptedAguiCue": true
+  },
   "credentialPolicy": {
     "environmentVariable": "VOLCENGINE_TTS_API_KEY",
     "persisted": false,
     "logged": false
   },
   "retiming": {
-    "sourceCaptionSha256": "2F2F41A221E750AF62D14B6919405E259BA6330E920D3FECA0973F29A71133A9",
-    "sourceDurationSeconds": 249.9,
-    "authorizedDurationSeconds": 252.5,
-    "reason": "按 speech_rate=0 的本次实测语音自然延长场景，禁止逐句变速",
+    "sourceCaptionSha256": "F0B70D2566E28CE222F2FA7C0FF258A915ABB46FB46A96489692C0365BE5F280",
+    "sourceTimelineSha256": "10EE41AF636356136F6A781B3404B6B3E38E780509C5773634993C50DAAE3259",
+    "sourceDurationInFrames": 7575,
+    "sourceDurationSeconds": 252.5,
+    "authorizedDurationInFrames": 5778,
+    "authorizedDurationSeconds": 192.6,
+    "reason": "重写开头第 1 至 5 条，复用既有重大工程技术攻关总起表述，并按科研痛点、对应解决路径和软件界面形成连续叙事；保持自然语速。移除机械式衔接句，并按帧调整第 3、4 条字幕分界以容纳自然语音，不做时伸缩。将第 1 条字幕收至第 166 帧、第 2 条整体提前至第 175 至 265 帧，使两句实际发音间隔由约 1.47 秒缩短为约 0.60 秒。第 5 条语音结束后保留 223.333 ms 自然收尾，并在第 805 帧直接切入第 3 部分。针对 Agentic Architecture 的 Tool Use 段，从已确认 v3 母版的 source frame 3596 至 3628 精确删除 32 帧全零 PCM，使 LangGraph 与 Tool Use 的实际发音间隔由约 1.65 秒缩短为约 0.58 秒；Tool Use 及后续旁白 PCM 均逐样本复用，仅整体前移，不重新调用 TTS。",
     "noPerSegmentTimeStretching": true
   },
   "mediaPolicy": {

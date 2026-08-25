@@ -17,14 +17,25 @@ $assetRoot = if ([System.IO.Path]::IsPathRooted($assetSetting)) {
   [System.IO.Path]::GetFullPath((Join-Path $projectRoot $assetSetting))
 }
 $env:VIDEO_ASSETS_DIR = $assetRoot
+$browserExecutable = @(
+  (Join-Path $env:ProgramFiles "Google\Chrome\Application\chrome.exe"),
+  (Join-Path ${env:ProgramFiles(x86)} "Google\Chrome\Application\chrome.exe"),
+  (Join-Path $env:LOCALAPPDATA "Google\Chrome\Application\chrome.exe")
+) | Where-Object {
+  -not [string]::IsNullOrWhiteSpace($_) -and
+  (Test-Path -LiteralPath $_ -PathType Leaf)
+} | Select-Object -First 1
+if ([string]::IsNullOrWhiteSpace($browserExecutable)) {
+  throw "A local Google Chrome executable is required for deterministic review rendering."
+}
 
 if (-not (Test-Path -LiteralPath $assetRoot -PathType Container)) {
   throw "Video asset root not found: $assetRoot"
 }
 
 $outputDir = Join-Path $projectRoot "output"
-$target = Join-Path $outputDir "paper-tracker-innovation-explainer-silent-review.mp4"
-$taggedTarget = Join-Path $outputDir "paper-tracker-innovation-explainer-silent-review.bt709.tmp.mp4"
+$target = Join-Path $outputDir "paper-tracker-innovation-explainer-agentic-tool-sync-v10-silent-review.mp4"
+$taggedTarget = Join-Path $outputDir "paper-tracker-innovation-explainer-agentic-tool-sync-v10-silent-review.bt709.tmp.mp4"
 $reviewProps = Join-Path $projectRoot "render-props\innovation-review.json"
 $timelinePath = Join-Path $projectRoot "src\videos\innovation-explainer\data\timeline.json"
 $timeline = Get-Content -Raw -Encoding UTF8 -LiteralPath $timelinePath | ConvertFrom-Json
@@ -49,6 +60,7 @@ try {
     --pixel-format=yuv420p `
     --color-space=bt709 `
     --props=$reviewProps `
+    --browser-executable=$browserExecutable `
     --concurrency=$Concurrency
   if ($LASTEXITCODE -ne 0) {
     throw "Silent-review render failed."

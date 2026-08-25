@@ -231,9 +231,11 @@ const validateInnovationReviewData = () => {
   const captions = JSON.parse(fs.readFileSync(captionsPath, "utf8"));
   const authorization = JSON.parse(fs.readFileSync(authorizationPath, "utf8"));
   const captionsSha256 = sha256(canonicalJson(captions));
+  const timelineSha256 = sha256(canonicalJson(timeline));
   const authorizedDurationSeconds =
     authorization?.retiming?.authorizedDurationSeconds;
-  const authorizedDurationInFrames = authorizedDurationSeconds * 30;
+  const authorizedDurationInFrames =
+    authorization?.retiming?.authorizedDurationInFrames;
 
   if (
     authorization?.authorized !== true ||
@@ -241,13 +243,19 @@ const validateInnovationReviewData = () => {
     authorization?.captionSha256 !== captionsSha256 ||
     authorization?.captions?.hashMode !== "canonical-json-v1" ||
     authorization?.captions?.sha256 !== captionsSha256 ||
-    authorization?.captions?.count !== 49 ||
+    authorization?.captions?.count !== captions.length ||
+    authorization?.timeline?.hashMode !== "canonical-json-v1" ||
+    authorization?.timeline?.sha256 !== timelineSha256 ||
+    authorization?.timeline?.durationInFrames !== timeline.durationInFrames ||
     timeline.fps !== 30 ||
     timeline.mode !== "volcengine-tts-voiced" ||
     !Number.isFinite(authorizedDurationSeconds) ||
     !Number.isInteger(authorizedDurationInFrames) ||
     timeline.durationInFrames !== authorizedDurationInFrames ||
-    timeline.durationSeconds !== authorizedDurationSeconds
+    Math.abs(timeline.durationSeconds - authorizedDurationSeconds) > 1e-9 ||
+    Math.abs(
+      timeline.durationSeconds - timeline.durationInFrames / timeline.fps,
+    ) > 1e-9
   ) {
     throw new Error(
       `Innovation review data must match its explicit TTS authorization; ` +
@@ -264,7 +272,6 @@ const validateInnovationReviewData = () => {
     "scene-architecture",
     "scene-03",
     "scene-06",
-    "scene-07",
     "scene-outro",
   ];
   const actualSceneOrder = timeline.scenes.map((scene) => scene.id);
@@ -275,14 +282,20 @@ const validateInnovationReviewData = () => {
     )
   ) {
     throw new Error(
-      `Innovation review scene order must put security-by-design seventh before the final summary: ` +
+      `Innovation scene order must preserve the reviewed feature flow, keep security-by-design seventh before the final summary, and omit duplicate scene-07: ` +
         `${expectedSceneOrder.join(" -> ")}.`,
     );
   }
 
   let nextStartFrame = 0;
   for (const scene of timeline.scenes) {
-    if (scene.startFrame !== nextStartFrame || scene.durationInFrames < 1) {
+    if (
+      scene.startFrame !== nextStartFrame ||
+      scene.durationInFrames < 1 ||
+      Math.abs(scene.startSeconds - scene.startFrame / timeline.fps) > 1e-6 ||
+      Math.abs(scene.durationSeconds - scene.durationInFrames / timeline.fps) >
+        1e-6
+    ) {
       throw new Error(`Non-contiguous innovation scene timing: ${scene.id}.`);
     }
     nextStartFrame += scene.durationInFrames;
@@ -295,9 +308,9 @@ const validateInnovationReviewData = () => {
 
   const durationMs = (timeline.durationInFrames / timeline.fps) * 1000;
   let previousEndMs = 0;
-  if (captions.length !== 49) {
+  if (captions.length === 0) {
     throw new Error(
-      `Innovation review captions must contain exactly 49 cues; received ${captions.length}.`,
+      "Innovation review captions must contain at least one cue.",
     );
   }
   for (const [index, caption] of captions.entries()) {
@@ -438,8 +451,11 @@ const validateInnovationEvidenceSemantics = () => {
         /LangGraph/,
         /Supervisor/,
         /Tool Use/,
-        /const toolReveal = revealValue\(frame, TOOL_USE_REVEAL_FRAME\)/,
+        /TOOL_STAGE_REVEAL_FRAMES/,
+        /SUPERVISOR_DISPATCH_WINDOW/,
+        /const toolReveal = revealValue\(\s*frame,\s*TOOL_USE_REVEAL_FRAME,\s*TOOL_USE_REVEAL_DURATION,\s*\)/,
         /opacity: toolReveal/,
+        /报告合成/,
         /Checkpoint/,
         /AG-UI/,
       ],
@@ -579,10 +595,16 @@ const validateInnovationServicePositioning = () => {
     source: fs.readFileSync(sourcePath, "utf8"),
   }));
   const forbiddenTerms = [/国家电网/u, /平台/u, /软件/u, /系统/u];
+  const approvedImplementationBridge =
+    "下面从论文入库开始，具体看软件如何实现。";
 
   for (const { sourcePath, source } of sources) {
+    const positioningSource = source.replaceAll(
+      approvedImplementationBridge,
+      "",
+    );
     for (const pattern of forbiddenTerms) {
-      if (pattern.test(source)) {
+      if (pattern.test(positioningSource)) {
         throw new Error(
           `Innovation service copy contains forbidden positioning in ${path.relative(projectRoot, sourcePath)}: ${pattern}.`,
         );

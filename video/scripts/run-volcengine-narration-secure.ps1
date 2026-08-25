@@ -1,5 +1,5 @@
 param(
-  [ValidateRange(1, 49)]
+  [ValidateRange(0, 2147483647)]
   [int]$Only = 0,
 
   [switch]$Force,

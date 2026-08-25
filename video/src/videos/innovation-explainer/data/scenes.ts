@@ -53,19 +53,19 @@ export const SCENES: SceneDefinition[] = [
     id: "scene-intro",
     ...timing("scene-intro"),
     eyebrow: "专业领域大模型智能文献检索与知识服务",
-    title: "面向重大工程技术的智能文献检索与知识服务",
+    title: "研究课题正进入更加复杂的新阶段",
   },
   {
     id: "scene-00",
     ...timing("scene-00"),
     eyebrow: "01 · RESEARCH FRICTION",
-    title: "资料分散，让工程研究时间耗在重复调研",
+    title: "论文分散、积累难复用，资料查找仍依赖人工",
   },
   {
     id: "scene-01",
     ...timing("scene-01"),
-    eyebrow: "02 · FROM READING TO RESEARCH",
-    title: "不止看一篇论文，持续回答一个工程技术问题",
+    eyebrow: "02 · FROM PAIN TO METHOD",
+    title: "知识资产、组织能力与智能体流程对应解决",
   },
   {
     id: "scene-02",
@@ -96,12 +96,6 @@ export const SCENES: SceneDefinition[] = [
     ...timing("scene-06"),
     eyebrow: "07 · SECURITY BY DESIGN",
     title: "本地闭环、权限继承与关键过程追溯",
-  },
-  {
-    id: "scene-07",
-    ...timing("scene-07"),
-    eyebrow: "08 · SERVICE VALUE",
-    title: "把个人积累转化为组织工程创新能力",
   },
   {
     id: "scene-outro",
