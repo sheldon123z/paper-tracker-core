@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
   refreshLlmCatalog: vi.fn(),
+  user: { role: 'manager' },
 }))
 
 vi.mock('../config/runtime', async (importOriginal) => {
@@ -33,7 +34,10 @@ vi.mock('../api', () => ({
 }))
 
 vi.mock('../store', () => ({
-  default: (selector) => selector({ refreshLlmCatalog: mocks.refreshLlmCatalog }),
+  default: (selector) => selector({
+    refreshLlmCatalog: mocks.refreshLlmCatalog,
+    user: mocks.user,
+  }),
 }))
 
 vi.mock('../hooks/useIsMobile', () => ({ default: () => false }))
@@ -57,7 +61,9 @@ vi.mock('../components/settings/UsageAuditPanel', () => ({ default: () => null }
 vi.mock('../components/settings/SkillsSection', () => ({ default: () => null }))
 vi.mock('../components/settings/SystemPromptsSection', () => ({ default: () => null }))
 vi.mock('../components/settings/TemplatesSection', () => ({ default: () => null }))
-vi.mock('../components/settings/MonitorSection', () => ({ default: () => null }))
+vi.mock('../components/settings/MonitorSection', () => ({
+  default: () => <div data-testid="monitor-section" />,
+}))
 
 import LLMSection from '../components/settings/LLMSection'
 import SettingsPage from '../pages/SettingsPage'
@@ -65,6 +71,7 @@ import SettingsPage from '../pages/SettingsPage'
 describe('offline settings capabilities', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.user = { role: 'manager' }
     mocks.get.mockImplementation((url) => {
       if (url.endsWith('/providers')) {
         return Promise.resolve({
@@ -91,6 +98,16 @@ describe('offline settings capabilities', () => {
 
     expect(screen.getByTestId('offline-mode-notice')).toHaveTextContent('离线模式')
     expect(screen.getByTestId('offline-mode-notice')).toHaveTextContent('仅显示并使用本地模型')
+  })
+
+  it('hides the LLM management tab from a regular user and opens monitoring instead', () => {
+    mocks.user = { role: 'user' }
+
+    render(<SettingsPage />)
+
+    expect(screen.queryByRole('button', { name: 'LLM 模型' })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'LLM 监控' })).toHaveLength(2)
+    expect(screen.getByTestId('monitor-section')).toBeInTheDocument()
   })
 
   it('hides remote configurations and cloud provider choices', async () => {

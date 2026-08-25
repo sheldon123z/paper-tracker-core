@@ -60,4 +60,14 @@ describe('LLMSection selectable model catalog sync', () => {
       expect(mocks.refreshLlmCatalog).toHaveBeenCalledWith({ force: true })
     })
   })
+
+  it('shows an explicit permission message and hides management actions after a 403', async () => {
+    mocks.get.mockRejectedValue({ response: { status: 403 } })
+
+    render(<LLMSection />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('仅管理员可以查看和管理 LLM 配置')
+    expect(screen.queryByRole('button', { name: /添加/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '导出' })).not.toBeInTheDocument()
+  })
 })

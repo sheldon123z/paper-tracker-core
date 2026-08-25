@@ -337,7 +337,10 @@ def _load_parsed_fallback(
     if parsed_file is None:
         return None
     try:
-        parsed_path = read_file(parsed_file.storage_path)
+        parsed_path = read_file(
+            parsed_file.storage_path,
+            expected_paper_id=parsed_file.paper_id,
+        )
         normalized_offset = max(0, int(text_offset))
         with parsed_path.open("r", encoding="utf-8", errors="replace") as parsed_stream:
             skipped = 0
@@ -349,7 +352,7 @@ def _load_parsed_fallback(
             if skipped < normalized_offset:
                 return "", None
             raw_text = parsed_stream.read(max_chars + 1)
-    except (FileNotFoundError, OSError):
+    except (FileNotFoundError, OSError, ValueError):
         logger.warning(
             "Parsed PDF fallback is missing for paper %d, file %d",
             paper_id,
@@ -399,7 +402,10 @@ def load_paper_document_text(
     extraction: ExtractedPdfText | None = None
     extraction_error = False
     try:
-        pdf_path = read_file(pdf_file.storage_path)
+        pdf_path = read_file(
+            pdf_file.storage_path,
+            expected_paper_id=pdf_file.paper_id,
+        )
         extraction = _extract_pdf_text_safely(
             pdf_path,
             start_page=start_page,

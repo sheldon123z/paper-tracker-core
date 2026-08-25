@@ -443,6 +443,7 @@ async def run_chat_agent(
         config_id=getattr(config.resolved, "config_id", None),
         provider=config.resolved.provider_key,
         model_name=config.resolved.model_name,
+        is_local=config.resolved.is_local,
         agent_type=config.agent_type,
         session_id=config.session_id,
         user_id=config.user_id,

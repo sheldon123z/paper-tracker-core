@@ -16,6 +16,7 @@ from ..offline import require_online_http
 from ..schemas import PaperFileOut, PaperFileUpdate
 from ..services.access_control import get_visible_or_404, require_writable
 from ..services.file_storage import (
+    UnsafeStoragePathError,
     delete_file,
     infer_file_type,
     read_file,
@@ -102,7 +103,17 @@ def download_file(paper_id: int, file_id: int, user: User = Depends(get_current_
         raise HTTPException(status_code=404, detail="文件不存在")
 
     try:
-        file_path = read_file(paper_file.storage_path)
+        file_path = read_file(
+            paper_file.storage_path,
+            expected_paper_id=paper_file.paper_id,
+        )
+    except UnsafeStoragePathError:
+        logger.warning(
+            "Rejected invalid storage path for paper %d, file %d",
+            paper_id,
+            file_id,
+        )
+        raise HTTPException(status_code=404, detail="附件不可用") from None
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="文件已丢失") from None
 
@@ -125,7 +136,17 @@ def get_file_content(paper_id: int, file_id: int, user: User = Depends(get_curre
         raise HTTPException(status_code=404, detail="文件不存在")
 
     try:
-        file_path = read_file(paper_file.storage_path)
+        file_path = read_file(
+            paper_file.storage_path,
+            expected_paper_id=paper_file.paper_id,
+        )
+    except UnsafeStoragePathError:
+        logger.warning(
+            "Rejected invalid storage path for paper %d, file %d",
+            paper_id,
+            file_id,
+        )
+        raise HTTPException(status_code=404, detail="附件不可用") from None
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="文件已丢失") from None
 
@@ -192,7 +213,20 @@ def delete_paper_file(paper_id: int, file_id: int, user: User = Depends(get_curr
         raise HTTPException(status_code=404, detail="文件不存在")
 
     try:
-        delete_file(paper_file.storage_path)
+        delete_file(
+            paper_file.storage_path,
+            expected_paper_id=paper_file.paper_id,
+        )
+    except UnsafeStoragePathError:
+        logger.warning(
+            "Rejected invalid storage path while deleting paper %d, file %d",
+            paper_id,
+            file_id,
+        )
+        raise HTTPException(
+            status_code=409,
+            detail="附件不可用，未执行删除",
+        ) from None
     except Exception as e:
         logger.warning("Failed to delete file from disk: %s", e)
 

@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 import api from '../../api'
+import useStore from '../../store'
 import { Card } from '../ui'
 import BudgetSection from './BudgetSection'
 import {
   filterLlmConfigsForRuntime,
-  filterUsageRecordsForRuntime,
   RUNTIME_CAPABILITIES,
 } from '../../config/runtime'
 
@@ -15,29 +15,70 @@ export default function MonitorSection() {
   const [cost, setCost] = useState(null)
   const [configs, setConfigs] = useState([])
   const [days, setDays] = useState(30)
+  const [loadWarnings, setLoadWarnings] = useState([])
+  const isManager = useStore((state) => state.user?.role === 'manager')
 
   useEffect(() => {
+    let cancelled = false
     const usageParams = {
       days,
       local_only: RUNTIME_CAPABILITIES.offlineMode,
     }
-    Promise.all([
-      api.get('/api/usage/summary', { params: usageParams }),
-      api.get('/api/usage/by-model', { params: usageParams }),
-      api.get('/api/usage/timeline', { params: usageParams }),
-      api.get('/api/llm-configs'),
-      RUNTIME_CAPABILITIES.offlineMode
-        ? Promise.resolve({ data: null })
-        : api.get('/api/usage/cost', { params: { days } }),
-    ]).then(([sumR, modelR, tlR, cfgR, costR]) => {
-      const configsForRuntime = filterLlmConfigsForRuntime(cfgR.data)
-      setSummary(sumR.data)
-      setByModel(filterUsageRecordsForRuntime(modelR.data, cfgR.data))
-      setTimeline(tlR.data)
-      setCost(costR.data)
-      setConfigs(configsForRuntime)
-    }).catch(() => {})
-  }, [days])
+    const requests = [
+      {
+        label: '使用总览',
+        request: api.get('/api/usage/summary', { params: usageParams }),
+        apply: (data) => setSummary(data || null),
+        reset: () => setSummary(null),
+      },
+      {
+        label: '模型使用量',
+        request: api.get('/api/usage/by-model', { params: usageParams }),
+        apply: (data) => setByModel(Array.isArray(data) ? data : []),
+        reset: () => setByModel([]),
+      },
+      {
+        label: '调用趋势',
+        request: api.get('/api/usage/timeline', { params: usageParams }),
+        apply: (data) => setTimeline(Array.isArray(data) ? data : []),
+        reset: () => setTimeline([]),
+      },
+      {
+        label: '模型状态',
+        request: api.get('/api/llm-configs/brief'),
+        apply: (data) => setConfigs(filterLlmConfigsForRuntime(data)),
+        reset: () => setConfigs([]),
+      },
+    ]
+
+    if (isManager && !RUNTIME_CAPABILITIES.offlineMode) {
+      requests.push({
+        label: '成本估算',
+        request: api.get('/api/usage/cost', { params: { days } }),
+        apply: (data) => setCost(data || null),
+        reset: () => setCost(null),
+      })
+    } else {
+      setCost(null)
+    }
+
+    Promise.allSettled(requests.map(({ request }) => request)).then((results) => {
+      if (cancelled) return
+      const warnings = []
+      results.forEach((result, index) => {
+        const request = requests[index]
+        if (result.status === 'fulfilled') {
+          request.apply(result.value?.data)
+        } else {
+          request.reset()
+          warnings.push(request.label)
+        }
+      })
+      setLoadWarnings(warnings)
+    })
+
+    return () => { cancelled = true }
+  }, [days, isManager])
 
   const healthCounts = configs.reduce(
     (acc, c) => {
@@ -50,6 +91,21 @@ export default function MonitorSection() {
 
   return (
     <div className="space-y-4">
+      {loadWarnings.length > 0 && (
+        <div
+          role="status"
+          data-testid="monitor-partial-warning"
+          className="rounded-xl border px-3 py-2 text-xs"
+          style={{
+            borderColor: 'var(--warning)',
+            backgroundColor: 'var(--bg-secondary)',
+            color: 'var(--text-secondary)',
+          }}
+        >
+          部分监控数据暂不可用：{loadWarnings.join('、')}。其他数据已正常显示。
+        </div>
+      )}
+
       {/* Period selector */}
       <div className="flex items-center gap-2">
         <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>统计周期:</span>
@@ -71,7 +127,7 @@ export default function MonitorSection() {
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard label="总模型数" value={configs.length} />
+        <StatCard label="可用模型数" value={configs.length} />
         <StatCard label="健康模型" value={healthCounts.ok || 0} color="var(--success)" />
         <StatCard label="总调用次数" value={summary?.total_calls || 0} />
         <StatCard label="总 Tokens" value={formatNum(summary?.total_tokens || 0)} />
@@ -96,7 +152,7 @@ export default function MonitorSection() {
               <span className="truncate" style={{ maxWidth: 100 }}>{c.display_name || c.model_name}</span>
             </div>
           ))}
-          {configs.length === 0 && <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>暂无模型</span>}
+          {configs.length === 0 && <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>暂无可用模型</span>}
         </div>
       </Card>
 
@@ -130,7 +186,7 @@ export default function MonitorSection() {
       </Card>
 
       {/* Cost summary */}
-      {!RUNTIME_CAPABILITIES.offlineMode && cost && (
+      {isManager && !RUNTIME_CAPABILITIES.offlineMode && cost && (
         <Card title="成本估算">
           <div className="flex items-baseline gap-2 mb-3">
             <span className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
@@ -195,7 +251,7 @@ export default function MonitorSection() {
       )}
 
       {/* Budget alerts */}
-      {!RUNTIME_CAPABILITIES.offlineMode && <BudgetSection />}
+      {isManager && !RUNTIME_CAPABILITIES.offlineMode && <BudgetSection />}
     </div>
   )
 }

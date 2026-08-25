@@ -23,6 +23,7 @@ def create_usage_collector(
     config_id: int | None = None,
     provider: str = "",
     model_name: str = "",
+    is_local: bool | None = None,
     agent_type: str | None = None,
     session_id: str | None = None,
     user_id: int | None = None,
@@ -34,6 +35,7 @@ def create_usage_collector(
         "config_id": config_id,
         "provider": provider,
         "model_name": model_name,
+        "is_local": is_local,
         "agent_type": agent_type,
         "session_id": session_id,
         "user_id": user_id,
@@ -53,6 +55,26 @@ def create_usage_collector(
     }
 
 
+def _resolve_usage_is_local(db: Session, collector: dict) -> bool:
+    """Return the call-time local classification stored with a usage log."""
+    snapshot = collector.get("is_local")
+    if snapshot is not None:
+        return bool(snapshot)
+
+    config_id = collector.get("config_id")
+    if config_id is not None:
+        configured = (
+            db.query(LLMConfig.is_local)
+            .filter(LLMConfig.id == config_id)
+            .scalar()
+        )
+        if configured is not None:
+            return bool(configured)
+
+    provider = str(collector.get("provider") or "").strip().lower()
+    return provider in _LOCAL_LLM_PROVIDERS
+
+
 def save_usage_log(db: Session, collector: dict) -> None:
     """Persist the collected usage data. Silently ignores errors."""
     try:
@@ -65,6 +87,7 @@ def save_usage_log(db: Session, collector: dict) -> None:
             config_id=collector.get("config_id"),
             provider=collector.get("provider", "unknown"),
             model_name=collector.get("model_name", "unknown"),
+            is_local=_resolve_usage_is_local(db, collector),
             agent_type=collector.get("agent_type"),
             session_id=collector.get("session_id"),
             user_id=collector.get("user_id"),
@@ -140,10 +163,18 @@ def filter_local_usage(query, *, local_only: bool = False):
     )
     return query.filter(
         or_(
-            local_config_exists,
+            LLMUsageLog.is_local.is_(True),
             and_(
-                ~matching_config_exists,
-                LLMUsageLog.provider.in_(_LOCAL_LLM_PROVIDERS),
+                LLMUsageLog.is_local.is_(None),
+                or_(
+                    local_config_exists,
+                    and_(
+                        ~matching_config_exists,
+                        func.lower(func.trim(LLMUsageLog.provider)).in_(
+                            _LOCAL_LLM_PROVIDERS
+                        ),
+                    ),
+                ),
             ),
         )
     )

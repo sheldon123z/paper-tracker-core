@@ -259,7 +259,10 @@ def batch_action(
                 require_writable(paper, user)
                 for paper_file in paper.files:
                     try:
-                        delete_file(paper_file.storage_path)
+                        delete_file(
+                            paper_file.storage_path,
+                            expected_paper_id=paper_file.paper_id,
+                        )
                     except Exception as e:
                         logger.warning("Failed to delete file %s on disk: %s", paper_file.storage_path, e)
                 db.delete(paper)

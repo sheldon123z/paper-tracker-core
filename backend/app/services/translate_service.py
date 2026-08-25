@@ -66,13 +66,19 @@ async def translate_markdown_file(
 
     db = db_factory()
     try:
-        paper_file = db.query(PaperFile).filter(PaperFile.id == file_id).first()
+        paper_file = db.query(PaperFile).filter(
+            PaperFile.id == file_id,
+            PaperFile.paper_id == paper_id,
+        ).first()
         if not paper_file:
             logger.error("PaperFile %d not found", file_id)
             return
 
         # Read markdown content
-        file_path = read_file(paper_file.storage_path)
+        file_path = read_file(
+            paper_file.storage_path,
+            expected_paper_id=paper_file.paper_id,
+        )
         content = file_path.read_text(encoding="utf-8", errors="replace")
 
         if not content.strip():

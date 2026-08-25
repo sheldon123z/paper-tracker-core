@@ -66,8 +66,41 @@ def _is_reparse_point(path: Path) -> bool:
     return bool(attributes & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0))
 
 
-def _validate_storage_path(storage_path: str) -> tuple[str, ...]:
-    """Validate a database storage path and return its normalized segments."""
+def _validate_paper_id(paper_id: int) -> int:
+    """Return a canonical positive integer paper identifier."""
+
+    if not isinstance(paper_id, int) or isinstance(paper_id, bool) or paper_id <= 0:
+        raise UnsafeStoragePathError("论文 ID 必须是正整数")
+    return paper_id
+
+
+def _validate_storage_segment(segment: str) -> None:
+    """Validate one portable storage path segment without normalizing it."""
+
+    if segment in {"", ".", ".."}:
+        raise UnsafeStoragePathError("附件存储路径包含不安全的路径段")
+    if segment != segment.rstrip(" ."):
+        # Windows silently normalizes trailing dots/spaces, which could make
+        # the validated lexical path differ from the path actually opened.
+        raise UnsafeStoragePathError("附件存储路径包含不安全的 Windows 路径段")
+    if any(ord(char) < 32 for char in segment):
+        raise UnsafeStoragePathError("附件存储路径包含控制字符")
+
+
+def _validate_storage_path(
+    storage_path: str,
+    *,
+    expected_paper_id: int,
+) -> tuple[str, str]:
+    """Validate ``<paper_id>/<filename>`` and bind it to one paper.
+
+    Database paths are capabilities: callers must name the paper that owns the
+    ``PaperFile`` row.  Requiring the canonical paper-id prefix here prevents a
+    corrupt or malicious row from borrowing another paper's otherwise-safe
+    attachment path.
+    """
+
+    expected_paper_id = _validate_paper_id(expected_paper_id)
 
     if not isinstance(storage_path, str) or not storage_path.strip():
         raise UnsafeStoragePathError("附件存储路径不能为空")
@@ -85,25 +118,28 @@ def _validate_storage_path(storage_path: str) -> tuple[str, ...]:
         raise UnsafeStoragePathError("附件存储路径必须是相对路径")
 
     parts = tuple(storage_path.split("/"))
-    if any(part in {"", ".", ".."} for part in parts):
-        raise UnsafeStoragePathError("附件存储路径包含不安全的路径段")
-    if any(part != part.rstrip(" .") for part in parts):
-        # Windows silently normalizes trailing dots/spaces, which could make
-        # the validated lexical path differ from the path actually opened.
-        raise UnsafeStoragePathError("附件存储路径包含不安全的 Windows 路径段")
-    if any(any(ord(char) < 32 for char in part) for part in parts):
-        raise UnsafeStoragePathError("附件存储路径包含控制字符")
-    return parts
+    if len(parts) != 2:
+        raise UnsafeStoragePathError("附件存储路径必须是论文 ID 和文件名两段")
+    for part in parts:
+        _validate_storage_segment(part)
+
+    canonical_paper_id = str(expected_paper_id)
+    if parts[0] != canonical_paper_id:
+        raise UnsafeStoragePathError("附件存储路径与所属论文不匹配")
+    return canonical_paper_id, parts[1]
 
 
-def _resolve_storage_path(storage_path: str) -> Path:
+def _resolve_storage_path(storage_path: str, *, expected_paper_id: int) -> Path:
     """Resolve a safe relative attachment path below ``_STORAGE_ROOT``.
 
     Validation is deliberately fail-closed.  Existing path components may not
     be symlinks, junctions, or any other Windows reparse point.
     """
 
-    parts = _validate_storage_path(storage_path)
+    parts = _validate_storage_path(
+        storage_path,
+        expected_paper_id=expected_paper_id,
+    )
     lexical_root = _absolute_storage_root()
     if _is_reparse_point(lexical_root):
         raise UnsafeStoragePathError("附件存储根目录不能是链接或重解析点")
@@ -130,7 +166,9 @@ def _safe_filename(filename: str) -> str:
         raise UnsafeStoragePathError("附件文件名不能为空")
     # Treat both separators as directory delimiters regardless of host OS.
     safe_name = filename.replace("\\", "/").rsplit("/", 1)[-1]
-    _validate_storage_path(safe_name)
+    if ":" in safe_name:
+        raise UnsafeStoragePathError("附件文件名不能包含盘符或备用数据流")
+    _validate_storage_segment(safe_name)
     return safe_name
 
 
@@ -166,8 +204,7 @@ def validate_upload(filename: str, content_type: str, size: int) -> None:
 
 def save_file(paper_id: int, filename: str, content: bytes) -> tuple[str, int]:
     """Save file to disk. Returns (relative_storage_path, file_size)."""
-    if not isinstance(paper_id, int) or isinstance(paper_id, bool) or paper_id <= 0:
-        raise UnsafeStoragePathError("论文 ID 必须是正整数")
+    paper_id = _validate_paper_id(paper_id)
 
     short_uuid = uuid.uuid4().hex[:8]
     safe_name = _safe_filename(filename)
@@ -179,12 +216,12 @@ def save_file(paper_id: int, filename: str, content: bytes) -> tuple[str, int]:
         raise UnsafeStoragePathError("附件存储根目录不能是链接或重解析点")
     _ensure_dir(storage_root)
 
-    full_path = _resolve_storage_path(rel_path)
+    full_path = _resolve_storage_path(rel_path, expected_paper_id=paper_id)
     target_dir = full_path.parent
     _ensure_dir(target_dir)
     # Re-resolve after directory creation so a concurrent or pre-existing
     # reparse point is rejected before opening the destination.
-    full_path = _resolve_storage_path(rel_path)
+    full_path = _resolve_storage_path(rel_path, expected_paper_id=paper_id)
 
     # Exclusive creation avoids following a pre-created link on UUID collision.
     with full_path.open("xb") as stored_file:
@@ -195,9 +232,12 @@ def save_file(paper_id: int, filename: str, content: bytes) -> tuple[str, int]:
     return rel_path, len(content)
 
 
-def read_file(storage_path: str) -> Path:
+def read_file(storage_path: str, *, expected_paper_id: int) -> Path:
     """Return the absolute Path to a stored file."""
-    full_path = _resolve_storage_path(storage_path)
+    full_path = _resolve_storage_path(
+        storage_path,
+        expected_paper_id=expected_paper_id,
+    )
     try:
         file_stat = full_path.lstat()
     except FileNotFoundError:
@@ -209,9 +249,12 @@ def read_file(storage_path: str) -> Path:
     return full_path
 
 
-def delete_file(storage_path: str) -> None:
+def delete_file(storage_path: str, *, expected_paper_id: int) -> None:
     """Delete a file from disk."""
-    full_path = _resolve_storage_path(storage_path)
+    full_path = _resolve_storage_path(
+        storage_path,
+        expected_paper_id=expected_paper_id,
+    )
     try:
         file_stat = full_path.lstat()
     except FileNotFoundError:

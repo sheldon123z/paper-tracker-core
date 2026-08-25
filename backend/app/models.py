@@ -229,6 +229,10 @@ class LLMUsageLog(Base):
     config_id = Column(Integer, ForeignKey("llm_configs.id"), nullable=True, index=True)
     provider = Column(String(64), nullable=False)
     model_name = Column(String(128), nullable=False)
+    # Snapshot the runtime classification so later config edits/deletion do not
+    # rewrite the meaning of historical usage.  Legacy rows remain nullable and
+    # are classified by the compatibility fallback in usage_tracker.
+    is_local = Column(Boolean, nullable=True)
     agent_type = Column(String(32), nullable=True, index=True)
     session_id = Column(String(64), nullable=True, index=True)
     user_id = Column(Integer, nullable=True, index=True)

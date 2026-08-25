@@ -27,10 +27,13 @@ _SCOPED_COLUMNS: dict[str, str] = {
     "created_by_user_id": "INTEGER",
 }
 
-_USAGE_IDENTITY_COLUMNS: dict[str, str] = {
+_USAGE_COLUMNS: dict[str, str] = {
     "user_id": "INTEGER",
     "department_id": "INTEGER",
     "request_type": "VARCHAR(32)",
+    # Keep this nullable: legacy rows use the compatibility fallback until a
+    # trustworthy call-time classification has been persisted.
+    "is_local": "BOOLEAN",
 }
 
 _LLM_CONFIG_COLUMNS: dict[str, str] = {
@@ -270,6 +273,7 @@ def migrate_database_schema(engine: Engine) -> None:
                     config_id INTEGER REFERENCES llm_configs(id),
                     provider VARCHAR(64) NOT NULL,
                     model_name VARCHAR(128) NOT NULL,
+                    is_local BOOLEAN,
                     agent_type VARCHAR(32),
                     session_id VARCHAR(64),
                     prompt_tokens INTEGER DEFAULT 0,
@@ -297,7 +301,7 @@ def migrate_database_schema(engine: Engine) -> None:
     else:
         existing = {col["name"] for col in inspector.get_columns("llm_usage_logs")}
         with engine.begin() as conn:
-            for name, ddl in _USAGE_IDENTITY_COLUMNS.items():
+            for name, ddl in _USAGE_COLUMNS.items():
                 if name not in existing:
                     conn.execute(text(f"ALTER TABLE llm_usage_logs ADD COLUMN {name} {ddl}"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_llm_usage_logs_user_created ON llm_usage_logs(user_id, created_at)"))

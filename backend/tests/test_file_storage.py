@@ -24,16 +24,16 @@ def test_safe_save_read_and_delete(storage_root: Path) -> None:
     assert storage_path.startswith("42/")
     assert storage_path.endswith("_paper.pdf")
     assert size == len(content)
-    saved_path = file_storage.read_file(storage_path)
+    saved_path = file_storage.read_file(storage_path, expected_paper_id=42)
     assert saved_path.read_bytes() == content
     assert saved_path.is_relative_to(storage_root.resolve())
 
-    file_storage.delete_file(storage_path)
+    file_storage.delete_file(storage_path, expected_paper_id=42)
 
     assert not saved_path.exists()
     assert not saved_path.parent.exists()
     # Deleting a missing, otherwise valid attachment remains idempotent.
-    file_storage.delete_file(storage_path)
+    file_storage.delete_file(storage_path, expected_paper_id=42)
 
 
 @pytest.mark.parametrize(
@@ -56,13 +56,40 @@ def test_safe_save_read_and_delete(storage_root: Path) -> None:
         "1//paper.pdf",
         "1/paper.pdf ",
         "1/paper.pdf\x00",
+        "1/nested/paper.pdf",
+        "01/paper.pdf",
+        "+1/paper.pdf",
+        "0/paper.pdf",
+        "-1/paper.pdf",
     ],
 )
 def test_read_rejects_unsafe_storage_paths(storage_root: Path, storage_path: str) -> None:
     storage_root.mkdir()
 
     with pytest.raises(file_storage.UnsafeStoragePathError):
-        file_storage.read_file(storage_path)
+        file_storage.read_file(storage_path, expected_paper_id=1)
+
+
+def test_read_and_delete_require_matching_paper_id(storage_root: Path) -> None:
+    owned_file = storage_root / "42" / "paper.pdf"
+    owned_file.parent.mkdir(parents=True)
+    owned_file.write_bytes(b"paper-42")
+
+    with pytest.raises(file_storage.UnsafeStoragePathError):
+        file_storage.read_file("42/paper.pdf", expected_paper_id=41)
+    with pytest.raises(file_storage.UnsafeStoragePathError):
+        file_storage.delete_file("42/paper.pdf", expected_paper_id=41)
+
+    assert owned_file.read_bytes() == b"paper-42"
+
+
+def test_read_and_delete_require_keyword_only_paper_id(storage_root: Path) -> None:
+    storage_root.mkdir()
+
+    with pytest.raises(TypeError):
+        file_storage.read_file("42/paper.pdf", 42)  # type: ignore[misc]
+    with pytest.raises(TypeError):
+        file_storage.delete_file("42/paper.pdf", 42)  # type: ignore[misc]
 
 
 def test_same_prefix_sibling_cannot_be_read_or_deleted(storage_root: Path) -> None:
@@ -74,9 +101,9 @@ def test_same_prefix_sibling_cannot_be_read_or_deleted(storage_root: Path) -> No
     traversal = f"../{outside_dir.name}/{outside_file.name}"
 
     with pytest.raises(file_storage.UnsafeStoragePathError):
-        file_storage.read_file(traversal)
+        file_storage.read_file(traversal, expected_paper_id=1)
     with pytest.raises(file_storage.UnsafeStoragePathError):
-        file_storage.delete_file(traversal)
+        file_storage.delete_file(traversal, expected_paper_id=1)
 
     assert outside_file.read_bytes() == b"private"
 
@@ -86,9 +113,9 @@ def test_read_and_delete_require_a_regular_file(storage_root: Path) -> None:
     attachment_dir.mkdir(parents=True)
 
     with pytest.raises(FileNotFoundError):
-        file_storage.read_file("7/directory.pdf")
+        file_storage.read_file("7/directory.pdf", expected_paper_id=7)
     with pytest.raises(FileNotFoundError):
-        file_storage.delete_file("7/directory.pdf")
+        file_storage.delete_file("7/directory.pdf", expected_paper_id=7)
 
     assert attachment_dir.is_dir()
 
@@ -110,9 +137,9 @@ def test_symlink_is_rejected_for_read_delete_and_save(storage_root: Path) -> Non
         pytest.skip(f"symlinks are unavailable on this platform: {exc}")
 
     with pytest.raises(file_storage.UnsafeStoragePathError):
-        file_storage.read_file("8/linked.pdf")
+        file_storage.read_file("8/linked.pdf", expected_paper_id=8)
     with pytest.raises(file_storage.UnsafeStoragePathError):
-        file_storage.delete_file("8/linked.pdf")
+        file_storage.delete_file("8/linked.pdf", expected_paper_id=8)
     with pytest.raises(file_storage.UnsafeStoragePathError):
         file_storage.save_file(9, "new.pdf", b"do not write")
 
@@ -124,7 +151,7 @@ def test_reported_junction_or_reparse_component_is_rejected(
     storage_root: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    junction = storage_root / "10" / "junction"
+    junction = storage_root / "10"
     junction.mkdir(parents=True)
     real_is_reparse_point = file_storage._is_reparse_point
 
@@ -134,7 +161,7 @@ def test_reported_junction_or_reparse_component_is_rejected(
     monkeypatch.setattr(file_storage, "_is_reparse_point", report_junction)
 
     with pytest.raises(file_storage.UnsafeStoragePathError):
-        file_storage.read_file("10/junction/paper.pdf")
+        file_storage.read_file("10/paper.pdf", expected_paper_id=10)
 
 
 @pytest.mark.parametrize("filename", ["paper.pdf:payload", "paper.pdf ", "\x00.pdf"])

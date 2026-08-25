@@ -77,6 +77,8 @@ export default function LLMSection() {
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [batchTesting, setBatchTesting] = useState(false)
   const [compareOpen, setCompareOpen] = useState(false)
+  const [configLoadError, setConfigLoadError] = useState('')
+  const [accessDenied, setAccessDenied] = useState(false)
   const { addToast } = useToast()
   const refreshLlmCatalog = useStore((state) => state.refreshLlmCatalog)
 
@@ -96,8 +98,23 @@ export default function LLMSection() {
   const loadConfigs = async () => {
     try {
       const r = await api.get('/api/llm-configs')
-      startTransition(() => setConfigs(Array.isArray(r.data) ? r.data : []))
-    } catch { /* keep state */ }
+      startTransition(() => {
+        setConfigs(Array.isArray(r.data) ? r.data : [])
+        setConfigLoadError('')
+        setAccessDenied(false)
+      })
+    } catch (error) {
+      const denied = error?.response?.status === 403
+      startTransition(() => {
+        setConfigs([])
+        setAccessDenied(denied)
+        setConfigLoadError(
+          denied
+            ? '仅管理员可以查看和管理 LLM 配置。'
+            : 'LLM 配置加载失败，请稍后重试。',
+        )
+      })
+    }
   }
 
   const loadProviders = async () => {
@@ -293,96 +310,116 @@ export default function LLMSection() {
     <Card
       title="LLM 配置"
       actions={
-        <div className="flex items-center gap-2">
-          <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{availableConfigs.length} 个配置</span>
-          <Button size="sm" variant="ghost" onClick={async () => {
-            try {
-              const r = await api.get('/api/llm-configs/export')
-              const blob = new Blob([JSON.stringify(r.data, null, 2)], { type: 'application/json' })
-              const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'llm-configs.json'; a.click()
-              addToast({ type: 'success', message: '已导出' })
-            } catch { addToast({ type: 'error', message: '导出失败' }) }
-          }}>
-            导出
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => {
-            const input = document.createElement('input'); input.type = 'file'; input.accept = '.json'
-            input.onchange = async (e) => {
-              const file = e.target.files?.[0]; if (!file) return
+        !accessDenied && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{availableConfigs.length} 个配置</span>
+            <Button size="sm" variant="ghost" onClick={async () => {
               try {
-                const text = await file.text(); const data = JSON.parse(text)
-                await api.post('/api/llm-configs/import', { ...data, mode: 'merge' })
-                addToast({ type: 'success', message: '导入完成' }); await reloadModelData()
-              } catch { addToast({ type: 'error', message: '导入失败' }) }
-            }
-            input.click()
-          }}>
-            导入
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => setCompareOpen(true)}>
-            对比
-          </Button>
-          {!RUNTIME_CAPABILITIES.offlineMode && (
-            <Button size="sm" variant="ghost" onClick={handleBatchTest} disabled={batchTesting}>
-              {batchTesting ? '测试中...' : '全部测试'}
+                const r = await api.get('/api/llm-configs/export')
+                const blob = new Blob([JSON.stringify(r.data, null, 2)], { type: 'application/json' })
+                const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'llm-configs.json'; a.click()
+                addToast({ type: 'success', message: '已导出' })
+              } catch { addToast({ type: 'error', message: '导出失败' }) }
+            }}>
+              导出
             </Button>
-          )}
-          <Button size="sm" variant="ghost" onClick={() => { setSelectionMode(!selectionMode); setSelectedIds(new Set()) }}>
-            {selectionMode ? '退出选择' : '选择'}
-          </Button>
-          <Button size="sm" variant={showAddForm ? 'ghost' : 'secondary'} onClick={toggleAddForm}>
-            {showAddForm ? '取消' : '+ 添加'}
-          </Button>
-        </div>
+            <Button size="sm" variant="ghost" onClick={() => {
+              const input = document.createElement('input'); input.type = 'file'; input.accept = '.json'
+              input.onchange = async (e) => {
+                const file = e.target.files?.[0]; if (!file) return
+                try {
+                  const text = await file.text(); const data = JSON.parse(text)
+                  await api.post('/api/llm-configs/import', { ...data, mode: 'merge' })
+                  addToast({ type: 'success', message: '导入完成' }); await reloadModelData()
+                } catch { addToast({ type: 'error', message: '导入失败' }) }
+              }
+              input.click()
+            }}>
+              导入
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setCompareOpen(true)}>
+              对比
+            </Button>
+            {!RUNTIME_CAPABILITIES.offlineMode && (
+              <Button size="sm" variant="ghost" onClick={handleBatchTest} disabled={batchTesting}>
+                {batchTesting ? '测试中...' : '全部测试'}
+              </Button>
+            )}
+            <Button size="sm" variant="ghost" onClick={() => { setSelectionMode(!selectionMode); setSelectedIds(new Set()) }}>
+              {selectionMode ? '退出选择' : '选择'}
+            </Button>
+            <Button size="sm" variant={showAddForm ? 'ghost' : 'secondary'} onClick={toggleAddForm}>
+              {showAddForm ? '取消' : '+ 添加'}
+            </Button>
+          </div>
+        )
       }
       className="mb-4"
     >
-      {/* Add new form */}
-      {showAddForm && (
-        <div className="rounded-xl border-2 border-dashed p-4 mb-4" style={{ borderColor: 'var(--accent)', backgroundColor: 'var(--bg-secondary)' }}>
-          <p className="text-sm font-medium mb-3" style={{ color: 'var(--text-primary)' }}>新增配置</p>
-          <ConfigEditForm form={form} setForm={setForm} selectedProvider={selectedProvider} providerOptions={availableProviderOptions} providerMap={providerMap} onSubmit={handleSubmit} onCancel={resetForm} submitting={submitting} formError={formError} isNew />
+      {configLoadError && (
+        <div
+          role="alert"
+          className="mb-4 rounded-xl border px-3 py-2 text-sm"
+          style={{
+            borderColor: accessDenied ? 'var(--warning)' : 'var(--danger)',
+            backgroundColor: 'var(--bg-secondary)',
+            color: 'var(--text-secondary)',
+          }}
+        >
+          {configLoadError}
         </div>
       )}
 
-      {/* Config list (search + grouped cards) */}
-      <LLMConfigList
-        groupedConfigs={groupedConfigs}
-        filteredConfigs={filteredConfigs}
-        configs={availableConfigs}
-        search={search}
-        setSearch={setSearch}
-        editingId={editingId}
-        form={form}
-        setForm={setForm}
-        selectedProvider={selectedProvider}
-        providerOptions={availableProviderOptions}
-        providerMap={providerMap}
-        onSubmit={handleSubmit}
-        onCancelEdit={resetForm}
-        submitting={submitting}
-        formError={formError}
-        testResult={testResult}
-        selectionMode={selectionMode}
-        selectedIds={selectedIds}
-        toggleSelection={toggleSelection}
-        onEdit={handleEdit}
-        onDelete={handleDelete}
-        onTest={testConnection}
-        onSetDefault={handleSetDefault}
-        onTogglePin={handleTogglePin}
-        showAddForm={showAddForm}
-      />
+      {!accessDenied && (
+        <>
+          {/* Add new form */}
+          {showAddForm && (
+            <div className="rounded-xl border-2 border-dashed p-4 mb-4" style={{ borderColor: 'var(--accent)', backgroundColor: 'var(--bg-secondary)' }}>
+              <p className="text-sm font-medium mb-3" style={{ color: 'var(--text-primary)' }}>新增配置</p>
+              <ConfigEditForm form={form} setForm={setForm} selectedProvider={selectedProvider} providerOptions={availableProviderOptions} providerMap={providerMap} onSubmit={handleSubmit} onCancel={resetForm} submitting={submitting} formError={formError} isNew />
+            </div>
+          )}
 
-      {/* Usage audit panel */}
-      <UsageAuditPanel />
+          {/* Config list (search + grouped cards) */}
+          <LLMConfigList
+            groupedConfigs={groupedConfigs}
+            filteredConfigs={filteredConfigs}
+            configs={availableConfigs}
+            search={search}
+            setSearch={setSearch}
+            editingId={editingId}
+            form={form}
+            setForm={setForm}
+            selectedProvider={selectedProvider}
+            providerOptions={availableProviderOptions}
+            providerMap={providerMap}
+            onSubmit={handleSubmit}
+            onCancelEdit={resetForm}
+            submitting={submitting}
+            formError={formError}
+            testResult={testResult}
+            selectionMode={selectionMode}
+            selectedIds={selectedIds}
+            toggleSelection={toggleSelection}
+            onEdit={handleEdit}
+            onDelete={handleDelete}
+            onTest={testConnection}
+            onSetDefault={handleSetDefault}
+            onTogglePin={handleTogglePin}
+            showAddForm={showAddForm}
+          />
 
-      {/* Model compare modal */}
-      <ModelCompareModal isOpen={compareOpen} onClose={() => setCompareOpen(false)} configs={availableConfigs} />
+          {/* Usage audit panel */}
+          <UsageAuditPanel />
 
-      {/* Batch action bar */}
-      {selectionMode && (
-        <LLMBatchActions selectedCount={selectedIds.size} onBatchAction={handleBatchAction} />
+          {/* Model compare modal */}
+          <ModelCompareModal isOpen={compareOpen} onClose={() => setCompareOpen(false)} configs={availableConfigs} />
+
+          {/* Batch action bar */}
+          {selectionMode && (
+            <LLMBatchActions selectedCount={selectedIds.size} onBatchAction={handleBatchAction} />
+          )}
+        </>
       )}
     </Card>
   )

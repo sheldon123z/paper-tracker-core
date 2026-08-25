@@ -160,13 +160,19 @@ async def parse_pdf_to_markdown(paper_id: int, file_id: int, db_factory) -> None
 
     db = db_factory()
     try:
-        paper_file = db.query(PaperFile).filter(PaperFile.id == file_id).first()
+        paper_file = db.query(PaperFile).filter(
+            PaperFile.id == file_id,
+            PaperFile.paper_id == paper_id,
+        ).first()
         if not paper_file:
             logger.error("PaperFile %d not found", file_id)
             return
 
         token = _get_token()
-        file_path = read_file(paper_file.storage_path)
+        file_path = read_file(
+            paper_file.storage_path,
+            expected_paper_id=paper_file.paper_id,
+        )
 
         # Update status to processing
         paper_file.parse_status = "processing"

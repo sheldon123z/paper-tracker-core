@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch
 
 import backend.tests  # noqa: F401
 from backend.app.models import Paper, PaperFile
+from backend.app.services import file_storage as storage_module
 from backend.app.services import paper_document_text as document_module
 from backend.app.services.access_control import scope_session
 from backend.app.services.paper_document_text import (
@@ -68,7 +69,7 @@ class PaperDocumentTextTests(unittest.TestCase):
             primary = PaperFile(
                 paper_id=paper.id,
                 filename="primary.pdf",
-                storage_path="primary.pdf",
+                storage_path=f"{paper.id}/primary.pdf",
                 file_type="pdf",
                 content_type="application/pdf",
                 is_primary=True,
@@ -76,7 +77,7 @@ class PaperDocumentTextTests(unittest.TestCase):
             secondary = PaperFile(
                 paper_id=paper.id,
                 filename="secondary.pdf",
-                storage_path="secondary.pdf",
+                storage_path=f"{paper.id}/secondary.pdf",
                 file_type="pdf",
                 content_type="application/pdf",
                 is_primary=False,
@@ -84,7 +85,7 @@ class PaperDocumentTextTests(unittest.TestCase):
             foreign = PaperFile(
                 paper_id=other.id,
                 filename="foreign.pdf",
-                storage_path="foreign.pdf",
+                storage_path=f"{other.id}/foreign.pdf",
                 file_type="pdf",
                 content_type="application/pdf",
                 is_primary=True,
@@ -284,7 +285,7 @@ class PaperDocumentTextTests(unittest.TestCase):
                 parsed = PaperFile(
                     paper_id=self.paper_id,
                     filename="primary.md",
-                    storage_path="primary.md",
+                    storage_path=f"{self.paper_id}/primary.md",
                     file_type="markdown",
                     content_type="text/markdown",
                 )
@@ -302,8 +303,9 @@ class PaperDocumentTextTests(unittest.TestCase):
                 text_truncated=False,
             )
 
-            def resolve_path(storage_path: str) -> Path:
-                if storage_path == "primary.md":
+            def resolve_path(storage_path: str, *, expected_paper_id: int) -> Path:
+                self.assertEqual(expected_paper_id, self.paper_id)
+                if storage_path == f"{self.paper_id}/primary.md":
                     return markdown_path
                 return Path("primary.pdf")
 
@@ -326,7 +328,7 @@ class PaperDocumentTextTests(unittest.TestCase):
                 parsed = PaperFile(
                     paper_id=self.paper_id,
                     filename="primary.md",
-                    storage_path="primary.md",
+                    storage_path=f"{self.paper_id}/primary.md",
                     file_type="markdown",
                     content_type="text/markdown",
                 )
@@ -344,8 +346,13 @@ class PaperDocumentTextTests(unittest.TestCase):
                 text_truncated=False,
             )
 
-            def resolve_path(storage_path: str) -> Path:
-                return markdown_path if storage_path == "primary.md" else Path("primary.pdf")
+            def resolve_path(storage_path: str, *, expected_paper_id: int) -> Path:
+                self.assertEqual(expected_paper_id, self.paper_id)
+                return (
+                    markdown_path
+                    if storage_path == f"{self.paper_id}/primary.md"
+                    else Path("primary.pdf")
+                )
 
             with self.session_factory() as db, \
                  patch.object(document_module, "read_file", side_effect=resolve_path), \
@@ -371,7 +378,7 @@ class PaperDocumentTextTests(unittest.TestCase):
                 parsed = PaperFile(
                     paper_id=self.paper_id,
                     filename="primary.md",
-                    storage_path="primary.md",
+                    storage_path=f"{self.paper_id}/primary.md",
                     file_type="markdown",
                     content_type="text/markdown",
                 )
@@ -406,6 +413,31 @@ class PaperDocumentTextTests(unittest.TestCase):
         self.assertEqual(document.source, "unavailable")
         self.assertEqual(document.text, "")
         self.assertIn("无法读取", document.warning)
+
+    def test_cross_paper_storage_path_cannot_feed_assistant_context(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_root = Path(temp_dir) / "paper-files"
+            foreign_file = storage_root / str(self.other_paper_id) / "foreign.pdf"
+            foreign_file.parent.mkdir(parents=True)
+            foreign_file.write_bytes(b"SECRET OTHER PAPER BODY")
+
+            with self.session_factory() as db:
+                primary = db.query(PaperFile).filter(
+                    PaperFile.id == self.primary_file_id,
+                ).one()
+                primary.storage_path = f"{self.other_paper_id}/foreign.pdf"
+                db.commit()
+
+            with self.session_factory() as db, \
+                 patch.object(storage_module, "_STORAGE_ROOT", storage_root), \
+                 patch.object(document_module, "_extract_pdf_text_safely") as extractor:
+                document = load_paper_document_text(db, self.paper_id)
+
+        self.assertIsNotNone(document)
+        self.assertEqual(document.source, "unavailable")
+        self.assertEqual(document.text, "")
+        self.assertNotIn("SECRET OTHER PAPER BODY", document.warning or "")
+        extractor.assert_not_called()
 
 
 if __name__ == "__main__":

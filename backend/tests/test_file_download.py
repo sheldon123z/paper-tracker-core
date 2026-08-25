@@ -11,6 +11,7 @@ import backend.tests  # noqa: F401
 from backend.app.auth.dependencies import get_current_user
 from backend.app.models import Paper, PaperFile
 from backend.app.routes import files as files_module
+from backend.app.services import file_storage as storage_module
 from backend.tests.support import make_fake_user, make_test_session_factory
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -53,7 +54,7 @@ class PaperFileDownloadTests(unittest.TestCase):
             paper_file = PaperFile(
                 paper_id=paper.id,
                 filename="论文原件.pdf",
-                storage_path="original.pdf",
+                storage_path=f"{paper.id}/original.pdf",
                 file_type="pdf",
                 content_type="application/pdf",
                 is_primary=True,
@@ -61,7 +62,7 @@ class PaperFileDownloadTests(unittest.TestCase):
             hidden_file = PaperFile(
                 paper_id=hidden.id,
                 filename="hidden.pdf",
-                storage_path="hidden.pdf",
+                storage_path=f"{hidden.id}/hidden.pdf",
                 file_type="pdf",
                 content_type="application/pdf",
                 is_primary=True,
@@ -115,6 +116,42 @@ class PaperFileDownloadTests(unittest.TestCase):
         self.assertEqual(response.headers["content-type"], "application/pdf")
         self.assertEqual(int(response.headers["content-length"]), len(self.pdf_bytes))
         self.assertIn("attachment", response.headers["content-disposition"].lower())
+
+    def test_cross_paper_storage_path_is_unavailable_and_not_deleted(self):
+        storage_root = Path(self.temp_dir.name) / "paper-files"
+        other_file = storage_root / str(self.hidden_paper_id) / "hidden.pdf"
+        other_file.parent.mkdir(parents=True)
+        other_file.write_bytes(b"other-paper-secret")
+
+        with self.session_factory() as db:
+            paper_file = db.query(PaperFile).filter(PaperFile.id == self.file_id).one()
+            paper_file.storage_path = f"{self.hidden_paper_id}/hidden.pdf"
+            db.commit()
+
+        with patch.object(storage_module, "_STORAGE_ROOT", storage_root):
+            download_response = self.client.get(
+                f"/api/papers/{self.paper_id}/files/{self.file_id}/download",
+            )
+            content_response = self.client.get(
+                f"/api/papers/{self.paper_id}/files/{self.file_id}/content",
+            )
+            delete_response = self.client.delete(
+                f"/api/papers/{self.paper_id}/files/{self.file_id}",
+            )
+
+        self.assertEqual(download_response.status_code, 404)
+        self.assertEqual(download_response.json()["detail"], "附件不可用")
+        self.assertNotIn(b"other-paper-secret", download_response.content)
+        self.assertEqual(content_response.status_code, 404)
+        self.assertEqual(content_response.json()["detail"], "附件不可用")
+        self.assertNotIn(b"other-paper-secret", content_response.content)
+        self.assertEqual(delete_response.status_code, 409)
+        self.assertEqual(delete_response.json()["detail"], "附件不可用，未执行删除")
+        self.assertEqual(other_file.read_bytes(), b"other-paper-secret")
+        with self.session_factory() as db:
+            self.assertIsNotNone(
+                db.query(PaperFile).filter(PaperFile.id == self.file_id).first(),
+            )
 
     def test_hidden_department_pdf_is_not_downloadable(self):
         regular_user = SimpleNamespace(

@@ -131,6 +131,7 @@ async def commit_pdf(
         db, metadata, content_hash, resolved_visibility, resolved_department,
     )
     saved_path: str | None = None
+    saved_paper_id: int | None = None
     attachment_created = False
     changed = False
     warnings: list[str] = []
@@ -177,8 +178,13 @@ async def commit_pdf(
             PaperFile.content_hash.is_(None),
         ).all():
             try:
-                stored.content_hash = hashlib.sha256(read_file(stored.storage_path).read_bytes()).hexdigest()
-            except (FileNotFoundError, OSError):
+                stored.content_hash = hashlib.sha256(
+                    read_file(
+                        stored.storage_path,
+                        expected_paper_id=stored.paper_id,
+                    ).read_bytes()
+                ).hexdigest()
+            except (FileNotFoundError, OSError, ValueError):
                 continue
 
         existing_attachment = db.query(PaperFile).filter(
@@ -187,6 +193,7 @@ async def commit_pdf(
         ).first()
         if not existing_attachment:
             saved_path, file_size = save_file(paper.id, filename, content)
+            saved_paper_id = paper.id
             db.query(PaperFile).filter(
                 PaperFile.paper_id == paper.id,
                 PaperFile.is_primary.is_(True),
@@ -217,13 +224,13 @@ async def commit_pdf(
         db.refresh(paper)
     except HTTPException:
         db.rollback()
-        if saved_path:
-            delete_file(saved_path)
+        if saved_path and saved_paper_id is not None:
+            delete_file(saved_path, expected_paper_id=saved_paper_id)
         raise
     except Exception as exc:
         db.rollback()
-        if saved_path:
-            delete_file(saved_path)
+        if saved_path and saved_paper_id is not None:
+            delete_file(saved_path, expected_paper_id=saved_paper_id)
         raise HTTPException(status_code=500, detail=f"PDF 入库失败：{str(exc)[:200]}") from exc
 
     cache.delete_by_prefix("papers:list:")
