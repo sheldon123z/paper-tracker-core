@@ -19,7 +19,7 @@ from ..schemas import (
     LLMProviderOption,
     LLMTestResult,
 )
-from ..security import require_llm_config_access
+from ..security import require_llm_config_access, require_llm_config_manager_access
 from ..services.encryption import current_key_version, decrypt_value, encrypt_value
 from ..services.llm_registry import (
     get_provider_profile,
@@ -69,7 +69,11 @@ def _delete_configs(db: Session, configs: list[LLMConfig]) -> int:
     return len(configs)
 
 
-@router.get("", response_model=list[LLMConfigOut])
+@router.get(
+    "",
+    response_model=list[LLMConfigOut],
+    dependencies=[Depends(require_llm_config_manager_access)],
+)
 def list_llm_configs(db: Session = Depends(get_db)):
     configs = db.query(LLMConfig).order_by(LLMConfig.is_pinned.desc(), LLMConfig.id.desc()).all()
     return [enrich_llm_config(config) for config in configs]
@@ -80,7 +84,11 @@ def list_llm_providers():
     return list_provider_options()
 
 
-@router.post("", response_model=LLMConfigOut)
+@router.post(
+    "",
+    response_model=LLMConfigOut,
+    dependencies=[Depends(require_llm_config_manager_access)],
+)
 def create_llm_config(payload: LLMConfigCreate, db: Session = Depends(get_db)):
     if payload.is_default:
         db.query(LLMConfig).filter(LLMConfig.is_default.is_(True)).update({"is_default": False})
@@ -163,7 +171,11 @@ def llm_config_brief(db: Session = Depends(get_db)):
     ]
 
 
-@router.patch("/{config_id}", response_model=LLMConfigOut)
+@router.patch(
+    "/{config_id}",
+    response_model=LLMConfigOut,
+    dependencies=[Depends(require_llm_config_manager_access)],
+)
 def update_llm_config(config_id: int, payload: LLMConfigUpdate, db: Session = Depends(get_db)):
     config = db.query(LLMConfig).filter(LLMConfig.id == config_id).first()
     if not config:
@@ -254,7 +266,10 @@ def update_llm_config(config_id: int, payload: LLMConfigUpdate, db: Session = De
     return enrich_llm_config(config)
 
 
-@router.delete("/{config_id}")
+@router.delete(
+    "/{config_id}",
+    dependencies=[Depends(require_llm_config_manager_access)],
+)
 def delete_llm_config(config_id: int, db: Session = Depends(get_db)):
     config = db.query(LLMConfig).filter(LLMConfig.id == config_id).first()
     if not config:
@@ -265,7 +280,11 @@ def delete_llm_config(config_id: int, db: Session = Depends(get_db)):
     return {"message": "LLM config deleted", "config_id": config_id}
 
 
-@router.post("/{config_id}/test", response_model=LLMTestResult)
+@router.post(
+    "/{config_id}/test",
+    response_model=LLMTestResult,
+    dependencies=[Depends(require_llm_config_manager_access)],
+)
 async def test_llm_config(config_id: int, db: Session = Depends(get_db)):
     config = db.query(LLMConfig).filter(LLMConfig.id == config_id).first()
     if not config:
@@ -296,7 +315,10 @@ async def test_llm_config(config_id: int, db: Session = Depends(get_db)):
     return JSONResponse(status_code=400, content=result)
 
 
-@router.post("/batch-test")
+@router.post(
+    "/batch-test",
+    dependencies=[Depends(require_llm_config_manager_access)],
+)
 async def batch_test_llm_configs(db: Session = Depends(get_db)):
     """Test all enabled LLM configs concurrently."""
     configs = db.query(LLMConfig).filter(LLMConfig.is_enabled.is_(True)).all()
@@ -368,7 +390,10 @@ async def batch_test_llm_configs(db: Session = Depends(get_db)):
     return {"total": len(results), "success": success_count, "failed": len(results) - success_count, "results": results}
 
 
-@router.post("/batch-action")
+@router.post(
+    "/batch-action",
+    dependencies=[Depends(require_llm_config_manager_access)],
+)
 def batch_action_llm_configs(payload: LLMConfigBatchAction, db: Session = Depends(get_db)):
     """Batch enable/disable/delete/pin/unpin configs."""
     if not payload.config_ids:
@@ -399,7 +424,10 @@ def batch_action_llm_configs(payload: LLMConfigBatchAction, db: Session = Depend
     return {"affected": len(configs), "action": action}
 
 
-@router.get("/tags")
+@router.get(
+    "/tags",
+    dependencies=[Depends(require_llm_config_manager_access)],
+)
 def list_llm_tags(db: Session = Depends(get_db)):
     """Return all unique user tags across configs."""
     configs = db.query(LLMConfig.user_tags).filter(LLMConfig.user_tags.isnot(None)).all()
@@ -414,7 +442,10 @@ def list_llm_tags(db: Session = Depends(get_db)):
     return sorted(tags)
 
 
-@router.get("/export")
+@router.get(
+    "/export",
+    dependencies=[Depends(require_llm_config_manager_access)],
+)
 def export_llm_configs(db: Session = Depends(get_db)):
     """Export all configs as JSON (without API keys)."""
     configs = db.query(LLMConfig).order_by(LLMConfig.id).all()
@@ -441,7 +472,10 @@ def export_llm_configs(db: Session = Depends(get_db)):
     return {"version": 1, "configs": items}
 
 
-@router.post("/import")
+@router.post(
+    "/import",
+    dependencies=[Depends(require_llm_config_manager_access)],
+)
 def import_llm_configs(payload: dict, db: Session = Depends(get_db)):
     """Import configs from JSON. mode=merge skips existing, mode=replace clears all first."""
     mode = payload.get("mode", "merge")

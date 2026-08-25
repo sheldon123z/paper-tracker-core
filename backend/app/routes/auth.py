@@ -77,6 +77,29 @@ def _public_registration_enabled() -> bool:
     return value in {"1", "true", "yes"}
 
 
+def _claim_refresh_session(
+    db: Session,
+    *,
+    session_id: int,
+    refresh_token_hash: str,
+    revoked_at: datetime,
+) -> bool:
+    """Atomically claim a live refresh session for one-time rotation."""
+    updated = (
+        db.query(UserSession)
+        .filter(
+            UserSession.id == session_id,
+            UserSession.refresh_token_hash == refresh_token_hash,
+            UserSession.revoked_at.is_(None),
+        )
+        .update(
+            {UserSession.revoked_at: revoked_at},
+            synchronize_session=False,
+        )
+    )
+    return updated == 1
+
+
 @router.get("/capabilities")
 def get_auth_capabilities(response: Response):
     """Expose non-sensitive runtime auth switches to the login screen."""
@@ -293,25 +316,38 @@ def refresh(request: Request, body: RefreshRequest | None = None, db: Session = 
             detail="User account is not active",
         )
 
-    # Revoke old session
-    session.revoked_at = datetime.now(UTC)
+    # Atomically revoke the old session. A concurrent request may have read the
+    # same live row, but only one transaction can change revoked_at from NULL.
+    if not _claim_refresh_session(
+        db,
+        session_id=session.id,
+        refresh_token_hash=token_hash,
+        revoked_at=datetime.now(UTC),
+    ):
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token has been revoked",
+        )
 
-    # Create new tokens
-    session_key = secrets.token_urlsafe(32)
-    new_refresh_token = create_refresh_token()
-
-    # Store new session
-    new_session = UserSession(
-        user_id=user.id,
-        session_key=session_key,
-        refresh_token_hash=hash_refresh_token(new_refresh_token),
-        expires_at=get_refresh_token_expiry(),
-        ip_address=request.client.host if request.client else None,
-        user_agent=request.headers.get("user-agent"),
-    )
-    db.add(new_session)
-    db.commit()
-    access_token, _ = create_access_token(user.id, user.email, user.role, session_key)
+    try:
+        # Only the transaction that claimed the old session may mint and store
+        # its replacement. Revocation and replacement commit together.
+        session_key = secrets.token_urlsafe(32)
+        new_refresh_token = create_refresh_token()
+        access_token, _ = create_access_token(user.id, user.email, user.role, session_key)
+        db.add(UserSession(
+            user_id=user.id,
+            session_key=session_key,
+            refresh_token_hash=hash_refresh_token(new_refresh_token),
+            expires_at=get_refresh_token_expiry(),
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+        ))
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
     response = JSONResponse(content={
         "message": "Token refreshed",

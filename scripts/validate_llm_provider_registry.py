@@ -238,7 +238,10 @@ def check_legacy_row_migration() -> None:
 
 def check_admin_access_guard() -> None:
     from fastapi import HTTPException
-    from backend.app.security import require_llm_config_access
+    from backend.app.security import (
+        require_llm_config_access,
+        require_llm_config_manager_access,
+    )
 
     loopback_request = types.SimpleNamespace(
         client=types.SimpleNamespace(host="127.0.0.1"),
@@ -249,10 +252,29 @@ def check_admin_access_guard() -> None:
         cookies={},
     )
 
-    with patched_env(LLM_CONFIG_ADMIN_TOKEN=None, LLM_CONFIG_TRUST_LAN="false"):
-        require_llm_config_access(loopback_request, authorization=None, x_llm_admin_token=None)
+    with patched_env(
+        LLM_CONFIG_ADMIN_TOKEN=None,
+        PAPER_TRACKER_DEV_MODE="true",
+        OFFLINE_MODE=None,
+    ):
+        require_llm_config_access(
+            loopback_request,
+            authorization=None,
+            x_llm_admin_token=None,
+            authenticated_user=None,
+        )
+
+    with patched_env(
+        LLM_CONFIG_ADMIN_TOKEN=None,
+        PAPER_TRACKER_DEV_MODE=None,
+    ):
         try:
-            require_llm_config_access(remote_request, authorization=None, x_llm_admin_token=None)
+            require_llm_config_access(
+                remote_request,
+                authorization=None,
+                x_llm_admin_token=None,
+                authenticated_user=None,
+            )
         except HTTPException as exc:
             require(exc.status_code == 403, "remote access without admin token should be forbidden.")
         else:
@@ -260,7 +282,12 @@ def check_admin_access_guard() -> None:
 
     with patched_env(LLM_CONFIG_ADMIN_TOKEN="secret-token"):
         try:
-            require_llm_config_access(remote_request, authorization=None, x_llm_admin_token=None)
+            require_llm_config_access(
+                remote_request,
+                authorization=None,
+                x_llm_admin_token=None,
+                authenticated_user=None,
+            )
         except HTTPException as exc:
             require(exc.status_code == 401, "missing admin token should be unauthorized.")
         else:
@@ -270,6 +297,13 @@ def check_admin_access_guard() -> None:
             remote_request,
             authorization="Bearer secret-token",
             x_llm_admin_token=None,
+            authenticated_user=None,
+        )
+        require_llm_config_manager_access(
+            remote_request,
+            authorization=None,
+            x_llm_admin_token="secret-token",
+            authenticated_user=None,
         )
 
 

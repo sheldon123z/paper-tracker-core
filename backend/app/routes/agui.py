@@ -300,6 +300,25 @@ def _format_pdf_context(document: PaperDocumentText) -> str:
     )
 
 
+def _tool_error_response(
+    result_type: str,
+    summary: str,
+    error_code: str,
+    **details,
+) -> str:
+    """Return a stable AG-UI tool error envelope."""
+
+    return json.dumps({
+        "type": result_type,
+        "summary": summary,
+        "data": {
+            "available": False,
+            "error_code": error_code,
+            **details,
+        },
+    }, ensure_ascii=False)
+
+
 def _read_current_paper_pdf(
     db: Session,
     paper,
@@ -312,12 +331,27 @@ def _read_current_paper_pdf(
         page_count = int(arguments.get("page_count", 4))
         page_char_offset = int(arguments.get("page_char_offset", 0))
         text_offset = int(arguments.get("text_offset", 0))
-    except (TypeError, ValueError):
-        return "Error: PDF cursor values must be integers."
+    except (AttributeError, TypeError, ValueError):
+        return _tool_error_response(
+            "current_paper_pdf",
+            "PDF 游标参数必须是整数。",
+            "INVALID_CURSOR_TYPE",
+            fields=["start_page", "page_count", "page_char_offset", "text_offset"],
+        )
     if start_page < 1:
-        return "Error: start_page must be at least 1."
+        return _tool_error_response(
+            "current_paper_pdf",
+            "start_page 必须大于或等于 1。",
+            "INVALID_START_PAGE",
+            fields=["start_page"],
+        )
     if page_char_offset < 0 or text_offset < 0:
-        return "Error: PDF cursor offsets must not be negative."
+        return _tool_error_response(
+            "current_paper_pdf",
+            "PDF 游标偏移量不能为负数。",
+            "INVALID_CURSOR_OFFSET",
+            fields=["page_char_offset", "text_offset"],
+        )
     page_count = min(max(page_count, 1), MAX_PDF_TOOL_PAGES)
 
     document = load_paper_document_text(
@@ -441,9 +475,19 @@ def _with_current_paper_pdf_tool(
 
             return execute_pdf_read()
         if translation_only:
-            return f"Tool '{name}' is unavailable during a current-paper translation request."
+            return _tool_error_response(
+                name or "unknown_tool",
+                f"工具 {name!r} 在当前论文翻译请求中不可用。",
+                "TOOL_UNAVAILABLE_DURING_TRANSLATION",
+                requested_tool=name,
+            )
         if executor is None:
-            return f"Unknown tool: {name}"
+            return _tool_error_response(
+                name or "unknown_tool",
+                f"未知工具：{name}",
+                "UNKNOWN_TOOL",
+                requested_tool=name,
+            )
         return executor(name, arguments)
 
     return scoped_defs, scoped_executor

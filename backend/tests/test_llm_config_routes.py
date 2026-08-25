@@ -7,7 +7,7 @@ from unittest.mock import patch
 import backend.tests  # noqa: F401
 from backend.app.routes import llm_config as llm_config_module
 from backend.tests.support import TEST_ENCRYPTION_KEY, make_test_session_factory, patched_env
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
@@ -37,6 +37,9 @@ class LLMConfigRouteTests(unittest.TestCase):
 
         self.app.dependency_overrides[llm_config_module.get_db] = override_get_db
         self.app.dependency_overrides[llm_config_module.require_llm_config_access] = lambda: None
+        self.app.dependency_overrides[
+            llm_config_module.require_llm_config_manager_access
+        ] = lambda: None
         self.client = TestClient(self.app)
 
     def tearDown(self):
@@ -53,6 +56,38 @@ class LLMConfigRouteTests(unittest.TestCase):
         self.assertTrue(any(item["key"] == "openrouter" for item in payload))
         openai_compatible = next(item for item in payload if item["key"] == "openai_compatible")
         self.assertTrue(openai_compatible["allows_custom_headers"])
+
+    def test_management_routes_require_manager_dependency(self):
+        def deny_manager():
+            raise HTTPException(status_code=403, detail="Manager access required")
+
+        self.app.dependency_overrides[
+            llm_config_module.require_llm_config_manager_access
+        ] = deny_manager
+
+        protected_requests = (
+            ("get", "/api/llm-configs", None),
+            ("post", "/api/llm-configs", {}),
+            ("patch", "/api/llm-configs/1", {}),
+            ("delete", "/api/llm-configs/1", None),
+            ("post", "/api/llm-configs/1/test", None),
+            ("post", "/api/llm-configs/batch-test", None),
+            ("post", "/api/llm-configs/batch-action", {}),
+            ("get", "/api/llm-configs/tags", None),
+            ("get", "/api/llm-configs/export", None),
+            ("post", "/api/llm-configs/import", {}),
+        )
+        for method, path, payload in protected_requests:
+            with self.subTest(method=method, path=path):
+                response = self.client.request(method, path, json=payload)
+                self.assertEqual(response.status_code, 403, response.text)
+
+        self.assertEqual(
+            self.client.get("/api/llm-configs/providers").status_code,
+            200,
+        )
+        self.assertEqual(self.client.get("/api/llm-configs/status").status_code, 200)
+        self.assertEqual(self.client.get("/api/llm-configs/brief").status_code, 200)
 
     def test_create_config_and_brief_metadata(self):
         with patched_env(

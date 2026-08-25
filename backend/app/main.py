@@ -100,16 +100,42 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-origins = [origin.strip() for origin in os.getenv("CORS_ORIGINS", "http://localhost:3457").split(",") if origin.strip()]
-if "*" in origins:
-    if is_offline_mode():
+LOOPBACK_CORS_ORIGIN_REGEX = (
+    r"(?i)^https?://(?:localhost|127\.0\.0\.1|\[::1\])(?::[1-9]\d{0,4})?$"
+)
+
+
+def resolve_cors_policy() -> tuple[list[str], str | None]:
+    """Resolve a credential-safe CORS policy from the runtime environment."""
+
+    configured = os.getenv("CORS_ORIGINS", "http://localhost:3457")
+    origins = [origin.strip() for origin in configured.split(",") if origin.strip()]
+    if "*" not in origins:
+        return origins, None
+
+    development_mode = (
+        os.getenv("PAPER_TRACKER_DEV_MODE", "").strip().lower()
+        in {"1", "true", "yes", "on"}
+    )
+    if is_offline_mode() or not development_mode:
         raise RuntimeError(
-            "CORS_ORIGINS must not contain '*' while OFFLINE_MODE is enabled."
+            "CORS_ORIGINS must not contain '*'. Use explicit origins, or enable "
+            "PAPER_TRACKER_DEV_MODE only for loopback development."
         )
-    logger.warning("⚠️  CORS_ORIGINS contains wildcard '*'. This is insecure for production.")
+
+    # Starlette cannot safely combine '*' with credentialed requests.  Even in
+    # explicit development mode, replace it with a loopback-only allowlist.
+    logger.warning(
+        "PAPER_TRACKER_DEV_MODE converted wildcard CORS to loopback-only origins."
+    )
+    return [origin for origin in origins if origin != "*"], LOOPBACK_CORS_ORIGIN_REGEX
+
+
+origins, origin_regex = resolve_cors_policy()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
+    allow_origin_regex=origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

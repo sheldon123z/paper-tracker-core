@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import hashlib
 import os
+import tempfile
 import unittest
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from unittest.mock import patch
 
 import backend.tests  # noqa: F401
@@ -26,6 +28,7 @@ from backend.app.auth.tokens import (
 )
 from backend.app.control_plane.database import ControlBase, get_control_db
 from backend.app.control_plane.models import Department, User, UserSession
+from backend.app.routes.auth import _claim_refresh_session
 from backend.app.routes.auth import router as auth_router
 from backend.tests.support import patched_env
 from fastapi import FastAPI
@@ -636,6 +639,112 @@ class RefreshTests(AuthAPITestBase):
             "refresh_token": new_tokens["refresh_token"],
         })
         self.assertEqual(res2.status_code, 200)
+
+    async def test_refresh_race_loser_does_not_mint_replacement(self):
+        tokens = await self._register_and_login()
+        self.client.cookies.clear()
+
+        with (
+            patch("backend.app.routes.auth._claim_refresh_session", return_value=False),
+            patch("backend.app.routes.auth.create_refresh_token") as create_token,
+        ):
+            res = await self.client.post("/api/auth/refresh", json={
+                "refresh_token": tokens["refresh_token"],
+            })
+
+        self.assertEqual(res.status_code, 401)
+        self.assertIn("revoked", res.json()["detail"])
+        create_token.assert_not_called()
+        with self.session_factory() as db:
+            sessions = db.query(UserSession).all()
+            self.assertEqual(len(sessions), 1)
+            self.assertIsNone(sessions[0].revoked_at)
+
+
+class RefreshRotationAtomicityTests(unittest.TestCase):
+    def test_two_stale_database_sessions_create_only_one_descendant(self):
+        with tempfile.TemporaryDirectory(prefix="paper-tracker-auth-") as temp_dir:
+            engine = create_engine(
+                f"sqlite:///{Path(temp_dir) / 'control-plane.db'}",
+                connect_args={"check_same_thread": False},
+            )
+            ControlBase.metadata.create_all(bind=engine)
+            session_factory = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+            with session_factory() as seed_db:
+                user = User(
+                    email="race@example.com",
+                    username="race-user",
+                    password_hash="unused-in-this-test",
+                )
+                seed_db.add(user)
+                seed_db.flush()
+                original = UserSession(
+                    user_id=user.id,
+                    session_key="original-session",
+                    refresh_token_hash="original-refresh-hash",
+                    expires_at=datetime.now(UTC) + timedelta(days=1),
+                )
+                seed_db.add(original)
+                seed_db.commit()
+                original_id = original.id
+                user_id = user.id
+
+            first_db = session_factory()
+            second_db = session_factory()
+            try:
+                # Both transactions observe the same stale, unrevoked row.
+                first_stale = first_db.query(UserSession).filter(UserSession.id == original_id).one()
+                second_stale = second_db.query(UserSession).filter(UserSession.id == original_id).one()
+                self.assertIsNone(first_stale.revoked_at)
+                self.assertIsNone(second_stale.revoked_at)
+
+                first_won = _claim_refresh_session(
+                    first_db,
+                    session_id=original_id,
+                    refresh_token_hash="original-refresh-hash",
+                    revoked_at=datetime.now(UTC),
+                )
+                if first_won:
+                    first_db.add(UserSession(
+                        user_id=user_id,
+                        session_key="first-descendant",
+                        refresh_token_hash="first-descendant-hash",
+                        expires_at=datetime.now(UTC) + timedelta(days=1),
+                    ))
+                    first_db.commit()
+
+                second_won = _claim_refresh_session(
+                    second_db,
+                    session_id=original_id,
+                    refresh_token_hash="original-refresh-hash",
+                    revoked_at=datetime.now(UTC),
+                )
+                if second_won:
+                    second_db.add(UserSession(
+                        user_id=user_id,
+                        session_key="second-descendant",
+                        refresh_token_hash="second-descendant-hash",
+                        expires_at=datetime.now(UTC) + timedelta(days=1),
+                    ))
+                    second_db.commit()
+                else:
+                    second_db.rollback()
+
+                self.assertTrue(first_won)
+                self.assertFalse(second_won)
+            finally:
+                first_db.close()
+                second_db.close()
+
+            with session_factory() as verify_db:
+                sessions = verify_db.query(UserSession).order_by(UserSession.id).all()
+                self.assertEqual(len(sessions), 2)
+                self.assertIsNotNone(sessions[0].revoked_at)
+                active_hashes = {item.refresh_token_hash for item in sessions if item.revoked_at is None}
+                self.assertEqual(active_hashes, {"first-descendant-hash"})
+
+            engine.dispose()
 
 
 class LogoutTests(AuthAPITestBase):

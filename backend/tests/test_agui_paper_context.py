@@ -193,6 +193,34 @@ class PaperContextTests(unittest.TestCase):
         self.assertNotIn('"paper_id": 999', result)
         self.assertIn('"next_start_page": 5', result)
 
+    def test_current_pdf_tool_returns_structured_cursor_errors(self):
+        cases = (
+            (
+                {"start_page": "not-an-integer"},
+                "INVALID_CURSOR_TYPE",
+                ["start_page", "page_count", "page_char_offset", "text_offset"],
+            ),
+            ({"start_page": 0}, "INVALID_START_PAGE", ["start_page"]),
+            (
+                {"page_char_offset": -1},
+                "INVALID_CURSOR_OFFSET",
+                ["page_char_offset", "text_offset"],
+            ),
+        )
+
+        with patch("app.routes.agui.load_paper_document_text") as loader:
+            for arguments, error_code, fields in cases:
+                with self.subTest(error_code=error_code):
+                    payload = json.loads(_read_current_paper_pdf(
+                        object(), self._paper(), {}, arguments,
+                    ))
+                    self.assertEqual(payload["type"], "current_paper_pdf")
+                    self.assertFalse(payload["data"]["available"])
+                    self.assertEqual(payload["data"]["error_code"], error_code)
+                    self.assertEqual(payload["data"]["fields"], fields)
+
+        loader.assert_not_called()
+
     def test_translation_intent_covers_common_phrases_and_respects_negation(self):
         for request in (
             "请把这篇论文翻成中文",
@@ -456,7 +484,26 @@ class PaperContextTests(unittest.TestCase):
             [item["function"]["name"] for item in definitions],
             ["read_current_paper_pdf"],
         )
-        self.assertIn("unavailable", executor("search_papers", {}))
+        payload = json.loads(executor("search_papers", {}))
+        self.assertEqual(payload["type"], "search_papers")
+        self.assertFalse(payload["data"]["available"])
+        self.assertEqual(
+            payload["data"]["error_code"],
+            "TOOL_UNAVAILABLE_DURING_TRANSLATION",
+        )
+        self.assertEqual(payload["data"]["requested_tool"], "search_papers")
+
+    def test_scoped_pdf_tool_returns_structured_unknown_tool_error(self):
+        _, executor = _with_current_paper_pdf_tool(
+            object(), self._paper(), {}, [], None,
+        )
+
+        payload = json.loads(executor("missing_tool", {}))
+
+        self.assertEqual(payload["type"], "missing_tool")
+        self.assertFalse(payload["data"]["available"])
+        self.assertEqual(payload["data"]["error_code"], "UNKNOWN_TOOL")
+        self.assertEqual(payload["data"]["requested_tool"], "missing_tool")
 
     def test_current_paper_reader_runs_with_an_isolated_worker_session(self):
         scoped_db = SimpleNamespace(
