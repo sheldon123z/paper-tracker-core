@@ -61,6 +61,7 @@ $archivePath = Assert-OfflineLocalPathNoReparse -Path (
 $temporaryPath = Assert-OfflineLocalPathNoReparse -Path "$archivePath.partial"
 
 $runningServices = @()
+$volumeLock = $null
 $projectLock = Enter-OfflineProjectLock `
     -ProjectName $envValues["COMPOSE_PROJECT_NAME"]
 try {
@@ -105,7 +106,9 @@ try {
             }
         }
         finally {
-            Exit-OfflineVolumeLock -Mutex $volumeLock
+            if ($null -ne $volumeLock) {
+                Exit-OfflineVolumeLock -Mutex $volumeLock
+            }
         }
     }
 }

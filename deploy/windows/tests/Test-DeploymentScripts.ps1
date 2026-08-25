@@ -264,6 +264,23 @@ try {
         }
     }
 
+    foreach ($scriptName in @(
+        "Backup-OfflineData.ps1",
+        "Restore-OfflineData.ps1"
+    )) {
+        $sourceScript = Join-Path $sourceRoot "deploy\windows\$scriptName"
+        $scriptText = Get-Content -LiteralPath $sourceScript -Raw
+        if ($scriptText -notmatch '(?m)^\$volumeLock = \$null\s*$') {
+            throw "$scriptName does not initialize the volume lock before acquisition."
+        }
+        if (
+            $scriptText -notmatch
+                '(?s)if\s*\(\$null -ne \$volumeLock\)\s*\{\s*Exit-OfflineVolumeLock -Mutex \$volumeLock\s*\}'
+        ) {
+            throw "$scriptName does not guard release of an unacquired volume lock."
+        }
+    }
+
     $aclBundle = Join-Path $testRoot "acl-bundle"
     $aclOutside = Join-Path $testRoot "acl-outside"
     [void](New-Item -ItemType Directory -Path $aclBundle, $aclOutside)
