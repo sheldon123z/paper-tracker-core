@@ -47,6 +47,8 @@ def create_usage_collector(
         "tool_calls_count": 0,
         "status": "success",
         "error_code": None,
+        "finish_reason": None,
+        "output_truncated": False,
         "_first_token_received": False,
     }
 

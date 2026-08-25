@@ -89,6 +89,7 @@ async def upload_file(
     return paper_file
 
 
+@router.head("/{file_id}/download")
 @router.get("/{file_id}/download")
 def download_file(paper_id: int, file_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _get_paper_or_404(paper_id, db, user)

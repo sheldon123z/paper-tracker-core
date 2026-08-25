@@ -46,6 +46,10 @@ class ChatAgentConfig:
     session_id: str | None = None           # global/assistant session id
     paper_id: int | None = None             # paper only
     system_prompt: str = ""
+    # Server-provided document data is inserted as a lower-priority human
+    # message immediately before the latest user request. It is never
+    # persisted as user-authored chat history.
+    context_messages: list[str] = field(default_factory=list)
     tool_defs: list[dict] = field(default_factory=list)
     tool_executor: Callable | None = None
     resolved: ResolvedLLMConfig | None = None
@@ -53,6 +57,9 @@ class ChatAgentConfig:
     track_ordered_segments: bool = False    # assistant: True
     user_id: int | None = None
     department_id: int | None = None
+    # Redacted server checkpoint for automatically attached PDF context.  It
+    # contains only paper/file IDs and the next cursor, never source text.
+    pdf_cursor_checkpoint: dict | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -67,14 +74,26 @@ def last_user_content(messages: list[dict]) -> str | None:
     return None
 
 
-def to_langchain_messages(system_prompt: str, messages: list[dict]):
-    """Convert raw dicts to LangChain message objects."""
+def to_langchain_messages(
+    system_prompt: str,
+    messages: list[dict],
+    context_messages: list[str] | None = None,
+):
+    """Convert messages, keeping untrusted document context below system role."""
     lc = [SystemMessage(content=system_prompt)]
-    for m in messages:
+    latest_user_index = next(
+        (index for index in range(len(messages) - 1, -1, -1) if messages[index].get("role") == "user"),
+        len(messages),
+    )
+    for index, m in enumerate(messages):
+        if index == latest_user_index:
+            lc.extend(HumanMessage(content=context) for context in (context_messages or []))
         if m["role"] == "user":
             lc.append(HumanMessage(content=m["content"]))
         elif m["role"] == "assistant":
             lc.append(AIMessage(content=m["content"]))
+    if latest_user_index == len(messages):
+        lc.extend(HumanMessage(content=context) for context in (context_messages or []))
     return lc
 
 
@@ -226,6 +245,8 @@ def save_response_messages(
     full_text: list[str],
     tool_interactions: list[dict],
     ordered_segments: list[dict],
+    *,
+    pdf_resume_eligible: bool = True,
 ) -> None:
     """Persist assistant/tool response messages to DB.
 
@@ -233,6 +254,38 @@ def save_response_messages(
     Segment mode (assistant): save text+tool segments in chronological order,
     with a fallback if no segments were tracked.
     """
+    def persisted_interaction(interaction: dict) -> dict:
+        if interaction.get("name") != "read_current_paper_pdf":
+            return interaction
+        return {**interaction, "resume_eligible": pdf_resume_eligible}
+
+    tool_interactions = [
+        persisted_interaction(interaction)
+        for interaction in tool_interactions
+    ]
+    checkpoint_interaction = None
+    pdf_cursor_checkpoint = getattr(config, "pdf_cursor_checkpoint", None)
+    if pdf_resume_eligible and pdf_cursor_checkpoint and not any(
+        interaction.get("name") == "read_current_paper_pdf"
+        for interaction in tool_interactions
+    ):
+        checkpoint_interaction = {
+            "tool_call_id": f"server-pdf-cursor-{_uuid.uuid4()}",
+            "name": "read_current_paper_pdf",
+            "resume_eligible": True,
+            "args": json.dumps({"source": "automatic_context"}),
+            "result": json.dumps({
+                "type": "current_paper_pdf",
+                "summary": "PDF 自动上下文正文未写入聊天历史；仅保存续读游标。",
+                "data": {
+                    **pdf_cursor_checkpoint,
+                    "text_omitted": True,
+                    "text_length": 0,
+                },
+            }, ensure_ascii=False),
+        }
+        tool_interactions = [*tool_interactions, checkpoint_interaction]
+
     if config.track_ordered_segments:
         # Segment mode: assistant agent with interleaved text+tool messages
         if ordered_segments:
@@ -246,13 +299,22 @@ def save_response_messages(
                         content=seg["content"],
                     ))
                 elif seg["type"] == "tool":
+                    interaction = persisted_interaction(seg["data"])
                     db.add(ChatMessage(
                         session_id=config.session_id,
                         user_id=config.user_id,
                         session_type=config.session_type,
                         role="tool",
-                        content=json.dumps(seg["data"], ensure_ascii=False),
+                        content=json.dumps(interaction, ensure_ascii=False),
                     ))
+            if checkpoint_interaction is not None:
+                db.add(ChatMessage(
+                    session_id=config.session_id,
+                    user_id=config.user_id,
+                    session_type=config.session_type,
+                    role="tool",
+                    content=json.dumps(checkpoint_interaction, ensure_ascii=False),
+                ))
             db.commit()
         elif tool_interactions or full_text:
             # Fallback: no ordered segments tracked (shouldn't happen)
@@ -274,7 +336,22 @@ def save_response_messages(
                 ))
             db.commit()
     else:
-        # Simple mode: paper or global — one assistant text message
+        # Simple mode: paper or global — one assistant text message.  Preserve
+        # only the redacted PDF cursor for paper chat so a later bare "继续"
+        # can resume after the last tool-read chunk without storing PDF body.
+        changed = False
+        if config.session_type == "paper":
+            for interaction in tool_interactions:
+                if interaction.get("name") != "read_current_paper_pdf":
+                    continue
+                db.add(ChatMessage(
+                    paper_id=config.paper_id,
+                    user_id=config.user_id,
+                    session_type="paper",
+                    role="tool",
+                    content=json.dumps(interaction, ensure_ascii=False),
+                ))
+                changed = True
         if full_text:
             if config.session_type == "paper":
                 db.add(ChatMessage(
@@ -292,12 +369,23 @@ def save_response_messages(
                     role="assistant",
                     content="".join(full_text),
                 ))
+            changed = True
+        if changed:
             db.commit()
 
 
 # ---------------------------------------------------------------------------
 # Unified chat agent pipeline
 # ---------------------------------------------------------------------------
+
+
+def _can_advance_pdf_cursor(usage_collector: dict, full_text: list[str]) -> bool:
+    """Advance source only after a successful, non-truncated visible response."""
+    return (
+        usage_collector.get("status", "success") == "success"
+        and not usage_collector.get("output_truncated", False)
+        and bool("".join(full_text).strip())
+    )
 
 
 async def run_chat_agent(
@@ -322,7 +410,11 @@ async def run_chat_agent(
     """
     msg_id = str(_uuid.uuid4())
     user_content = last_user_content(messages)
-    lc_messages = to_langchain_messages(config.system_prompt, messages)
+    lc_messages = to_langchain_messages(
+        config.system_prompt,
+        messages,
+        config.context_messages,
+    )
 
     save_user_message(db, config, user_content)
 
@@ -358,18 +450,27 @@ async def run_chat_agent(
         request_type=config.agent_type,
     )
 
+    run_completed = False
     try:
         async for line in stream_graph_as_agui(
             graph, initial_state, encoder, thread_id, run_id, msg_id,
             full_text=full_text,
             history_snapshot=history_snapshot if history_snapshot else None,
-            tool_interactions=tool_interactions if config.track_ordered_segments else None,
+            tool_interactions=tool_interactions,
             ordered_segments=ordered_segments if config.track_ordered_segments else None,
             usage_collector=usage_col,
         ):
             yield line
+        run_completed = _can_advance_pdf_cursor(usage_col, full_text)
     finally:
-        save_response_messages(db, config, full_text, tool_interactions, ordered_segments)
+        save_response_messages(
+            db,
+            config,
+            full_text,
+            tool_interactions,
+            ordered_segments,
+            pdf_resume_eligible=run_completed,
+        )
         # Fallback token estimation if provider didn't return usage metadata
         if usage_col["total_tokens"] == 0 and full_text:
             text_len = len("".join(full_text))

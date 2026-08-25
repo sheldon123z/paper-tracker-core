@@ -8,6 +8,7 @@ import backend.tests  # noqa: F401
 from backend.app.services.llm_registry import (
     ProviderConfigError,
     ResolvedLLMConfig,
+    build_litellm_model,
     normalize_base_url,
     validate_base_url,
     validate_extra_headers,
@@ -21,7 +22,7 @@ class LLMRegistryTests(unittest.TestCase):
             provider_key="ollama",
             display_name="Local",
             model_name="qwen3:8b",
-            litellm_model="ollama/qwen3:8b",
+            litellm_model="ollama_chat/qwen3:8b",
             api_key="must-not-be-checkpointed",
             api_base="http://127.0.0.1:11434",
             extra_headers={},
@@ -35,6 +36,12 @@ class LLMRegistryTests(unittest.TestCase):
         )
 
         self.assertNotIn("api_key", resolved.to_state())
+
+    def test_ollama_uses_chat_adapter_for_tools_and_visible_content(self):
+        self.assertEqual(
+            build_litellm_model("ollama", "qwen3:8b"),
+            "ollama_chat/qwen3:8b",
+        )
 
     def test_normalize_known_provider_base_urls(self):
         self.assertEqual(

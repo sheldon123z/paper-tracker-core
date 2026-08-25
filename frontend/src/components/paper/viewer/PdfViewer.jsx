@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { Document, Page, pdfjs } from 'react-pdf'
 import 'react-pdf/dist/Page/TextLayer.css'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
@@ -6,20 +6,32 @@ import { Button } from '../../ui'
 import useStore from '../../../store'
 
 // Bundle the worker with the app so local/offline viewing does not depend on a CDN.
-pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+// The version query invalidates responses cached before the gateway served .mjs
+// with the JavaScript MIME type. Restarting containers cannot clear that cache.
+const pdfWorkerUrl = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
   import.meta.url,
-).toString()
+)
+pdfWorkerUrl.searchParams.set('v', 'mjs-mime-v1')
+pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl.toString()
 
 // Attachment endpoints are protected by httpOnly auth cookies and run on the
 // backend port in local development. PDF.js defaults to omitting credentials
 // for that cross-origin request unless this is enabled explicitly.
-const PDF_DOCUMENT_OPTIONS = { withCredentials: true }
+const pdfAssetRoot = `${import.meta.env.BASE_URL}pdfjs`
+const PDF_DOCUMENT_OPTIONS = {
+  withCredentials: true,
+  cMapUrl: `${pdfAssetRoot}/cmaps/`,
+  cMapPacked: true,
+  standardFontDataUrl: `${pdfAssetRoot}/standard_fonts/`,
+  wasmUrl: `${pdfAssetRoot}/wasm/`,
+}
 
 export default function PdfViewer({ fileUrl, onSelectionChange }) {
   const [numPages, setNumPages] = useState(null)
   const [scale, setScale] = useState(1)
   const [fitWidth, setFitWidth] = useState(560)
+  const [pageRenderErrors, setPageRenderErrors] = useState({})
   const pagesRef = useRef(null)
 
   // Read selection from Zustand (persists across clicks outside PDF)
@@ -28,6 +40,20 @@ export default function PdfViewer({ fileUrl, onSelectionChange }) {
 
   const onDocumentLoadSuccess = useCallback(({ numPages: n }) => {
     setNumPages(n)
+    setPageRenderErrors({})
+  }, [])
+
+  const handlePageRenderError = useCallback((pageNumber) => {
+    setPageRenderErrors((current) => ({ ...current, [pageNumber]: true }))
+  }, [])
+
+  const handlePageRenderSuccess = useCallback((pageNumber) => {
+    setPageRenderErrors((current) => {
+      if (!current[pageNumber]) return current
+      const next = { ...current }
+      delete next[pageNumber]
+      return next
+    })
   }, [])
 
   useEffect(() => {
@@ -117,15 +143,23 @@ export default function PdfViewer({ fileUrl, onSelectionChange }) {
         >
           {numPages &&
             Array.from({ length: numPages }, (_, i) => (
-              <Page
-                key={i + 1}
-                pageNumber={i + 1}
-                width={fitWidth}
-                scale={scale}
-                className="pdf-page"
-                renderTextLayer={true}
-                renderAnnotationLayer={true}
-              />
+              <Fragment key={i + 1}>
+                <Page
+                  pageNumber={i + 1}
+                  width={fitWidth}
+                  scale={scale}
+                  className="pdf-page"
+                  renderTextLayer={true}
+                  renderAnnotationLayer={true}
+                  onRenderError={() => handlePageRenderError(i + 1)}
+                  onRenderSuccess={() => handlePageRenderSuccess(i + 1)}
+                />
+                {pageRenderErrors[i + 1] && (
+                  <div className="text-sm text-red-500 py-3 text-center" role="alert">
+                    第 {i + 1} 页渲染失败，请刷新页面或下载原文查看
+                  </div>
+                )}
+              </Fragment>
             ))}
         </Document>
       </div>

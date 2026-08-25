@@ -34,7 +34,7 @@ def _resolved_config(base_url: str, *, is_local: bool) -> ResolvedLLMConfig:
         provider_key="ollama" if is_local else "openai",
         display_name="test",
         model_name="test-model",
-        litellm_model="ollama/test-model" if is_local else "openai/test-model",
+        litellm_model="ollama_chat/test-model" if is_local else "openai/test-model",
         api_key="test",
         api_base=base_url,
         extra_headers={},

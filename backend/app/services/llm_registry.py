@@ -164,7 +164,10 @@ PROVIDER_REGISTRY: dict[str, ProviderProfile] = {
     "ollama": ProviderProfile(
         key="ollama",
         label="Ollama",
-        litellm_provider="ollama",
+        # LiteLLM's `ollama` adapter uses /api/generate, which loses native
+        # chat tool calls and can leave reasoning models with no visible text.
+        # This application always sends chat messages, so use /api/chat.
+        litellm_provider="ollama_chat",
         api_format="native",
         default_base_url="http://localhost:11434",
         requires_api_key=False,

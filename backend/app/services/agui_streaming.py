@@ -58,6 +58,31 @@ def extract_visible_stream_text(chunk) -> list[str]:
     return extract_stream_text_from_chunk(chunk)
 
 
+def _tool_result_for_persistence(tool_name: str, result: str) -> str:
+    """Remove paper body text from durable chat history.
+
+    The live model and requesting browser still receive the tool result, but a
+    deleted paper must not leave its original body copied into an orphaned
+    assistant session.
+    """
+    if tool_name != "read_current_paper_pdf":
+        return result
+    try:
+        payload = json.loads(result)
+    except (json.JSONDecodeError, TypeError):
+        return json.dumps({
+            "type": "current_paper_pdf",
+            "summary": "PDF 原文读取结果未写入聊天历史。",
+            "data": {"text_omitted": True},
+        }, ensure_ascii=False)
+    data = payload.get("data")
+    if isinstance(data, dict):
+        raw_text = data.pop("text", None)
+        data["text_omitted"] = raw_text is not None
+        data["text_length"] = len(raw_text) if isinstance(raw_text, str) else 0
+    return json.dumps(payload, ensure_ascii=False)
+
+
 async def stream_graph_as_agui(
     graph, initial_state: dict, encoder: EventEncoder,
     thread_id: str, run_id: str, msg_id: str,
@@ -162,13 +187,28 @@ async def stream_graph_as_agui(
                         ))
                 # Extract token usage from LLM response metadata
                 if usage_collector and output:
+                    rm = getattr(output, "response_metadata", {}) or {}
+                    finish_reason = rm.get("finish_reason") or rm.get("stop_reason")
+                    finish_details = rm.get("finish_details")
+                    if not finish_reason and isinstance(finish_details, dict):
+                        finish_reason = finish_details.get("type") or finish_details.get("reason")
+                    if finish_reason:
+                        normalized_reason = str(finish_reason).strip().lower()
+                        usage_collector["finish_reason"] = normalized_reason
+                        if normalized_reason in {
+                            "length",
+                            "max_tokens",
+                            "max_output_tokens",
+                            "max_completion_tokens",
+                            "model_length",
+                        }:
+                            usage_collector["output_truncated"] = True
                     um = getattr(output, "usage_metadata", None)
                     if um:
                         usage_collector["prompt_tokens"] += getattr(um, "input_tokens", 0) or um.get("input_tokens", 0) if isinstance(um, dict) else 0
                         usage_collector["completion_tokens"] += getattr(um, "output_tokens", 0) or um.get("output_tokens", 0) if isinstance(um, dict) else 0
                         usage_collector["total_tokens"] += getattr(um, "total_tokens", 0) or um.get("total_tokens", 0) if isinstance(um, dict) else 0
                     elif not um:
-                        rm = getattr(output, "response_metadata", {}) or {}
                         tu = rm.get("token_usage") or rm.get("usage") or {}
                         if tu:
                             usage_collector["prompt_tokens"] += tu.get("prompt_tokens", 0)
@@ -225,11 +265,15 @@ async def stream_graph_as_agui(
                         ))
                         # Collect tool interaction for DB persistence
                         info = pending_tool_info.get(tc_id, {})
+                        tool_name = info.get("name", "")
                         td_entry = {
                             "tool_call_id": tc_id,
-                            "name": info.get("name", ""),
+                            "name": tool_name,
                             "args": json.dumps(info.get("args", {}), ensure_ascii=False),
-                            "result": result_map[tc_id],
+                            "result": _tool_result_for_persistence(
+                                tool_name,
+                                result_map[tc_id],
+                            ),
                         }
                         tool_interactions.append(td_entry)
                         if usage_collector is not None:
@@ -245,6 +289,9 @@ async def stream_graph_as_agui(
     except GeneratorExit:
         # Client disconnected (user cancelled output) — gracefully stop
         _flush_text_segment()
+        if usage_collector:
+            usage_collector["status"] = "cancelled"
+            usage_collector["error_code"] = "client_disconnected"
         logger.info("Client disconnected (GeneratorExit), partial text: %d chars", len("".join(full_text)))
         return
     except Exception as exc:

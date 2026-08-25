@@ -32,6 +32,7 @@ describe('PdfViewer', () => {
   it('uses the bundled PDF worker instead of an external CDN', () => {
     expect(reactPdfState.workerOptions.workerSrc).toContain('pdf.worker.min.mjs')
     expect(reactPdfState.workerOptions.workerSrc).not.toContain('unpkg.com')
+    expect(new URL(reactPdfState.workerOptions.workerSrc).searchParams.get('v')).toBe('mjs-mime-v1')
   })
 
   it('loads protected attachment content with auth cookies', () => {
@@ -41,7 +42,13 @@ describe('PdfViewer', () => {
 
     expect(screen.getByTestId('pdf-document')).toBeInTheDocument()
     expect(reactPdfState.documentProps.file).toBe(fileUrl)
-    expect(reactPdfState.documentProps.options).toEqual({ withCredentials: true })
+    expect(reactPdfState.documentProps.options).toEqual({
+      withCredentials: true,
+      cMapUrl: '/pdfjs/cmaps/',
+      cMapPacked: true,
+      standardFontDataUrl: '/pdfjs/standard_fonts/',
+      wasmUrl: '/pdfjs/wasm/',
+    })
   })
 
   it('fits pages to the viewer width by default and can restore fit after zooming', () => {
@@ -56,5 +63,18 @@ describe('PdfViewer', () => {
     expect(screen.getByText('120%')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '适合宽度' }))
     expect(screen.getByText('100%')).toBeInTheDocument()
+  })
+
+  it('surfaces page canvas render failures instead of leaving an unexplained white page', () => {
+    render(<PdfViewer fileUrl="/paper.pdf" />)
+
+    act(() => reactPdfState.documentProps.onLoadSuccess({ numPages: 1 }))
+    act(() => reactPdfState.pageProps.onRenderError(new Error('canvas failed')))
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      '第 1 页渲染失败，请刷新页面或下载原文查看',
+    )
+
+    act(() => reactPdfState.pageProps.onRenderSuccess())
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 })

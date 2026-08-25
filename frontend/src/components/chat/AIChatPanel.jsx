@@ -27,8 +27,7 @@ const CONTEXT_LENGTH_OPTIONS = [
   { value: 4000, label: '4K' },
   { value: 8000, label: '8K' },
   { value: 16000, label: '16K' },
-  { value: 32000, label: '32K' },
-  { value: 0, label: '全量' },
+  { value: 32000, label: '32K 字符（上限）' },
 ]
 
 /**
@@ -71,9 +70,10 @@ export function PaperChatView({
 }
 
 /**
- * Context control bar — user controls what PDF context is injected into LLM.
+ * Context control bar — user controls extra PDF context injected into the LLM.
  * Selection text is ALWAYS injected (lightweight).
- * Full document context is opt-in via toggle.
+ * Translation requests read the current original PDF automatically; this
+ * toggle is for proactively attaching body text to other kinds of questions.
  */
 function ContextControlBar() {
   const pdfSelectedText = useStore((s) => s.pdfSelectedText)
@@ -128,7 +128,7 @@ function ContextControlBar() {
               style={{ accentColor: 'var(--accent)' }}
             />
             <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-              注入全文
+              附加 PDF 原文
             </span>
           </label>
 
@@ -151,7 +151,12 @@ function ContextControlBar() {
 
           {pdfContextEnabled && (
             <span className="text-xs" style={{ color: 'var(--text-tertiary, var(--text-secondary))' }}>
-              上下文长度
+              最多 16 页 / 32K 字符
+            </span>
+          )}
+          {!pdfContextEnabled && (
+            <span className="text-xs" style={{ color: 'var(--text-tertiary, var(--text-secondary))' }}>
+              翻译请求会自动读取当前 PDF 原件
             </span>
           )}
         </div>
@@ -241,7 +246,7 @@ export default function AIChatPanel({ paper, onClose }) {
             labels={{
               ...PAPER_LABELS,
               welcomeMessageText: paper
-                ? `正在分析：${paper.title}。可以点击快捷按钮或直接输入问题。`
+                ? `已定位：${paper.title}。可以直接提问或要求翻译 PDF 原文。`
                 : '点击快捷操作或输入问题开始分析这篇论文。',
             }}
             suggestions={filledSuggestions}

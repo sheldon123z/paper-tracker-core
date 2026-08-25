@@ -29,6 +29,7 @@ vi.mock('../store', () => ({
 }))
 
 vi.mock('../components/ui', () => ({
+  AppIcon: ({ name }) => <span data-icon={name} />,
   Button: ({ children, ...props }) => <button {...props}>{children}</button>,
   useToast: () => ({ addToast: vi.fn() }),
 }))
