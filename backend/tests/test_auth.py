@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import hashlib
 import os
+import tempfile
 import unittest
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from unittest.mock import patch
 
 import backend.tests  # noqa: F401
@@ -25,7 +27,8 @@ from backend.app.auth.tokens import (
     hash_refresh_token,
 )
 from backend.app.control_plane.database import ControlBase, get_control_db
-from backend.app.control_plane.models import User, UserSession
+from backend.app.control_plane.models import Department, User, UserSession
+from backend.app.routes.auth import _claim_refresh_session
 from backend.app.routes.auth import router as auth_router
 from backend.tests.support import patched_env
 from fastapi import FastAPI
@@ -294,6 +297,7 @@ class AuthAPITestBase(unittest.IsolatedAsyncioTestCase):
         with self.session_factory() as db:
             db.query(UserSession).delete()
             db.query(User).delete()
+            db.query(Department).delete()
             db.commit()
 
     # -- Helpers --
@@ -334,6 +338,21 @@ class AuthAPITestBase(unittest.IsolatedAsyncioTestCase):
 
 
 class RegisterTests(AuthAPITestBase):
+    async def test_capabilities_reflect_runtime_registration_setting(self):
+        enabled = await self.client.get("/api/auth/capabilities")
+        self.assertEqual(enabled.status_code, 200)
+        self.assertEqual(enabled.json(), {"public_registration_enabled": True})
+        self.assertEqual(enabled.headers["cache-control"], "no-store")
+
+        with patch.dict(
+            os.environ,
+            {"PAPER_TRACKER_ALLOW_PUBLIC_REGISTRATION": "0"},
+        ):
+            disabled = await self.client.get("/api/auth/capabilities")
+
+        self.assertEqual(disabled.status_code, 200)
+        self.assertEqual(disabled.json(), {"public_registration_enabled": False})
+
     async def test_register_success(self):
         res = await self._register()
         self.assertEqual(res.status_code, 201)
@@ -395,12 +414,32 @@ class LoginTests(AuthAPITestBase):
         # Tokens are now in httpOnly cookies, not JSON body
         self.assertIn("message", data)
         self.assertIn("user", data)
+        self.assertIn("department_name", data["user"])
+        self.assertIsNone(data["user"]["department_name"])
         self.assertIsInstance(data["expires_in"], int)
         self.assertGreater(data["expires_in"], 0)
         # Verify cookies are set
         tokens = self._extract_tokens(res)
         self.assertIsNotNone(tokens["access_token"])
         self.assertIsNotNone(tokens["refresh_token"])
+
+    async def test_login_user_includes_department_name(self):
+        await self._register()
+        with self.session_factory() as db:
+            department = Department(code="computer-science", name="Computer Science")
+            db.add(department)
+            db.flush()
+            user = db.query(User).filter(User.email == "test@example.com").one()
+            user.department_id = department.id
+            db.commit()
+            department_id = department.id
+
+        res = await self._login()
+
+        self.assertEqual(res.status_code, 200)
+        user_data = res.json()["user"]
+        self.assertEqual(user_data["department_id"], department_id)
+        self.assertEqual(user_data["department_name"], "Computer Science")
 
     async def test_login_wrong_password(self):
         await self._register()
@@ -456,7 +495,55 @@ class MeEndpointTests(AuthAPITestBase):
         self.assertEqual(data["email"], "test@example.com")
         self.assertEqual(data["username"], "testuser")
         self.assertEqual(data["role"], "user")
+        self.assertIn("department_name", data)
+        self.assertIsNone(data["department_name"])
         self.assertNotIn("password_hash", data)
+
+    async def test_me_returns_department_name(self):
+        await self._register()
+        with self.session_factory() as db:
+            department = Department(code="physics", name="Physics")
+            db.add(department)
+            db.flush()
+            user = db.query(User).filter(User.email == "test@example.com").one()
+            user.department_id = department.id
+            db.commit()
+            department_id = department.id
+
+        login_res = await self._login()
+        tokens = self._extract_tokens(login_res)
+        res = await self.client.get(
+            "/api/auth/me",
+            headers=self._auth_header(tokens["access_token"]),
+        )
+
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data["department_id"], department_id)
+        self.assertEqual(data["department_name"], "Physics")
+
+    async def test_me_manager_department_name_is_null(self):
+        await self._register()
+        with self.session_factory() as db:
+            department = Department(code="management", name="Management")
+            db.add(department)
+            db.flush()
+            user = db.query(User).filter(User.email == "test@example.com").one()
+            user.role = "manager"
+            user.department_id = department.id
+            db.commit()
+
+        login_res = await self._login()
+        tokens = self._extract_tokens(login_res)
+        res = await self.client.get(
+            "/api/auth/me",
+            headers=self._auth_header(tokens["access_token"]),
+        )
+
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data["role"], "manager")
+        self.assertIsNone(data["department_name"])
 
     async def test_me_no_token_returns_401(self):
         res = await self.client.get("/api/auth/me")
@@ -552,6 +639,112 @@ class RefreshTests(AuthAPITestBase):
             "refresh_token": new_tokens["refresh_token"],
         })
         self.assertEqual(res2.status_code, 200)
+
+    async def test_refresh_race_loser_does_not_mint_replacement(self):
+        tokens = await self._register_and_login()
+        self.client.cookies.clear()
+
+        with (
+            patch("backend.app.routes.auth._claim_refresh_session", return_value=False),
+            patch("backend.app.routes.auth.create_refresh_token") as create_token,
+        ):
+            res = await self.client.post("/api/auth/refresh", json={
+                "refresh_token": tokens["refresh_token"],
+            })
+
+        self.assertEqual(res.status_code, 401)
+        self.assertIn("revoked", res.json()["detail"])
+        create_token.assert_not_called()
+        with self.session_factory() as db:
+            sessions = db.query(UserSession).all()
+            self.assertEqual(len(sessions), 1)
+            self.assertIsNone(sessions[0].revoked_at)
+
+
+class RefreshRotationAtomicityTests(unittest.TestCase):
+    def test_two_stale_database_sessions_create_only_one_descendant(self):
+        with tempfile.TemporaryDirectory(prefix="paper-tracker-auth-") as temp_dir:
+            engine = create_engine(
+                f"sqlite:///{Path(temp_dir) / 'control-plane.db'}",
+                connect_args={"check_same_thread": False},
+            )
+            ControlBase.metadata.create_all(bind=engine)
+            session_factory = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+            with session_factory() as seed_db:
+                user = User(
+                    email="race@example.com",
+                    username="race-user",
+                    password_hash="unused-in-this-test",
+                )
+                seed_db.add(user)
+                seed_db.flush()
+                original = UserSession(
+                    user_id=user.id,
+                    session_key="original-session",
+                    refresh_token_hash="original-refresh-hash",
+                    expires_at=datetime.now(UTC) + timedelta(days=1),
+                )
+                seed_db.add(original)
+                seed_db.commit()
+                original_id = original.id
+                user_id = user.id
+
+            first_db = session_factory()
+            second_db = session_factory()
+            try:
+                # Both transactions observe the same stale, unrevoked row.
+                first_stale = first_db.query(UserSession).filter(UserSession.id == original_id).one()
+                second_stale = second_db.query(UserSession).filter(UserSession.id == original_id).one()
+                self.assertIsNone(first_stale.revoked_at)
+                self.assertIsNone(second_stale.revoked_at)
+
+                first_won = _claim_refresh_session(
+                    first_db,
+                    session_id=original_id,
+                    refresh_token_hash="original-refresh-hash",
+                    revoked_at=datetime.now(UTC),
+                )
+                if first_won:
+                    first_db.add(UserSession(
+                        user_id=user_id,
+                        session_key="first-descendant",
+                        refresh_token_hash="first-descendant-hash",
+                        expires_at=datetime.now(UTC) + timedelta(days=1),
+                    ))
+                    first_db.commit()
+
+                second_won = _claim_refresh_session(
+                    second_db,
+                    session_id=original_id,
+                    refresh_token_hash="original-refresh-hash",
+                    revoked_at=datetime.now(UTC),
+                )
+                if second_won:
+                    second_db.add(UserSession(
+                        user_id=user_id,
+                        session_key="second-descendant",
+                        refresh_token_hash="second-descendant-hash",
+                        expires_at=datetime.now(UTC) + timedelta(days=1),
+                    ))
+                    second_db.commit()
+                else:
+                    second_db.rollback()
+
+                self.assertTrue(first_won)
+                self.assertFalse(second_won)
+            finally:
+                first_db.close()
+                second_db.close()
+
+            with session_factory() as verify_db:
+                sessions = verify_db.query(UserSession).order_by(UserSession.id).all()
+                self.assertEqual(len(sessions), 2)
+                self.assertIsNotNone(sessions[0].revoked_at)
+                active_hashes = {item.refresh_token_hash for item in sessions if item.revoked_at is None}
+                self.assertEqual(active_hashes, {"first-descendant-hash"})
+
+            engine.dispose()
 
 
 class LogoutTests(AuthAPITestBase):

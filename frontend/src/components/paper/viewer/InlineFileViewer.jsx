@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Button, useToast } from '../../ui'
+import { AppIcon, Button, useToast } from '../../ui'
 import PdfViewer from './PdfViewer'
 import MarkdownViewer from './MarkdownViewer'
 import DocxViewer from './DocxViewer'
@@ -7,6 +7,7 @@ import XlsxViewer from './XlsxViewer'
 import ParseButton from './ParseButton'
 import api from '../../../api'
 import useStore from '../../../store'
+import { RUNTIME_CAPABILITIES } from '../../../config/runtime'
 
 const FILE_TYPE_LABELS = {
   pdf: 'PDF',
@@ -43,6 +44,7 @@ function OfficeUnsupported({ filename }) {
 export default function InlineFileViewer({ paperId, files, onFilesChange, onClose, initialFileId }) {
   const [activeFileId, setActiveFileId] = useState(initialFileId || null)
   const [uploading, setUploading] = useState(false)
+  const [downloadingFileId, setDownloadingFileId] = useState(null)
   const [contextMenu, setContextMenu] = useState(null)
   const fileInputRef = useRef(null)
   const contextMenuRef = useRef(null)
@@ -80,10 +82,13 @@ export default function InlineFileViewer({ paperId, files, onFilesChange, onClos
     files[0] ||
     null
 
-  // Sync active file ID to store for CopilotKit context
+  // Only a PDF attachment may be advertised to the assistant as PDF context.
+  // Clear it when switching to another file type or unmounting this viewer.
   useEffect(() => {
-    setPdfActiveFileId(activeFile?.id || null)
-  }, [activeFile?.id, setPdfActiveFileId])
+    const pdfFileId = activeFile?.file_type === 'pdf' ? activeFile.id : null
+    setPdfActiveFileId(pdfFileId)
+    return () => setPdfActiveFileId(null)
+  }, [activeFile?.file_type, activeFile?.id, setPdfActiveFileId])
 
   const handleUpload = useCallback(
     async (e) => {
@@ -134,22 +139,26 @@ export default function InlineFileViewer({ paperId, files, onFilesChange, onClos
 
   const handleDownload = useCallback(async (file) => {
     setContextMenu(null)
+    setDownloadingFileId(file.id)
+    let link = null
+    const downloadPath = `/api/papers/${paperId}/files/${file.id}/download`
     try {
-      const response = await api.get(
-        `/api/papers/${paperId}/files/${file.id}/download`,
-        { responseType: 'blob' },
-      )
-      const objectUrl = URL.createObjectURL(response.data)
-      const link = document.createElement('a')
-      link.href = objectUrl
-      link.download = file.filename
+      // A lightweight authenticated HEAD request verifies visibility/file
+      // existence and exercises api.js's automatic 401 refresh before the
+      // browser performs the streaming GET download.
+      await api.head(downloadPath)
+      link = document.createElement('a')
+      link.href = downloadPath
+      link.download = ''
       document.body.appendChild(link)
       link.click()
-      link.remove()
-      URL.revokeObjectURL(objectUrl)
+      addToast({ type: 'success', message: 'PDF 原件下载已开始' })
     } catch (err) {
       console.error('Download failed', err)
-      addToast({ type: 'error', message: 'PDF 下载失败' })
+      addToast({ type: 'error', message: 'PDF 原件导出失败' })
+    } finally {
+      link?.remove()
+      setDownloadingFileId(null)
     }
   }, [addToast, paperId])
 
@@ -206,13 +215,15 @@ export default function InlineFileViewer({ paperId, files, onFilesChange, onClos
     <div className="flex flex-col h-full" style={{ backgroundColor: 'var(--bg-primary)' }}>
       {/* File tabs + upload + close */}
       <div
-        className="flex items-center gap-2 px-3 py-2 border-b flex-shrink-0 overflow-x-auto"
+        className="flex items-center gap-2 px-3 py-2 border-b flex-shrink-0"
         style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-secondary)' }}
       >
-        {files.map((f) => {
-          const isActive = activeFile?.id === f.id
-          return (
-            <div
+        <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
+          <div role="tablist" aria-label="论文附件" className="flex items-center gap-2">
+            {files.map((f) => {
+              const isActive = activeFile?.id === f.id
+              return (
+                <div
               key={f.id}
               onClick={() => setActiveFileId(f.id)}
               onContextMenu={f.file_type === 'pdf' ? (event) => openContextMenu(event, f) : undefined}
@@ -232,53 +243,74 @@ export default function InlineFileViewer({ paperId, files, onFilesChange, onClos
                 backgroundColor: isActive ? 'var(--accent-light)' : 'transparent',
                 color: isActive ? 'var(--accent)' : 'var(--text-secondary)',
               }}
-            >
-              <span>{FILE_TYPE_LABELS[f.file_type] || f.file_type}</span>
-              <span className="opacity-60 max-w-[120px] truncate">{f.filename}</span>
-              <span className="opacity-40">{formatSize(f.file_size)}</span>
-            </div>
-          )
-        })}
+                >
+                  <span>{FILE_TYPE_LABELS[f.file_type] || f.file_type}</span>
+                  <span className="opacity-60 max-w-[120px] truncate">{f.filename}</span>
+                  <span className="opacity-40">{formatSize(f.file_size)}</span>
+                </div>
+              )
+            })}
+          </div>
 
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept={FILE_ACCEPT}
-          onChange={handleUpload}
-          className="hidden"
-        />
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={uploading}
-        >
-          {uploading ? '上传中...' : '+ 上传'}
-        </Button>
-
-        {(activeFile?.file_type === 'pdf' || activeFile?.file_type === 'markdown') && (
-          <ParseButton
-            paperId={paperId}
-            fileId={activeFile.id}
-            fileType={activeFile.file_type}
-            parseStatus={activeFile.parse_status}
-            onParseComplete={() => {
-              api.get(`/api/papers/${paperId}/files`).then((res) => onFilesChange(res.data)).catch(() => {})
-            }}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={FILE_ACCEPT}
+            onChange={handleUpload}
+            className="hidden"
           />
-        )}
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+          >
+            {uploading ? '上传中...' : '+ 上传'}
+          </Button>
 
-        <button
-          onClick={onClose}
-          className="ml-auto flex-shrink-0 rounded-md p-1 transition-colors hover:bg-[var(--bg-tertiary)]"
-          style={{ color: 'var(--text-secondary)' }}
-          title="关闭文档查看器"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <line x1="18" y1="6" x2="6" y2="18" />
-            <line x1="6" y1="6" x2="18" y2="18" />
-          </svg>
-        </button>
+          {(activeFile?.file_type === 'markdown'
+            || (activeFile?.file_type === 'pdf' && RUNTIME_CAPABILITIES.cloudDocumentParsing)) && (
+            <ParseButton
+              paperId={paperId}
+              fileId={activeFile.id}
+              fileType={activeFile.file_type}
+              parseStatus={activeFile.parse_status}
+              onParseComplete={() => {
+                api.get(`/api/papers/${paperId}/files`).then((res) => onFilesChange(res.data)).catch(() => {})
+              }}
+            />
+          )}
+        </div>
+
+        <div className="flex flex-shrink-0 items-center gap-1">
+          {activeFile?.file_type === 'pdf' && (
+            <Button
+              size="sm"
+              variant="ghost"
+              loading={downloadingFileId !== null}
+              disabled={downloadingFileId !== null}
+              onClick={() => handleDownload(activeFile)}
+              className="flex-shrink-0"
+            >
+              {downloadingFileId === null && <AppIcon name="download" size={15} />}
+              {downloadingFileId !== null ? '正在校验 PDF...' : '导出 PDF 原件'}
+            </Button>
+          )}
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-shrink-0 rounded-md p-1 transition-colors hover:bg-[var(--bg-tertiary)]"
+            style={{ color: 'var(--text-secondary)' }}
+            title="关闭文档查看器"
+            aria-label="关闭文档查看器"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {/* Viewer area */}
@@ -302,11 +334,13 @@ export default function InlineFileViewer({ paperId, files, onFilesChange, onClos
           <button
             type="button"
             role="menuitem"
-            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-[var(--bg-secondary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
+            aria-busy={downloadingFileId === contextMenu.file.id}
+            disabled={downloadingFileId !== null}
+            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-[var(--bg-secondary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
             style={{ color: 'var(--text-primary)' }}
             onClick={() => handleDownload(contextMenu.file)}
           >
-            下载
+            {downloadingFileId === contextMenu.file.id ? '下载中...' : '下载'}
           </button>
           <button
             type="button"

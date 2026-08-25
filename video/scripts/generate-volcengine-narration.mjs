@@ -28,15 +28,18 @@ const authorizationPath = path.join(
   "render-props",
   "innovation-tts-authorization.json",
 );
-const workDir = path.join(projectRoot, "output", "innovation-volcengine-tts");
-const segmentDir = path.join(workDir, "segments");
-const manifestPath = path.join(workDir, "manifest.json");
-const auditPath = path.join(workDir, "consistency-audit.json");
-const sourceMasterPath = path.join(workDir, "voice-master-24k-mono.wav");
-const stagedFinalMixPath = path.join(workDir, "final-mix.wav");
-const proposedCaptionsPath = path.join(workDir, "proposed-captions.json");
-const proposedTimelinePath = path.join(workDir, "proposed-timeline.json");
-const retimingPlanPath = path.join(workDir, "retiming-plan.json");
+const outputRoot = path.join(projectRoot, "output");
+const canonicalWorkDir = path.join(outputRoot, "innovation-volcengine-tts");
+const acceptedV3WorkDir = path.join(outputRoot, "innovation-section05-tts-v3");
+let workDir;
+let segmentDir;
+let manifestPath;
+let auditPath;
+let sourceMasterPath;
+let stagedFinalMixPath;
+let proposedCaptionsPath;
+let proposedTimelinePath;
+let retimingPlanPath;
 const remotionCliPath = path.join(
   projectRoot,
   "node_modules",
@@ -133,14 +136,72 @@ const writeJsonAtomic = (filePath, value) => {
   }
 };
 
+const configureWorkDir = (configuredPath) => {
+  const resolved = configuredPath
+    ? path.resolve(projectRoot, configuredPath)
+    : canonicalWorkDir;
+  const relative = path.relative(outputRoot, resolved);
+  if (
+    relative === "" ||
+    relative === ".." ||
+    relative.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relative)
+  ) {
+    fail("Narration work directory must be a strict child of video/output.");
+  }
+  if (
+    configuredPath &&
+    (resolved.toLowerCase() === canonicalWorkDir.toLowerCase() ||
+      resolved.toLowerCase() === acceptedV3WorkDir.toLowerCase())
+  ) {
+    fail(
+      "An explicit work directory must not target the canonical or accepted-v3 narration bundle.",
+    );
+  }
+  if (fs.existsSync(resolved)) {
+    const stats = fs.lstatSync(resolved);
+    if (!stats.isDirectory() || stats.isSymbolicLink()) {
+      fail("Narration work directory must be a real directory, not a link.");
+    }
+    const real = fs.realpathSync.native(resolved);
+    const realRelative = path.relative(
+      fs.realpathSync.native(outputRoot),
+      real,
+    );
+    if (
+      realRelative === "" ||
+      realRelative === ".." ||
+      realRelative.startsWith(`..${path.sep}`) ||
+      path.isAbsolute(realRelative)
+    ) {
+      fail("Narration work directory resolves outside video/output.");
+    }
+  }
+
+  workDir = resolved;
+  segmentDir = path.join(workDir, "segments");
+  manifestPath = path.join(workDir, "manifest.json");
+  auditPath = path.join(workDir, "consistency-audit.json");
+  sourceMasterPath = path.join(workDir, "voice-master-24k-mono.wav");
+  stagedFinalMixPath = path.join(workDir, "final-mix.wav");
+  proposedCaptionsPath = path.join(workDir, "proposed-captions.json");
+  proposedTimelinePath = path.join(workDir, "proposed-timeline.json");
+  retimingPlanPath = path.join(workDir, "retiming-plan.json");
+};
+
+configureWorkDir(null);
+
 const parseArguments = (tokens) => {
   const parsed = {
     force: false,
     help: false,
+    from: null,
     offline: false,
     only: null,
     target: null,
+    to: null,
     verify: false,
+    workDir: null,
   };
   for (let index = 0; index < tokens.length; index++) {
     const token = tokens[index];
@@ -152,16 +213,29 @@ const parseArguments = (tokens) => {
       parsed.offline = true;
     } else if (token === "--verify") {
       parsed.verify = true;
-    } else if (token === "--only" || token === "--target") {
+    } else if (
+      token === "--only" ||
+      token === "--from" ||
+      token === "--to" ||
+      token === "--target" ||
+      token === "--work-dir"
+    ) {
       const value = tokens[++index];
       if (!value || value.startsWith("--")) {
         fail(`${token} requires a value.`);
       }
-      parsed[token.slice(2)] = value;
+      const name = token === "--work-dir" ? "workDir" : token.slice(2);
+      parsed[name] = value;
     } else if (token.startsWith("--only=")) {
       parsed.only = token.slice("--only=".length);
+    } else if (token.startsWith("--from=")) {
+      parsed.from = token.slice("--from=".length);
+    } else if (token.startsWith("--to=")) {
+      parsed.to = token.slice("--to=".length);
     } else if (token.startsWith("--target=")) {
       parsed.target = token.slice("--target=".length);
+    } else if (token.startsWith("--work-dir=")) {
+      parsed.workDir = token.slice("--work-dir=".length);
     } else {
       fail(`Unknown argument: ${token}`);
     }
@@ -172,6 +246,29 @@ const parseArguments = (tokens) => {
       fail("--only must be a positive, one-based caption index.");
     }
   }
+  for (const name of ["from", "to"]) {
+    if (parsed[name] !== null) {
+      parsed[name] = Number(parsed[name]);
+      if (!Number.isInteger(parsed[name]) || parsed[name] < 1) {
+        fail(`--${name} must be a positive, one-based caption index.`);
+      }
+    }
+  }
+  if ((parsed.from === null) !== (parsed.to === null)) {
+    fail("--from and --to must be supplied together.");
+  }
+  if (parsed.from !== null && parsed.from > parsed.to) {
+    fail("--from must be less than or equal to --to.");
+  }
+  if (parsed.only !== null && parsed.from !== null) {
+    fail("--only cannot be combined with --from/--to.");
+  }
+  if (
+    parsed.target !== null &&
+    (parsed.only !== null || parsed.from !== null)
+  ) {
+    fail("--target is not used for partial generation.");
+  }
   if (parsed.offline && parsed.force) {
     fail("--offline and --force cannot be used together.");
   }
@@ -180,10 +277,12 @@ const parseArguments = (tokens) => {
     (parsed.offline ||
       parsed.force ||
       parsed.only !== null ||
-      parsed.target !== null)
+      parsed.from !== null ||
+      parsed.target !== null ||
+      parsed.workDir !== null)
   ) {
     fail(
-      "--verify cannot be combined with --offline, --force, --only, or --target.",
+      "--verify cannot be combined with generation, target, or work-directory options.",
     );
   }
   return parsed;
@@ -195,11 +294,15 @@ const printHelp = () => {
 Usage:
   node scripts/generate-volcengine-narration.mjs
   node scripts/generate-volcengine-narration.mjs --only 1
+  node scripts/generate-volcengine-narration.mjs --from 1 --to 5 --work-dir output/innovation-opening-tts
   node scripts/generate-volcengine-narration.mjs --offline
   node scripts/generate-volcengine-narration.mjs --verify
 
 Options:
   --only N       Generate and cache one one-based caption; do not publish a mix.
+  --from N       First one-based caption in a partial generation range.
+  --to N         Last one-based caption in a partial generation range.
+  --work-dir P   Store cache in an isolated child of video/output.
   --offline      Reuse verified cached PCM only; never call the TTS endpoint.
   --verify       Verify cached segments, manifest, audit, and the published WAV.
   --force        Regenerate requested segments instead of using valid cache files.
@@ -207,8 +310,9 @@ Options:
   --help         Show this help.
 
 Generation requires VOLCENGINE_TTS_API_KEY. The key is never written to disk or
-included in child-process environments. Full generation creates an exact
-249.9-second, 48 kHz, stereo PCM WAV and backs up an existing target before publish.`);
+included in child-process environments. Full generation creates a 48 kHz,
+stereo PCM WAV whose duration matches the explicit authorization and backs up
+an existing target before publish.`);
 };
 
 const loadInputs = () => {
@@ -217,21 +321,30 @@ const loadInputs = () => {
   const captions = JSON.parse(captionsBytes.toString("utf8"));
   const timeline = JSON.parse(timelineBytes.toString("utf8"));
   const authorization = JSON.parse(fs.readFileSync(authorizationPath, "utf8"));
-  if (!Array.isArray(captions) || captions.length !== 49) {
-    fail(
-      `Expected exactly 49 innovation captions; received ${captions?.length}.`,
-    );
+  if (!Array.isArray(captions) || captions.length === 0) {
+    fail("Innovation captions must be a non-empty array.");
   }
+  const authorizedDurationSeconds =
+    authorization?.retiming?.authorizedDurationSeconds;
+  const authorizedDurationInFrames =
+    authorization?.retiming?.authorizedDurationInFrames;
   if (
     timeline?.fps !== 30 ||
-    timeline?.durationInFrames !== 7497 ||
-    timeline?.durationSeconds !== 249.9
+    timeline?.mode !== "volcengine-tts-voiced" ||
+    !Number.isFinite(authorizedDurationSeconds) ||
+    !Number.isInteger(authorizedDurationInFrames) ||
+    timeline?.durationInFrames !== authorizedDurationInFrames ||
+    Math.abs(timeline?.durationSeconds - authorizedDurationSeconds) > 1e-9 ||
+    Math.abs(
+      timeline?.durationSeconds - timeline?.durationInFrames / timeline?.fps,
+    ) > 1e-9
   ) {
     fail(
-      "Innovation narration requires the authorized 7497-frame/249.9-second voiced timeline.",
+      "Innovation narration requires a voiced timeline whose duration matches the explicit TTS authorization.",
     );
   }
   const captionsSha256 = sha256(canonicalJson(captions));
+  const timelineSha256 = sha256(canonicalJson(timeline));
   if (
     authorization?.authorized !== true ||
     authorization.endpoint !== ENDPOINT ||
@@ -240,6 +353,9 @@ const loadInputs = () => {
     authorization.captions?.hashMode !== "canonical-json-v1" ||
     authorization.captions?.sha256 !== captionsSha256 ||
     authorization.captions?.count !== captions.length ||
+    authorization.timeline?.hashMode !== "canonical-json-v1" ||
+    authorization.timeline?.sha256 !== timelineSha256 ||
+    authorization.timeline?.durationInFrames !== timeline.durationInFrames ||
     authorization.model?.resourceId !== RESOURCE_ID ||
     authorization.application?.appKey !== APP_KEY ||
     authorization.voice?.speaker !== SPEAKER ||
@@ -284,7 +400,7 @@ const loadInputs = () => {
     captions,
     captionsSha256,
     timeline,
-    timelineSha256: sha256(canonicalJson(timeline)),
+    timelineSha256,
   };
 };
 
@@ -655,6 +771,7 @@ const baseManifest = (inputs, existing) => ({
   fps: inputs.timeline.fps,
   config: PUBLIC_CONFIG,
   configSha256: CONFIG_SHA256,
+  captionCount: inputs.captions.length,
   secretPersisted: false,
   segments: existing?.segments ?? [],
 });
@@ -726,7 +843,7 @@ const synthesizeCaption = async ({
   const existing = manifest.segments[index];
   if (!force && validCachedSegment(existing, index, caption.text)) {
     console.log(
-      `[${String(index + 1).padStart(2, "0")}/49] cached ` +
+      `[${String(index + 1).padStart(2, "0")}/${manifest.captionCount}] cached ` +
         `${existing.durationSeconds.toFixed(2)}s`,
     );
     return existing;
@@ -767,7 +884,7 @@ const synthesizeCaption = async ({
   manifest.updatedAt = new Date().toISOString();
   writeJsonAtomic(manifestPath, manifest);
   console.log(
-    `[${String(index + 1).padStart(2, "0")}/49] generated ` +
+    `[${String(index + 1).padStart(2, "0")}/${manifest.captionCount}] generated ` +
       `${entry.durationSeconds.toFixed(2)}s, ` +
       `${entry.charactersPerSecond.toFixed(2)} chars/s, ` +
       `${entry.rmsDbfs.toFixed(1)} dBFS`,
@@ -783,6 +900,28 @@ const refreshManifestTimings = (inputs, manifest) => {
     startMs: caption.startMs,
     captionEndMs: caption.endMs,
   }));
+  manifest.updatedAt = new Date().toISOString();
+  writeJsonAtomic(manifestPath, manifest);
+};
+
+const refreshPartialManifestBindings = (inputs, manifest, indexes) => {
+  for (const index of indexes) {
+    const caption = inputs.captions[index];
+    const entry = manifest.segments[index];
+    if (!validCachedSegment(entry, index, caption.text)) {
+      fail(`Cached narration segment ${index + 1} failed offline rebinding.`);
+    }
+    manifest.segments[index] = {
+      ...entry,
+      index,
+      cue: index + 1,
+      startMs: caption.startMs,
+      captionEndMs: caption.endMs,
+    };
+  }
+  manifest.status = "partial";
+  delete manifest.finalMix;
+  delete manifest.segmentSetSha256;
   manifest.updatedAt = new Date().toISOString();
   writeJsonAtomic(manifestPath, manifest);
 };
@@ -1354,6 +1493,7 @@ const main = async () => {
     printHelp();
     return;
   }
+  configureWorkDir(args.workDir);
   const inputs = loadInputs();
   const targetPath = resolveTarget(args.target);
   if (args.verify) {
@@ -1378,13 +1518,21 @@ const main = async () => {
   if (args.only !== null && args.only > inputs.captions.length) {
     fail(`--only must be between 1 and ${inputs.captions.length}.`);
   }
+  if (args.to !== null && args.to > inputs.captions.length) {
+    fail(`--to must be between 1 and ${inputs.captions.length}.`);
+  }
 
   fs.mkdirSync(segmentDir, { recursive: true });
   const manifest = loadCompatibleManifest(inputs);
   const indexes =
-    args.only === null
-      ? inputs.captions.map((_, index) => index)
-      : [args.only - 1];
+    args.only !== null
+      ? [args.only - 1]
+      : args.from !== null
+        ? Array.from(
+            { length: args.to - args.from + 1 },
+            (_, index) => args.from - 1 + index,
+          )
+        : inputs.captions.map((_, index) => index);
   for (const index of indexes) {
     await synthesizeCaption({
       apiKey,
@@ -1395,9 +1543,12 @@ const main = async () => {
     });
   }
 
-  if (args.only !== null) {
+  if (args.only !== null || args.from !== null) {
+    refreshPartialManifestBindings(inputs, manifest, indexes);
     console.log(
-      `Probe/cache generation completed for caption ${args.only}; no final mix was published.`,
+      args.only !== null
+        ? `Probe/cache generation completed for caption ${args.only}; no final mix was published.`
+        : `Partial generation completed for captions ${args.from}-${args.to}; no final mix was published.`,
     );
     return;
   }

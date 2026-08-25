@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 import unittest
+from unittest.mock import patch
 
 import backend.tests  # noqa: F401
 from backend.app.routes import llm_config as llm_config_module
 from backend.tests.support import TEST_ENCRYPTION_KEY, make_test_session_factory, patched_env
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
@@ -35,6 +37,9 @@ class LLMConfigRouteTests(unittest.TestCase):
 
         self.app.dependency_overrides[llm_config_module.get_db] = override_get_db
         self.app.dependency_overrides[llm_config_module.require_llm_config_access] = lambda: None
+        self.app.dependency_overrides[
+            llm_config_module.require_llm_config_manager_access
+        ] = lambda: None
         self.client = TestClient(self.app)
 
     def tearDown(self):
@@ -52,8 +57,43 @@ class LLMConfigRouteTests(unittest.TestCase):
         openai_compatible = next(item for item in payload if item["key"] == "openai_compatible")
         self.assertTrue(openai_compatible["allows_custom_headers"])
 
+    def test_management_routes_require_manager_dependency(self):
+        def deny_manager():
+            raise HTTPException(status_code=403, detail="Manager access required")
+
+        self.app.dependency_overrides[
+            llm_config_module.require_llm_config_manager_access
+        ] = deny_manager
+
+        protected_requests = (
+            ("get", "/api/llm-configs", None),
+            ("post", "/api/llm-configs", {}),
+            ("patch", "/api/llm-configs/1", {}),
+            ("delete", "/api/llm-configs/1", None),
+            ("post", "/api/llm-configs/1/test", None),
+            ("post", "/api/llm-configs/batch-test", None),
+            ("post", "/api/llm-configs/batch-action", {}),
+            ("get", "/api/llm-configs/tags", None),
+            ("get", "/api/llm-configs/export", None),
+            ("post", "/api/llm-configs/import", {}),
+        )
+        for method, path, payload in protected_requests:
+            with self.subTest(method=method, path=path):
+                response = self.client.request(method, path, json=payload)
+                self.assertEqual(response.status_code, 403, response.text)
+
+        self.assertEqual(
+            self.client.get("/api/llm-configs/providers").status_code,
+            200,
+        )
+        self.assertEqual(self.client.get("/api/llm-configs/status").status_code, 200)
+        self.assertEqual(self.client.get("/api/llm-configs/brief").status_code, 200)
+
     def test_create_config_and_brief_metadata(self):
-        with patched_env(ENCRYPTION_KEY=TEST_ENCRYPTION_KEY):
+        with patched_env(
+            ENCRYPTION_KEY=TEST_ENCRYPTION_KEY,
+            ALLOW_LOCAL_LLM_BASE_URLS="true",
+        ):
             create_response = self.client.post(
                 "/api/llm-configs",
                 json={
@@ -198,7 +238,10 @@ class LLMConfigRouteTests(unittest.TestCase):
             ))
             db.commit()
 
-        with patched_env(ENCRYPTION_KEY=TEST_ENCRYPTION_KEY):
+        with patched_env(
+            ENCRYPTION_KEY=TEST_ENCRYPTION_KEY,
+            ALLOW_LOCAL_LLM_BASE_URLS="true",
+        ):
             response = self.client.post(
                 "/api/llm-configs/import",
                 json={
@@ -223,3 +266,153 @@ class LLMConfigRouteTests(unittest.TestCase):
             usage = db.query(llm_config_module.LLMUsageLog).one()
             self.assertIsNone(usage.config_id)
             self.assertEqual(usage.model_name, "old-model")
+
+    def test_import_normalizes_metadata_and_rejects_hidden_credentials(self):
+        with patched_env(ENCRYPTION_KEY=TEST_ENCRYPTION_KEY, OFFLINE_MODE="true"):
+            response = self.client.post(
+                "/api/llm-configs/import",
+                json={
+                    "mode": "merge",
+                    "configs": [
+                        {
+                            "provider": "ollama",
+                            "model_name": "qwen3:8b",
+                            "base_url": "http://127.0.0.1:11434/v1",
+                            "is_local": True,
+                            "extra_body": {"max_tokens": 256},
+                        }
+                    ],
+                },
+            )
+        self.assertEqual(response.status_code, 200, response.text)
+        with self.session_factory() as db:
+            config = db.query(llm_config_module.LLMConfig).one()
+            self.assertEqual(config.base_url, "http://127.0.0.1:11434")
+            self.assertEqual(config.extra_body, '{"max_tokens": 256}')
+
+        with self.session_factory() as db:
+            db.query(llm_config_module.LLMConfig).delete()
+            db.commit()
+        with patched_env(ENCRYPTION_KEY=TEST_ENCRYPTION_KEY, OFFLINE_MODE="true"):
+            response = self.client.post(
+                "/api/llm-configs/import",
+                json={
+                    "mode": "merge",
+                    "configs": [
+                        {
+                            "provider": "ollama",
+                            "model_name": "qwen3:8b",
+                            "base_url": "http://127.0.0.1:11434",
+                            "is_local": True,
+                            "extra_body": {
+                                "request": {"client_secret": "must-not-be-stored"}
+                            },
+                        }
+                    ],
+                },
+            )
+        self.assertEqual(response.status_code, 400, response.text)
+        with self.session_factory() as db:
+            self.assertEqual(db.query(llm_config_module.LLMConfig).count(), 0)
+
+    def test_list_and_export_remove_legacy_metadata_credentials(self):
+        with self.session_factory() as db:
+            db.add(
+                llm_config_module.LLMConfig(
+                    provider="ollama",
+                    display_name="Legacy",
+                    api_key_encrypted="placeholder",
+                    model_name="qwen3:8b",
+                    base_url=(
+                        "http://legacy-user:legacy-password@127.0.0.1:11434/v1"
+                        "?api_key=legacy-query-secret#legacy-fragment"
+                    ),
+                    extra_headers=json.dumps(
+                        {
+                            "X-Trace-Id": "trace",
+                            "X-Auth-Token": "header-secret",
+                            "X-Token": "generic-header-secret",
+                            "XApiKey": "camel-header-secret",
+                        }
+                    ),
+                    extra_body=json.dumps(
+                        {
+                            "max_tokens": 256,
+                            "nested": {
+                                "password": "body-secret",
+                                "access_token": "body-token",
+                                "clientSecret": "camel-body-secret",
+                                "safe": "visible",
+                            },
+                        }
+                    ),
+                    is_local=True,
+                    is_default=False,
+                    is_enabled=True,
+                    health_status="unknown",
+                )
+            )
+            db.commit()
+
+        listed = self.client.get("/api/llm-configs")
+        self.assertEqual(listed.status_code, 200, listed.text)
+        self.assertEqual(
+            listed.json()[0]["base_url"],
+            "http://127.0.0.1:11434/v1",
+        )
+        self.assertEqual(listed.json()[0]["extra_headers"], {"X-Trace-Id": "trace"})
+        self.assertEqual(
+            listed.json()[0]["extra_body"],
+            {"max_tokens": 256, "nested": {"safe": "visible"}},
+        )
+
+        exported = self.client.get("/api/llm-configs/export")
+        self.assertEqual(exported.status_code, 200, exported.text)
+        item = exported.json()["configs"][0]
+        self.assertEqual(item["base_url"], "http://127.0.0.1:11434/v1")
+        self.assertEqual(item["extra_headers"], {"X-Trace-Id": "trace"})
+        self.assertEqual(
+            item["extra_body"],
+            {"max_tokens": 256, "nested": {"safe": "visible"}},
+        )
+        self.assertNotIn("legacy-", listed.text + exported.text)
+
+    def test_batch_test_sanitizes_unexpected_provider_errors(self):
+        with self.session_factory() as db:
+            config = llm_config_module.LLMConfig(
+                provider="ollama",
+                display_name="Local",
+                api_key_encrypted="placeholder",
+                model_name="qwen3:8b",
+                base_url="http://127.0.0.1:11434",
+                is_local=True,
+                is_default=False,
+                is_enabled=True,
+                health_status="unknown",
+            )
+            db.add(config)
+            db.commit()
+            config_id = config.id
+
+        raw_error = "upstream echoed Bearer must-not-appear"
+        with (
+            patch.object(
+                llm_config_module,
+                "resolve_llm_config",
+                side_effect=RuntimeError(raw_error),
+            ),
+            self.assertLogs("paper-tracker.llm_config", level="WARNING") as logs,
+        ):
+            response = self.client.post("/api/llm-configs/batch-test")
+
+        self.assertEqual(response.status_code, 200, response.text)
+        serialized = response.text + "\n".join(logs.output)
+        self.assertNotIn("must-not-appear", serialized)
+        result = response.json()["results"][0]
+        self.assertEqual(result["error_code"], "RUNTIME_ERROR")
+        self.assertEqual(result["message"], "Provider request failed.")
+
+        with self.session_factory() as db:
+            stored = db.get(llm_config_module.LLMConfig, config_id)
+            self.assertEqual(stored.health_status, "runtime_error")
+            self.assertEqual(stored.last_error, "Provider request failed.")

@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from pathlib import Path
 
 import httpx
+
+from ..offline import require_online
+from ..settings import get_secret_value
 
 logger = logging.getLogger("paper-tracker.doc2x")
 
@@ -17,7 +19,7 @@ POLL_INTERVALS = [2, 4, 8, 16, 30]
 
 
 def _get_token() -> str:
-    token = os.getenv("DOC2X_API_KEY", "")
+    token = get_secret_value("DOC2X_API_KEY", "") or ""
     if not token:
         raise ValueError("DOC2X_API_KEY 环境变量未配置，请在 .env 中设置")
     return token
@@ -29,6 +31,7 @@ def _headers(token: str) -> dict:
 
 async def submit_parse_task(file_path: Path, filename: str, token: str) -> str:
     """Submit a PDF to Doc2X for parsing. Returns task uuid."""
+    require_online("Doc2X cloud parsing")
     async with httpx.AsyncClient(timeout=120) as client:
         file_content = file_path.read_bytes()
         resp = await client.post(
@@ -55,6 +58,7 @@ async def poll_task_status(uuid: str, token: str) -> dict:
 
     Returns: {"status": "done"|"failed", "texts": list[str]|None, "error": str|None}
     """
+    require_online("Doc2X cloud parsing")
     elapsed = 0
     interval_idx = 0
 
@@ -99,18 +103,26 @@ async def parse_pdf_to_markdown(paper_id: int, file_id: int, db_factory) -> None
 
     Runs as a background task. Updates PaperFile.parse_status throughout.
     """
+    require_online("Doc2X cloud parsing")
+
     from ..models import PaperFile
     from .file_storage import read_file, save_file
 
     db = db_factory()
     try:
-        paper_file = db.query(PaperFile).filter(PaperFile.id == file_id).first()
+        paper_file = db.query(PaperFile).filter(
+            PaperFile.id == file_id,
+            PaperFile.paper_id == paper_id,
+        ).first()
         if not paper_file:
             logger.error("PaperFile %d not found", file_id)
             return
 
         token = _get_token()
-        file_path = read_file(paper_file.storage_path)
+        file_path = read_file(
+            paper_file.storage_path,
+            expected_paper_id=paper_file.paper_id,
+        )
 
         paper_file.parse_status = "processing"
         db.commit()

@@ -11,7 +11,6 @@ import { S03EvidenceSynthesis } from "./scenes/S03EvidenceSynthesis";
 import { S04ResearchAgentCore } from "./scenes/S04ResearchAgentCore";
 import { S05AgentArchitecture } from "./scenes/S05AgentArchitecture";
 import { S06SafeGovernance } from "./scenes/S06SafeGovernance";
-import { S07ValueClosing } from "./scenes/S07ValueClosing";
 import { S08FinalSummary } from "./scenes/S08FinalSummary";
 import { SIntroStrategicPositioning } from "./scenes/SIntroStrategicPositioning";
 
@@ -27,7 +26,6 @@ const sceneComponents: Record<
   "scene-architecture": S05AgentArchitecture,
   "scene-03": S03EvidenceSynthesis,
   "scene-06": S06SafeGovernance,
-  "scene-07": S07ValueClosing,
   "scene-outro": S08FinalSummary,
 };
 
@@ -77,6 +75,7 @@ export const PaperTrackerInnovationExplainer: React.FC<
       <SubtitleTrack
         captions={captions}
         cornerBadge={reviewMode ? "内容审阅版 · 无旁白" : undefined}
+        singleLineLimitUnits={38}
       />
     </AbsoluteFill>
   );

@@ -2,7 +2,7 @@ import os
 import secrets
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
@@ -57,15 +57,62 @@ def _clear_auth_cookies(response: JSONResponse) -> None:
     response.delete_cookie(key="access_token", path="/api")
     response.delete_cookie(key="refresh_token", path="/api/auth")
 
+
+def _user_response(user: User) -> UserResponse:
+    """Build the public account payload, including the user's department label."""
+    response = UserResponse.model_validate(user)
+    response.department_name = (
+        user.department.name
+        if user.role == "user" and user.department is not None
+        else None
+    )
+    return response
+
+
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+
+def _public_registration_enabled() -> bool:
+    value = os.getenv("PAPER_TRACKER_ALLOW_PUBLIC_REGISTRATION", "").strip().lower()
+    return value in {"1", "true", "yes"}
+
+
+def _claim_refresh_session(
+    db: Session,
+    *,
+    session_id: int,
+    refresh_token_hash: str,
+    revoked_at: datetime,
+) -> bool:
+    """Atomically claim a live refresh session for one-time rotation."""
+    updated = (
+        db.query(UserSession)
+        .filter(
+            UserSession.id == session_id,
+            UserSession.refresh_token_hash == refresh_token_hash,
+            UserSession.revoked_at.is_(None),
+        )
+        .update(
+            {UserSession.revoked_at: revoked_at},
+            synchronize_session=False,
+        )
+    )
+    return updated == 1
+
+
+@router.get("/capabilities")
+def get_auth_capabilities(response: Response):
+    """Expose non-sensitive runtime auth switches to the login screen."""
+
+    response.headers["Cache-Control"] = "no-store"
+    return {"public_registration_enabled": _public_registration_enabled()}
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit("10/minute")
 def register(request: Request, body: RegisterRequest, db: Session = Depends(get_control_db)):
     """Public registration is disabled; managers provision accounts."""
-    allow_registration = os.getenv("PAPER_TRACKER_ALLOW_PUBLIC_REGISTRATION", "").strip().lower()
-    if allow_registration not in {"1", "true", "yes"}:
+    if not _public_registration_enabled():
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Public registration is disabled")
     # Validate password strength
     try:
@@ -143,18 +190,7 @@ def login(request: Request, body: LoginRequest, db: Session = Depends(get_contro
     write_audit_event(db, event_type="auth.login", request=request, actor=user)
 
     # Return user info in body; tokens go in httpOnly cookies
-    user_data = {
-        "id": user.id,
-        "email": user.email,
-        "username": user.username,
-        "display_name": user.display_name,
-        "status": user.status,
-        "role": user.role,
-        "department_id": user.department_id,
-        "must_change_password": user.must_change_password,
-        "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
-        "created_at": user.created_at.isoformat() if user.created_at else None,
-    }
+    user_data = _user_response(user).model_dump(mode="json")
     response = JSONResponse(content={
         "message": "登录成功",
         "user": user_data,
@@ -280,25 +316,38 @@ def refresh(request: Request, body: RefreshRequest | None = None, db: Session = 
             detail="User account is not active",
         )
 
-    # Revoke old session
-    session.revoked_at = datetime.now(UTC)
+    # Atomically revoke the old session. A concurrent request may have read the
+    # same live row, but only one transaction can change revoked_at from NULL.
+    if not _claim_refresh_session(
+        db,
+        session_id=session.id,
+        refresh_token_hash=token_hash,
+        revoked_at=datetime.now(UTC),
+    ):
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token has been revoked",
+        )
 
-    # Create new tokens
-    session_key = secrets.token_urlsafe(32)
-    new_refresh_token = create_refresh_token()
-
-    # Store new session
-    new_session = UserSession(
-        user_id=user.id,
-        session_key=session_key,
-        refresh_token_hash=hash_refresh_token(new_refresh_token),
-        expires_at=get_refresh_token_expiry(),
-        ip_address=request.client.host if request.client else None,
-        user_agent=request.headers.get("user-agent"),
-    )
-    db.add(new_session)
-    db.commit()
-    access_token, _ = create_access_token(user.id, user.email, user.role, session_key)
+    try:
+        # Only the transaction that claimed the old session may mint and store
+        # its replacement. Revocation and replacement commit together.
+        session_key = secrets.token_urlsafe(32)
+        new_refresh_token = create_refresh_token()
+        access_token, _ = create_access_token(user.id, user.email, user.role, session_key)
+        db.add(UserSession(
+            user_id=user.id,
+            session_key=session_key,
+            refresh_token_hash=hash_refresh_token(new_refresh_token),
+            expires_at=get_refresh_token_expiry(),
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+        ))
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
     response = JSONResponse(content={
         "message": "Token refreshed",
@@ -311,7 +360,7 @@ def refresh(request: Request, body: RefreshRequest | None = None, db: Session = 
 @router.get("/me", response_model=UserResponse)
 def get_me(current_user: User = Depends(get_current_user)):
     """Return the currently authenticated user's profile."""
-    return current_user
+    return _user_response(current_user)
 
 
 @router.post("/change-password")

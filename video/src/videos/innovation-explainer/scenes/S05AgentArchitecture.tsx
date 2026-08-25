@@ -7,17 +7,23 @@ import { SceneFrame } from "../../../shared/components/SceneFrame";
 import { COLORS, FONT_FAMILY } from "../../../shared/theme";
 
 const REFERENCE_DURATION_IN_FRAMES = 30 * 30;
-const TOOL_USE_REVEAL_FRAME = 286;
-const CHECKPOINT_REVEAL_FRAME = 414;
-const AGUI_REVEAL_FRAME = 546;
+const TOOL_USE_REVEAL_FRAME = 220;
+const TOOL_USE_REVEAL_DURATION = 18;
+const TOOL_STAGE_REVEAL_FRAMES = [242, 258, 274, 290] as const;
+const TOOL_STAGE_ACTIVE_END_FRAMES = [258, 274, 290, 310] as const;
+const SUPERVISOR_DISPATCH_WINDOW = [310, 316, 362, 374] as const;
+const CHECKPOINT_REVEAL_FRAME = 370;
+const CHECKPOINT_REVEAL_DURATION = 16;
+const AGUI_REVEAL_FRAME = 516;
+const AGUI_REVEAL_DURATION = 20;
 
 const KEYWORD_WINDOWS = {
   agentic: [20, 46, 120, 154],
   langGraph: [116, 146, 236, 270],
   supervisor: [170, 202, 276, 310],
-  toolUse: [282, 314, 378, 408],
-  checkpoint: [414, 446, 540, 576],
-  agui: [546, 578, 786, 826],
+  toolUse: [216, 238, 360, 382],
+  checkpoint: [370, 386, 506, 518],
+  agui: [514, 526, 786, 826],
 } as const;
 
 const focusValue = (
@@ -30,8 +36,8 @@ const focusValue = (
     extrapolateRight: "clamp",
   });
 
-const revealValue = (frame: number, start: number) =>
-  interpolate(frame, [start, start + 34], [0, 1], {
+const revealValue = (frame: number, start: number, duration = 34) =>
+  interpolate(frame, [start, start + duration], [0, 1], {
     easing: Easing.bezier(0.16, 1, 0.3, 1),
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
@@ -168,12 +174,10 @@ const ToolStage: React.FC<{
   index: number;
   frame: number;
 }> = ({ label, type, index, frame }) => {
-  const reveal = revealValue(frame, TOOL_USE_REVEAL_FRAME + 16 + index * 24);
-  const selectedIndex = Math.min(
-    3,
-    Math.max(0, Math.floor((frame - (TOOL_USE_REVEAL_FRAME + 16)) / 24)),
-  );
-  const active = frame >= TOOL_USE_REVEAL_FRAME + 16 && index === selectedIndex;
+  const revealAt = TOOL_STAGE_REVEAL_FRAMES[index];
+  const activeUntil = TOOL_STAGE_ACTIVE_END_FRAMES[index];
+  const reveal = revealValue(frame, revealAt, 10);
+  const active = frame >= revealAt && frame < activeUntil;
 
   return (
     <div
@@ -208,10 +212,21 @@ const LangGraphPane: React.FC<{ frame: number }> = ({ frame }) => {
   const langGraphReveal = revealValue(frame, 116);
   const langGraphFocus = focusValue(frame, KEYWORD_WINDOWS.langGraph);
   const supervisorReveal = revealValue(frame, 176);
-  const supervisorFocus = focusValue(frame, KEYWORD_WINDOWS.supervisor);
-  const toolReveal = revealValue(frame, TOOL_USE_REVEAL_FRAME);
+  const supervisorFocus = Math.max(
+    focusValue(frame, KEYWORD_WINDOWS.supervisor),
+    focusValue(frame, SUPERVISOR_DISPATCH_WINDOW),
+  );
+  const toolReveal = revealValue(
+    frame,
+    TOOL_USE_REVEAL_FRAME,
+    TOOL_USE_REVEAL_DURATION,
+  );
   const toolFocus = focusValue(frame, KEYWORD_WINDOWS.toolUse);
-  const checkpointReveal = revealValue(frame, CHECKPOINT_REVEAL_FRAME);
+  const checkpointReveal = revealValue(
+    frame,
+    CHECKPOINT_REVEAL_FRAME,
+    CHECKPOINT_REVEAL_DURATION,
+  );
   const checkpointFocus = focusValue(frame, KEYWORD_WINDOWS.checkpoint);
 
   return (
@@ -328,7 +343,7 @@ const LangGraphPane: React.FC<{ frame: number }> = ({ frame }) => {
             accent={COLORS.amber}
           />
           <div style={{ color: COLORS.muted, fontSize: 15 }}>
-            检索、筛选、分析与合成
+            检索、筛选、分析与报告合成
           </div>
         </div>
         <div
@@ -342,7 +357,7 @@ const LangGraphPane: React.FC<{ frame: number }> = ({ frame }) => {
           <ToolStage label="检索" type="library" index={0} frame={frame} />
           <ToolStage label="筛选" type="evidence" index={1} frame={frame} />
           <ToolStage label="分析" type="grid" index={2} frame={frame} />
-          <ToolStage label="报告" type="report" index={3} frame={frame} />
+          <ToolStage label="报告合成" type="report" index={3} frame={frame} />
         </div>
       </div>
 
@@ -388,7 +403,7 @@ const LangGraphPane: React.FC<{ frame: number }> = ({ frame }) => {
 };
 
 const AguiPane: React.FC<{ frame: number }> = ({ frame }) => {
-  const reveal = revealValue(frame, AGUI_REVEAL_FRAME);
+  const reveal = revealValue(frame, AGUI_REVEAL_FRAME, AGUI_REVEAL_DURATION);
   const focus = focusValue(frame, KEYWORD_WINDOWS.agui);
   const rows = ["执行步骤", "工具动作", "中间结果", "专家反馈"];
 
@@ -506,7 +521,7 @@ export const S05AgentArchitecture: React.FC<{
   return (
     <SceneFrame
       durationInFrames={durationInFrames}
-      eyebrow="06 · AGENTIC ARCHITECTURE"
+      eyebrow="05 · AGENTIC ARCHITECTURE"
       title="专业领域大模型驱动的智能体工作流"
     >
       <div

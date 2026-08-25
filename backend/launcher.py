@@ -25,6 +25,9 @@ import webbrowser
 # ---------------------------------------------------------------------------
 
 def _get_data_dir():
+    configured = os.environ.get("PAPER_TRACKER_DATA_DIR", "").strip()
+    if configured:
+        return os.path.abspath(os.path.expanduser(configured))
     system = platform.system()
     if system == "Darwin":
         base = os.path.join(os.path.expanduser("~"), "Library", "Application Support")

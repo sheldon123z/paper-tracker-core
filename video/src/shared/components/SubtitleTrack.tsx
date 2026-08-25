@@ -9,7 +9,7 @@ import {
 } from "remotion";
 import { COLORS, FONT_FAMILY } from "../theme";
 
-const SINGLE_LINE_LIMIT = 31;
+const DEFAULT_SINGLE_LINE_LIMIT = 31;
 const MIN_BALANCED_LINE_UNITS = 8;
 const BREAK_PUNCTUATION = new Set([
   "，",
@@ -40,9 +40,9 @@ const subtitleWidthUnits = (text: string) =>
     0,
   );
 
-const splitBalancedSubtitle = (text: string) => {
+const splitBalancedSubtitle = (text: string, singleLineLimitUnits: number) => {
   const normalized = text.trim();
-  if (subtitleWidthUnits(normalized) <= SINGLE_LINE_LIMIT) {
+  if (subtitleWidthUnits(normalized) <= singleLineLimitUnits) {
     return [normalized];
   }
 
@@ -75,7 +75,7 @@ const splitBalancedSubtitle = (text: string) => {
       Array.from(right)[0] ?? "",
     );
     const overflowPenalty =
-      Math.max(0, Math.max(leftUnits, rightUnits) - SINGLE_LINE_LIMIT) * 10;
+      Math.max(0, Math.max(leftUnits, rightUnits) - singleLineLimitUnits) * 10;
     const boundaryPenalty = isPunctuationBreak ? 0 : isWhitespaceBreak ? 3 : 12;
     const score =
       Math.abs(leftUnits - rightUnits) +
@@ -100,9 +100,10 @@ const SubtitleCard: React.FC<{
   durationInFrames: number;
   fadeIn: boolean;
   fadeOut: boolean;
-}> = ({ text, durationInFrames, fadeIn, fadeOut }) => {
+  singleLineLimitUnits: number;
+}> = ({ text, durationInFrames, fadeIn, fadeOut, singleLineLimitUnits }) => {
   const frame = useCurrentFrame();
-  const lines = splitBalancedSubtitle(text);
+  const lines = splitBalancedSubtitle(text, singleLineLimitUnits);
   const longestLineUnits = Math.max(...lines.map(subtitleWidthUnits), 1);
   const fontSize = Math.max(
     40,
@@ -170,7 +171,12 @@ const SubtitleCard: React.FC<{
 export const SubtitleTrack: React.FC<{
   captions: readonly Caption[];
   cornerBadge?: string;
-}> = ({ captions, cornerBadge }) => {
+  singleLineLimitUnits?: number;
+}> = ({
+  captions,
+  cornerBadge,
+  singleLineLimitUnits = DEFAULT_SINGLE_LINE_LIMIT,
+}) => {
   const { durationInFrames: compositionDuration, fps } = useVideoConfig();
 
   return (
@@ -196,6 +202,7 @@ export const SubtitleTrack: React.FC<{
               durationInFrames={durationInFrames}
               fadeIn={fadeIn}
               fadeOut={fadeOut}
+              singleLineLimitUnits={singleLineLimitUnits}
             />
           </Sequence>
         );

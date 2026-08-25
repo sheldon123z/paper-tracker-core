@@ -5,6 +5,8 @@ import SkillsSection from '../components/settings/SkillsSection'
 import SystemPromptsSection from '../components/settings/SystemPromptsSection'
 import TemplatesSection from '../components/settings/TemplatesSection'
 import MonitorSection from '../components/settings/MonitorSection'
+import { RUNTIME_CAPABILITIES } from '../config/runtime'
+import useStore from '../store'
 
 const IconCpu = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -45,7 +47,7 @@ const IconChart = () => (
 )
 
 const TABS = [
-  { key: 'llm', label: 'LLM 模型', icon: IconCpu },
+  { key: 'llm', label: 'LLM 模型', icon: IconCpu, managerOnly: true },
   { key: 'monitor', label: 'LLM 监控', icon: IconChart },
   { key: 'skills', label: 'Agent 技能', icon: IconWrench },
   { key: 'templates', label: 'Prompt 模板', icon: IconFileText },
@@ -55,6 +57,12 @@ const TABS = [
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('llm')
   const isMobile = useIsMobile()
+  const user = useStore((state) => state.user)
+  const isManager = user?.role === 'manager'
+  const visibleTabs = TABS.filter((tab) => !tab.managerOnly || isManager)
+  const visibleActiveTab = visibleTabs.some((tab) => tab.key === activeTab)
+    ? activeTab
+    : visibleTabs[0]?.key
 
   return (
     <div
@@ -71,15 +79,30 @@ export default function SettingsPage() {
         >
           设置
         </h1>
+        {RUNTIME_CAPABILITIES.offlineMode && (
+          <div
+            role="status"
+            data-testid="offline-mode-notice"
+            className="mt-3 flex max-w-2xl items-start gap-2 rounded-xl border px-3 py-2 text-xs"
+            style={{
+              borderColor: 'var(--border)',
+              backgroundColor: 'var(--bg-secondary)',
+              color: 'var(--text-secondary)',
+            }}
+          >
+            <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>离线模式</span>
+            <span>仅显示并使用本地模型；云端文档解析已关闭。</span>
+          </div>
+        )}
       </div>
 
       <div className="flex flex-col lg:flex-row gap-5">
         {/* ── Desktop sidebar nav ── */}
         <nav className="hidden lg:block shrink-0 w-48">
           <div className="glass-panel glass-medium panel-outline sticky top-4 space-y-1 rounded-shell border border-glass p-3">
-            {TABS.map((tab) => {
+            {visibleTabs.map((tab) => {
               const Icon = tab.icon
-              const active = activeTab === tab.key
+              const active = visibleActiveTab === tab.key
               return (
                 <button
                   key={tab.key}
@@ -101,9 +124,9 @@ export default function SettingsPage() {
 
         {/* ── Mobile horizontal tabs ── */}
         <nav className="flex lg:hidden gap-2 overflow-x-auto pb-2 -mx-1 px-1" style={{ scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
-          {TABS.map((tab) => {
+          {visibleTabs.map((tab) => {
             const Icon = tab.icon
-            const active = activeTab === tab.key
+            const active = visibleActiveTab === tab.key
             return (
               <button
                 key={tab.key}
@@ -124,11 +147,11 @@ export default function SettingsPage() {
 
         {/* ── Content ── */}
         <main className="flex-1 min-w-0">
-          {activeTab === 'llm' && <LLMSection />}
-          {activeTab === 'monitor' && <MonitorSection />}
-          {activeTab === 'skills' && <SkillsSection />}
-          {activeTab === 'templates' && <TemplatesSection />}
-          {activeTab === 'system' && <SystemPromptsSection />}
+          {visibleActiveTab === 'llm' && isManager && <LLMSection />}
+          {visibleActiveTab === 'monitor' && <MonitorSection />}
+          {visibleActiveTab === 'skills' && <SkillsSection />}
+          {visibleActiveTab === 'templates' && <TemplatesSection />}
+          {visibleActiveTab === 'system' && <SystemPromptsSection />}
         </main>
       </div>
     </div>

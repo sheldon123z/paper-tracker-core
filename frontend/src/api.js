@@ -1,10 +1,13 @@
 import axios from 'axios'
+import { API_BASE_URL } from './config/runtime'
 
 // JWT tokens are now stored in httpOnly cookies (set by the backend).
 // The browser sends cookies automatically when withCredentials is true.
 // No token is stored in localStorage — this prevents XSS token theft.
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:5002',
+  // API paths already start with /api. An empty base URL keeps browser
+  // requests on the origin that served the production UI.
+  baseURL: API_BASE_URL,
   timeout: 10000,
   withCredentials: true, // send httpOnly cookies with every request
 })

@@ -1,5 +1,4 @@
 import hmac
-import os
 from datetime import UTC, datetime
 
 from fastapi import Depends, Header, HTTPException, Request, status
@@ -10,6 +9,7 @@ from sqlalchemy.orm import Session
 from ..control_plane.database import get_control_db
 from ..control_plane.models import User, UserSession
 from ..services.access_control import is_manager
+from ..settings import get_secret_value
 from .tokens import decode_access_token
 
 # OAuth2 scheme still used as fallback for Authorization header (API/MCP callers)
@@ -117,7 +117,7 @@ def get_current_user_or_ingestion_service(
     db: Session = Depends(get_control_db),
 ) -> User | None:
     """Allow a JWT user or the explicit scheduler token; never trust loopback alone."""
-    expected = os.getenv("PAPER_TRACKER_SERVICE_TOKEN", "").strip()
+    expected = (get_secret_value("PAPER_TRACKER_SERVICE_TOKEN", "") or "").strip()
     if expected and x_service_token and hmac.compare_digest(x_service_token.strip(), expected):
         request.state.is_service_call = True
         return None

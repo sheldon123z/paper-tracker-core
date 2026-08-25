@@ -4,9 +4,9 @@ export default {
   darkMode: 'class',
   theme: {
     fontFamily: {
-      sans: ['Exo 2', 'sans-serif'],
-      display: ['Orbitron', 'sans-serif'],
-      body: ['Exo 2', 'sans-serif'],
+      sans: ['var(--font-body)'],
+      display: ['var(--font-display)'],
+      body: ['var(--font-body)'],
     },
     extend: {
       colors: {

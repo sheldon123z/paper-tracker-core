@@ -19,6 +19,7 @@ from .control_plane.migrations import migrate_control_schema
 from .control_plane.models import User
 from .database import Base, engine, get_db
 from .models import ChatMessage, GlobalChatSession, Paper, PaperUserState
+from .offline import is_offline_mode
 from .routes import limiter
 from .routes.admin import activity_router
 from .routes.admin import router as admin_router
@@ -46,7 +47,12 @@ from .services.checkpointer import close_checkpointer, open_checkpointer
 from .services.db_backup import perform_backup, schedule_backups
 from .services.db_migrations import migrate_database_schema, migrate_llm_config_rows
 from .services.file_storage import MAX_FILE_SIZE
-from .services.scheduler import get_scheduler, init_scheduler, shutdown_scheduler
+from .services.scheduler import (
+    get_scheduler,
+    init_scheduler,
+    shutdown_scheduler,
+    start_scheduler,
+)
 from .services.seed import (
     ensure_new_skills,
     migrate_llm_configs,
@@ -94,12 +100,42 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-origins = [origin.strip() for origin in os.getenv("CORS_ORIGINS", "http://localhost:3457").split(",") if origin.strip()]
-if "*" in origins:
-    logger.warning("⚠️  CORS_ORIGINS contains wildcard '*'. This is insecure for production.")
+LOOPBACK_CORS_ORIGIN_REGEX = (
+    r"(?i)^https?://(?:localhost|127\.0\.0\.1|\[::1\])(?::[1-9]\d{0,4})?$"
+)
+
+
+def resolve_cors_policy() -> tuple[list[str], str | None]:
+    """Resolve a credential-safe CORS policy from the runtime environment."""
+
+    configured = os.getenv("CORS_ORIGINS", "http://localhost:3457")
+    origins = [origin.strip() for origin in configured.split(",") if origin.strip()]
+    if "*" not in origins:
+        return origins, None
+
+    development_mode = (
+        os.getenv("PAPER_TRACKER_DEV_MODE", "").strip().lower()
+        in {"1", "true", "yes", "on"}
+    )
+    if is_offline_mode() or not development_mode:
+        raise RuntimeError(
+            "CORS_ORIGINS must not contain '*'. Use explicit origins, or enable "
+            "PAPER_TRACKER_DEV_MODE only for loopback development."
+        )
+
+    # Starlette cannot safely combine '*' with credentialed requests.  Even in
+    # explicit development mode, replace it with a loopback-only allowlist.
+    logger.warning(
+        "PAPER_TRACKER_DEV_MODE converted wildcard CORS to loopback-only origins."
+    )
+    return [origin for origin in origins if origin != "*"], LOOPBACK_CORS_ORIGIN_REGEX
+
+
+origins, origin_regex = resolve_cors_policy()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
+    allow_origin_regex=origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -260,13 +296,15 @@ async def limit_agui_body_size(request: Request, call_next):
 app.add_middleware(SlowAPIMiddleware)
 
 
-app.include_router(feeds_router)
+if not is_offline_mode():
+    app.include_router(feeds_router)
 app.include_router(papers_router)
 app.include_router(pdf_import_router)
 app.include_router(llm_config_router)
 app.include_router(prompt_templates_router)
 app.include_router(tags_router)
-app.include_router(scheduler_router)
+if not is_offline_mode():
+    app.include_router(scheduler_router)
 app.include_router(system_prompts_router)
 app.include_router(agui_router)
 app.include_router(agui_workflow_router)
@@ -317,7 +355,12 @@ def startup_event():
     finally:
         control_db.close()
         db.close()
-    init_scheduler()
+    if is_offline_mode():
+        # The scheduler is started only as infrastructure for local database
+        # backups.  RSS routers and feed jobs remain absent.
+        start_scheduler()
+    else:
+        init_scheduler()
 
     # Register periodic database backup and run one immediately on startup
     schedule_backups(get_scheduler())

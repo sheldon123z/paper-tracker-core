@@ -29,6 +29,12 @@ notion-worker/.env
 .env
 .env.local
 .env.production.local
+offline.env
+offline.env.bak-*
+offline-bundle/
+offline-backups/
+paper-tracker-offline-bundle*/
+paper-tracker-offline-backups/
 
 # Database
 *.db

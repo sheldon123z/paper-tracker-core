@@ -512,7 +512,7 @@ export const S04ResearchAgentCore: React.FC<{
   return (
     <SceneFrame
       durationInFrames={durationInFrames}
-      eyebrow="05 · RESEARCH AGENT"
+      eyebrow="04 · RESEARCH AGENT"
       title="专业研究智能体，按目标与模板连续推进"
     >
       <div

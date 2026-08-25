@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
+    "test": "node --test",
     "build:bundle": "esbuild server.js --bundle --platform=node --target=node20 --outfile=dist/server.cjs --format=cjs",
     "build:pkg": "pkg dist/server.cjs --target node20-macos-arm64,node20-macos-x64,node20-win-x64 --out-path dist/bin"
   },

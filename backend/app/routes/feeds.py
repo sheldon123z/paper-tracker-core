@@ -9,6 +9,7 @@ from ..auth.dependencies import get_current_user
 from ..control_plane.models import User
 from ..database import get_db
 from ..models import Feed, Paper, PaperUserState
+from ..offline import require_online_http
 from ..schemas import FeedCreate, FeedOut, FeedUpdate, PaginationMeta, PaperListResponse
 from ..services.access_control import (
     filter_visible,
@@ -31,6 +32,7 @@ def list_feeds(user: User = Depends(get_current_user), db: Session = Depends(get
 
 @router.post("", response_model=FeedOut)
 def create_feed(payload: FeedCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    require_online_http("RSS feed subscriptions")
     visibility, department_id = normalize_new_scope(user, payload.visibility, payload.department_id)
     existing = db.query(Feed).filter(
         Feed.url == payload.url,
@@ -55,6 +57,7 @@ def create_feed(payload: FeedCreate, user: User = Depends(get_current_user), db:
 
 @router.put("/{feed_id}", response_model=FeedOut)
 def update_feed(feed_id: int, payload: FeedUpdate, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    require_online_http("RSS feed subscriptions")
     feed = get_visible_or_404(db, Feed, feed_id, user)
     require_writable(feed, user)
 
@@ -104,6 +107,7 @@ def delete_feed(feed_id: int, user: User = Depends(get_current_user), db: Sessio
 @router.post("/refresh-abstracts")
 def refresh_all_abstracts(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Re-fetch all RSS feeds and update papers that have missing or stub abstracts."""
+    require_online_http("RSS abstract refresh")
     from ..services.rss_parser import refresh_abstracts
 
     feeds = filter_visible(db.query(Feed).filter(Feed.is_active == True), Feed, user).all()  # noqa: E712

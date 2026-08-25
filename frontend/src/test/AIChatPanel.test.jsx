@@ -191,6 +191,15 @@ describe('AIChatPanel assistant sessions', () => {
     expect(screen.getByTestId('paper-chat-composer')).toContainElement(suggestions)
   })
 
+  it('explains that translation reads the active PDF original automatically', async () => {
+    useStore.setState({ pdfActiveFileId: 7, pdfContextEnabled: false })
+
+    render(<AIChatPanel paper={{ id: 61, title: 'MARL Paper' }} />)
+
+    expect(await screen.findByText('翻译请求会自动读取当前 PDF 原件')).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: '附加 PDF 原文' })).not.toBeChecked()
+  })
+
   it('allows selecting the model used by the paper assistant', async () => {
     const user = userEvent.setup()
     render(<AIChatPanel paper={{ id: 61, title: 'MARL Paper' }} />)

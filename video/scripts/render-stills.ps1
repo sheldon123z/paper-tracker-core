@@ -20,6 +20,17 @@ $assetRoot = if ([System.IO.Path]::IsPathRooted($assetSetting)) {
   [System.IO.Path]::GetFullPath((Join-Path $projectRoot $assetSetting))
 }
 $env:VIDEO_ASSETS_DIR = $assetRoot
+$browserExecutable = @(
+  (Join-Path $env:ProgramFiles "Google\Chrome\Application\chrome.exe"),
+  (Join-Path ${env:ProgramFiles(x86)} "Google\Chrome\Application\chrome.exe"),
+  (Join-Path $env:LOCALAPPDATA "Google\Chrome\Application\chrome.exe")
+) | Where-Object {
+  -not [string]::IsNullOrWhiteSpace($_) -and
+  (Test-Path -LiteralPath $_ -PathType Leaf)
+} | Select-Object -First 1
+if ([string]::IsNullOrWhiteSpace($browserExecutable)) {
+  throw "A local Google Chrome executable is required for deterministic still rendering."
+}
 
 if ($Video -eq "innovation") {
   $assetFolder = "innovation-explainer"
@@ -84,6 +95,7 @@ try {
       --frame=$frame `
       --scale=$renderScale `
       --props=$compositionProps `
+      --browser-executable=$browserExecutable `
       --log=error
     if ($LASTEXITCODE -ne 0) {
       throw "$composition still render failed for $($scene.id)."

@@ -3,8 +3,6 @@
    Research Grid Nexus: deep-sea blue, glass morphism, grid topology
    ============================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Exo+2:wght@300;400;500;600;700&family=Orbitron:wght@400;500;600;700&display=swap');
-
 /* ---- Page-Level Color Tokens ---- */
 :root {
   --login-canvas-base: #07111f;
@@ -30,7 +28,7 @@
 .login-page {
   min-height: 100vh;
   width: 100%;
-  font-family: 'Exo 2', system-ui, sans-serif;
+  font-family: var(--font-body);
   color: var(--login-text-high);
   position: relative;
   overflow: hidden;
@@ -96,7 +94,7 @@
 }
 
 .login-eyebrow {
-  font-family: 'Orbitron', monospace;
+  font-family: var(--font-display);
   font-size: 11px;
   font-weight: 500;
   letter-spacing: 0.3em;
@@ -107,7 +105,7 @@
 }
 
 .login-hero-title {
-  font-family: 'Orbitron', monospace;
+  font-family: var(--font-display);
   font-size: clamp(36px, 4.5vw, 64px);
   font-weight: 700;
   line-height: 1.1;
@@ -194,7 +192,7 @@
 }
 
 .login-chip-value {
-  font-family: 'Orbitron', monospace;
+  font-family: var(--font-display);
   font-size: 14px;
   font-weight: 600;
   color: var(--login-text-high);
@@ -302,7 +300,7 @@
 }
 
 .login-brand-name {
-  font-family: 'Exo 2', system-ui, sans-serif;
+  font-family: var(--font-body);
   font-size: 14px;
   font-weight: 600;
   line-height: 1.55;
@@ -337,7 +335,7 @@
 
 /* ---- Card Title ---- */
 .login-card-title {
-  font-family: 'Orbitron', monospace;
+  font-family: var(--font-display);
   font-size: 24px;
   font-weight: 600;
   color: var(--login-text-high);
@@ -367,7 +365,7 @@
   padding: 10px 16px;
   border: none;
   border-radius: 10px;
-  font-family: 'Exo 2', system-ui, sans-serif;
+  font-family: var(--font-body);
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -425,7 +423,7 @@
   background: var(--login-input-bg);
   border: 1px solid var(--login-input-border);
   border-radius: 12px;
-  font-family: 'Exo 2', system-ui, sans-serif;
+  font-family: var(--font-body);
   font-size: 15px;
   color: var(--login-text-high);
   outline: none;
@@ -480,7 +478,7 @@
   border-radius: 16px;
   background: linear-gradient(135deg, #2f7bff 0%, #63d1ff 52%, #62f5c2 100%);
   color: #04101c;
-  font-family: 'Exo 2', system-ui, sans-serif;
+  font-family: var(--font-body);
   font-size: 15px;
   font-weight: 700;
   letter-spacing: 0.06em;

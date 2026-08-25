@@ -31,9 +31,58 @@ class AccessMigrationTests(unittest.TestCase):
                 self.assertIn("department_id", {column["name"] for column in inspector.get_columns("feeds")})
                 self.assertIn("created_by_user_id", {column["name"] for column in inspector.get_columns("tags")})
                 self.assertIn("user_id", {column["name"] for column in inspector.get_columns("llm_usage_logs")})
+                self.assertIn("is_local", {column["name"] for column in inspector.get_columns("llm_usage_logs")})
                 backups = list(Path(temp_dir).glob("paper_tracker.db.bak-before-access-control-papers-*"))
                 self.assertEqual(len(backups), 1)
                 self.assertGreater(backups[0].stat().st_size, 0)
+            finally:
+                engine.dispose()
+
+    def test_usage_local_snapshot_column_is_added_without_reclassifying_legacy_rows(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            database_path = Path(temp_dir) / "paper_tracker.db"
+            engine = create_engine(f"sqlite:///{database_path}")
+            try:
+                with engine.begin() as connection:
+                    connection.execute(text("""
+                        CREATE TABLE llm_configs (
+                            id INTEGER PRIMARY KEY,
+                            provider VARCHAR(64) NOT NULL,
+                            api_key_encrypted TEXT NOT NULL,
+                            model_name VARCHAR(128) NOT NULL,
+                            is_local BOOLEAN
+                        )
+                    """))
+                    connection.execute(text("""
+                        CREATE TABLE llm_usage_logs (
+                            id INTEGER PRIMARY KEY,
+                            config_id INTEGER REFERENCES llm_configs(id),
+                            provider VARCHAR(64) NOT NULL,
+                            model_name VARCHAR(128) NOT NULL,
+                            created_at DATETIME
+                        )
+                    """))
+                    connection.execute(text("""
+                        INSERT INTO llm_usage_logs (
+                            id, config_id, provider, model_name, created_at
+                        ) VALUES (
+                            1, NULL, 'ollama', 'legacy-model', CURRENT_TIMESTAMP
+                        )
+                    """))
+
+                migrate_database_schema(engine)
+                migrate_database_schema(engine)
+
+                columns = {
+                    column["name"]
+                    for column in inspect(engine).get_columns("llm_usage_logs")
+                }
+                with engine.connect() as connection:
+                    snapshot = connection.execute(
+                        text("SELECT is_local FROM llm_usage_logs WHERE id = 1")
+                    ).scalar_one()
+                self.assertIn("is_local", columns)
+                self.assertIsNone(snapshot)
             finally:
                 engine.dispose()
 

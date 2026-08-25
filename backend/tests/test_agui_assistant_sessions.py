@@ -1,16 +1,18 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 import backend.tests  # noqa: F401
 from backend.app.auth.dependencies import get_current_user
-from backend.app.models import GlobalChatSession, Paper
+from backend.app.models import ChatMessage, GlobalChatSession, Paper
 from backend.app.routes import agui as agui_module
 from backend.app.services.db_migrations import migrate_database_schema
+from backend.app.services.paper_document_text import PaperDocumentText
 from backend.tests.support import make_fake_user, make_test_session_factory
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
@@ -199,14 +201,14 @@ class AssistantSessionRouteTests(unittest.TestCase):
         self.assertEqual(hidden_response.status_code, 404)
 
     def test_global_continuation_restores_bound_paper_context_and_updates_activity(self):
-        captured_prompts = []
+        captured_configs = []
         with self.session_factory() as db:
             previous_updated_at = db.query(GlobalChatSession).filter_by(
                 session_id="ast-a-old",
             ).one().updated_at
 
         async def fake_run(agent_config, _messages, _encoder, _thread_id, _run_id, _db):
-            captured_prompts.append(agent_config.system_prompt)
+            captured_configs.append(agent_config)
             yield "{}\n"
 
         body = {
@@ -230,7 +232,8 @@ class AssistantSessionRouteTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn("Paper A", captured_prompts[-1])
+        self.assertNotIn("Paper A", captured_configs[-1].system_prompt)
+        self.assertIn("Paper A", captured_configs[-1].context_messages[0])
         with self.session_factory() as db:
             session = db.query(GlobalChatSession).filter_by(session_id="ast-a-old").one()
             self.assertGreater(session.updated_at, previous_updated_at)
@@ -250,6 +253,261 @@ class AssistantSessionRouteTests(unittest.TestCase):
             },
         )
         self.assertEqual(response.status_code, 409)
+
+    def test_translation_request_injects_original_pdf_and_scoped_reader_tool(self):
+        captured_configs = []
+        document = PaperDocumentText(
+            file_id=17,
+            filename="current-paper.pdf",
+            text="UNIQUE ORIGINAL PDF BODY",
+            source="pdf_text_layer",
+            total_pages=9,
+            start_page=1,
+            last_page=4,
+            has_more_pages=True,
+            next_page=5,
+            next_page_char_offset=0,
+        )
+
+        async def fake_run(agent_config, _messages, _encoder, _thread_id, _run_id, _db):
+            captured_configs.append(agent_config)
+            yield "{}\n"
+
+        body = {
+            "threadId": "ast-auto-translate",
+            "runId": "run-auto-translate",
+            "messages": [{"role": "user", "content": "请翻译这篇论文"}],
+            "forwardedProps": {
+                "assistantSessionId": "ast-auto-translate",
+                "assistantScope": "paper",
+                "paperId": self.paper_a_id,
+                "pdfActiveFileId": 17,
+            },
+        }
+        with patch.object(agui_module, "load_paper_document_text", return_value=document) as loader, \
+             patch.object(agui_module, "_resolve_config_or_error", return_value=(object(), None)), \
+             patch.object(agui_module, "get_system_prompt", return_value="Assistant prompt"), \
+             patch.object(agui_module, "get_tools_for_agent", return_value=([], None)), \
+             patch.object(agui_module, "run_chat_agent", side_effect=fake_run):
+            response = self.client.post(
+                "/api/agui/assistant",
+                json=body,
+                headers={"accept": "application/jsonl"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(captured_configs), 1)
+        config = captured_configs[0]
+        self.assertEqual(config.paper_id, self.paper_a_id)
+        self.assertNotIn("UNIQUE ORIGINAL PDF BODY", config.system_prompt)
+        self.assertIn("UNIQUE ORIGINAL PDF BODY", config.context_messages[0])
+        self.assertIn("当前用户请求已被识别为当前论文翻译任务", config.system_prompt)
+        self.assertEqual(config.pdf_cursor_checkpoint["next_start_page"], 5)
+        self.assertIn(
+            "read_current_paper_pdf",
+            [item["function"]["name"] for item in config.tool_defs],
+        )
+        loader.assert_called_once_with(
+            ANY,
+            self.paper_a_id,
+            preferred_file_id=17,
+            page_count=16,
+            max_chars=32_000,
+        )
+        self.assertEqual(
+            [item["function"]["name"] for item in config.tool_defs],
+            ["read_current_paper_pdf"],
+        )
+
+    def test_consecutive_continue_restores_latest_redacted_pdf_cursor(self):
+        tool_result = json.dumps({
+            "type": "current_paper_pdf",
+            "data": {
+                "paper_id": self.paper_a_id,
+                "file_id": 17,
+                "has_more": True,
+                "next_start_page": 9,
+                "next_page_char_offset": 321,
+                "next_text_offset": None,
+                "text_omitted": True,
+            },
+        }, ensure_ascii=False)
+        with self.session_factory() as db:
+            db.add_all([
+                ChatMessage(
+                    session_id="ast-a-new",
+                    user_id=1,
+                    session_type="assistant",
+                    role="user",
+                    content="请翻译这篇论文",
+                ),
+                ChatMessage(
+                    session_id="ast-a-new",
+                    user_id=1,
+                    session_type="assistant",
+                    role="user",
+                    content="继续",
+                ),
+                ChatMessage(
+                    session_id="ast-a-new",
+                    user_id=1,
+                    session_type="assistant",
+                    role="tool",
+                    content=json.dumps({
+                        "tool_call_id": "cursor-call",
+                        "name": "read_current_paper_pdf",
+                        "args": "{}",
+                        "result": tool_result,
+                    }, ensure_ascii=False),
+                ),
+            ])
+            db.commit()
+
+        document = PaperDocumentText(
+            file_id=17,
+            filename="current-paper.pdf",
+            text="RESUMED ORIGINAL PDF BODY",
+            source="pdf_text_layer",
+            total_pages=20,
+            start_page=9,
+            last_page=12,
+            has_more_pages=True,
+            next_page=13,
+            next_page_char_offset=0,
+        )
+        captured_configs = []
+
+        async def fake_run(agent_config, _messages, _encoder, _thread_id, _run_id, _db):
+            captured_configs.append(agent_config)
+            yield "{}\n"
+
+        with patch.object(agui_module, "load_paper_document_text", return_value=document) as loader, \
+             patch.object(agui_module, "_resolve_config_or_error", return_value=(object(), None)), \
+             patch.object(agui_module, "get_system_prompt", return_value="Assistant prompt"), \
+             patch.object(agui_module, "get_tools_for_agent", return_value=([], None)), \
+             patch.object(agui_module, "run_chat_agent", side_effect=fake_run):
+            response = self.client.post(
+                "/api/agui/assistant",
+                json={
+                    "threadId": "ast-a-new",
+                    "runId": "run-third-continue",
+                    "messages": [{"role": "user", "content": "继续"}],
+                    "forwardedProps": {
+                        "assistantSessionId": "ast-a-new",
+                        "assistantScope": "paper",
+                        "paperId": self.paper_a_id,
+                        "pdfActiveFileId": 17,
+                    },
+                },
+                headers={"accept": "application/jsonl"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        loader.assert_called_once_with(
+            ANY,
+            self.paper_a_id,
+            preferred_file_id=17,
+            page_count=16,
+            max_chars=32_000,
+            start_page=9,
+            page_char_offset=321,
+        )
+        self.assertIn("RESUMED ORIGINAL PDF BODY", captured_configs[0].context_messages[0])
+        self.assertIn(
+            "当前用户请求已被识别为当前论文翻译任务",
+            captured_configs[0].system_prompt,
+        )
+
+    def test_terminal_tool_cursor_replays_its_last_long_page_offset_from_db(self):
+        tool_result = json.dumps({
+            "type": "current_paper_pdf",
+            "data": {
+                "paper_id": self.paper_a_id,
+                "file_id": 17,
+                "source": "pdf_text_layer",
+                "start_page": 9,
+                "has_more": False,
+                "next_start_page": None,
+                "text_omitted": True,
+            },
+        }, ensure_ascii=False)
+        with self.session_factory() as db:
+            db.add_all([
+                ChatMessage(
+                    session_id="ast-a-new",
+                    user_id=1,
+                    session_type="assistant",
+                    role="user",
+                    content="请翻译这篇论文",
+                ),
+                ChatMessage(
+                    session_id="ast-a-new",
+                    user_id=1,
+                    session_type="assistant",
+                    role="tool",
+                    content=json.dumps({
+                        "tool_call_id": "terminal-cursor-call",
+                        "name": "read_current_paper_pdf",
+                        "resume_eligible": True,
+                        "args": json.dumps({
+                            "start_page": 9,
+                            "page_char_offset": 321,
+                        }),
+                        "result": tool_result,
+                    }, ensure_ascii=False),
+                ),
+            ])
+            db.commit()
+
+        document = PaperDocumentText(
+            file_id=17,
+            filename="current-paper.pdf",
+            text="FINAL LONG PAGE TAIL",
+            source="pdf_text_layer",
+            total_pages=9,
+            start_page=9,
+            last_page=9,
+            has_more_pages=False,
+        )
+        captured_configs = []
+
+        async def fake_run(agent_config, _messages, _encoder, _thread_id, _run_id, _db):
+            captured_configs.append(agent_config)
+            yield "{}\n"
+
+        with patch.object(agui_module, "load_paper_document_text", return_value=document) as loader, \
+             patch.object(agui_module, "_resolve_config_or_error", return_value=(object(), None)), \
+             patch.object(agui_module, "get_system_prompt", return_value="Assistant prompt"), \
+             patch.object(agui_module, "get_tools_for_agent", return_value=([], None)), \
+             patch.object(agui_module, "run_chat_agent", side_effect=fake_run):
+            response = self.client.post(
+                "/api/agui/assistant",
+                json={
+                    "threadId": "ast-a-new",
+                    "runId": "run-terminal-continue",
+                    "messages": [{"role": "user", "content": "继续"}],
+                    "forwardedProps": {
+                        "assistantSessionId": "ast-a-new",
+                        "assistantScope": "paper",
+                        "paperId": self.paper_a_id,
+                        "pdfActiveFileId": 17,
+                    },
+                },
+                headers={"accept": "application/jsonl"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        loader.assert_called_once_with(
+            ANY,
+            self.paper_a_id,
+            preferred_file_id=17,
+            page_count=16,
+            max_chars=32_000,
+            start_page=9,
+            page_char_offset=321,
+        )
+        self.assertIn("FINAL LONG PAGE TAIL", captured_configs[0].context_messages[0])
+        self.assertIn("不要从第一页重新开始", captured_configs[0].context_messages[0])
 
 
 class AssistantSessionMigrationTests(unittest.TestCase):

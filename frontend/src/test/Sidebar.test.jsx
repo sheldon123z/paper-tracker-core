@@ -4,9 +4,12 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Sidebar from '../components/layout/Sidebar'
 
-const setActiveTab = vi.fn()
-const toggleDarkMode = vi.fn()
-const clearAuth = vi.fn()
+const mocks = vi.hoisted(() => ({
+  setActiveTab: vi.fn(),
+  toggleDarkMode: vi.fn(),
+  clearAuth: vi.fn(),
+  user: null,
+}))
 
 vi.mock('../api', () => ({
   default: { post: vi.fn(() => Promise.resolve()) },
@@ -15,10 +18,10 @@ vi.mock('../api', () => ({
 vi.mock('../store', () => ({
   default: () => ({
     darkMode: false,
-    toggleDarkMode,
-    setActiveTab,
-    user: { username: 'researcher', email: 'researcher@example.com' },
-    clearAuth,
+    toggleDarkMode: mocks.toggleDarkMode,
+    setActiveTab: mocks.setActiveTab,
+    user: mocks.user,
+    clearAuth: mocks.clearAuth,
   }),
 }))
 
@@ -33,6 +36,13 @@ function renderSidebar() {
 describe('Sidebar', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.user = {
+      username: 'researcher',
+      email: 'researcher@example.com',
+      role: 'user',
+      department_id: null,
+      department_name: null,
+    }
   })
 
   it('keeps an accessible switch available while collapsing and reopening the sidebar', async () => {
@@ -74,5 +84,37 @@ describe('Sidebar', () => {
 
     expect(screen.queryByRole('link', { name: /订阅源/ })).not.toBeInTheDocument()
     expect(document.querySelector('a[href="/feeds"]')).not.toBeInTheDocument()
+  })
+
+  it('shows the department name badge for a department account', () => {
+    mocks.user = {
+      username: 'researcher',
+      email: 'researcher@example.com',
+      role: 'user',
+      department_id: 7,
+      department_name: '先进制造研究部',
+    }
+
+    renderSidebar()
+
+    const badge = screen.getByText('先进制造研究部')
+    expect(badge).toHaveAttribute('title', '先进制造研究部')
+    expect(badge).toHaveClass('truncate')
+    expect(screen.queryByText('管理员')).not.toBeInTheDocument()
+  })
+
+  it('shows an administrator badge for a manager account', () => {
+    mocks.user = {
+      username: 'manager',
+      email: 'manager@example.com',
+      role: 'manager',
+      department_id: null,
+      department_name: null,
+    }
+
+    renderSidebar()
+
+    expect(screen.getByText('管理员')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /权限管理/ })).toBeInTheDocument()
   })
 })

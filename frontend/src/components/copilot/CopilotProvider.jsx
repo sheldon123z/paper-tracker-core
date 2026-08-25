@@ -2,12 +2,8 @@ import { useEffect, useMemo } from 'react'
 import { CopilotKit } from '@copilotkit/react-core/v2'
 import { useLocation } from 'react-router-dom'
 import useStore from '../../store'
+import { COPILOT_RUNTIME_URL } from '../../config/runtime'
 import { TOOL_CALL_RENDERERS } from './ToolCallRenderer'
-
-// Keep development requests same-origin so the /api-scoped httpOnly auth
-// cookie reaches Vite, which proxies this endpoint to CopilotRuntime on :4100.
-// Packaged builds can still provide an explicit runtime URL through the env.
-const RUNTIME_URL = import.meta.env.VITE_COPILOT_RUNTIME_URL || '/api/copilotkit'
 
 /**
  * CopilotKit provider wrapper that passes dynamic properties to AG-UI agents.
@@ -110,7 +106,7 @@ export default function CopilotProvider({ children }) {
 
   return (
     <CopilotKit
-      runtimeUrl={RUNTIME_URL}
+      runtimeUrl={COPILOT_RUNTIME_URL}
       showDevConsole={false}
       enableInspector={false}
       credentials="include"

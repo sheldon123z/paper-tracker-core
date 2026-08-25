@@ -7,6 +7,8 @@ from unittest.mock import patch
 import backend.tests  # noqa: F401
 from backend.app.services.llm_registry import (
     ProviderConfigError,
+    ResolvedLLMConfig,
+    build_litellm_model,
     normalize_base_url,
     validate_base_url,
     validate_extra_headers,
@@ -15,6 +17,32 @@ from backend.tests.support import patched_env
 
 
 class LLMRegistryTests(unittest.TestCase):
+    def test_resolved_config_state_excludes_cleartext_api_key(self):
+        resolved = ResolvedLLMConfig(
+            provider_key="ollama",
+            display_name="Local",
+            model_name="qwen3:8b",
+            litellm_model="ollama_chat/qwen3:8b",
+            api_key="must-not-be-checkpointed",
+            api_base="http://127.0.0.1:11434",
+            extra_headers={},
+            model_kwargs={},
+            api_format="ollama",
+            is_local=True,
+            supports_streaming=True,
+            supports_tool_calling=False,
+            supports_reasoning=False,
+            supports_vision=False,
+        )
+
+        self.assertNotIn("api_key", resolved.to_state())
+
+    def test_ollama_uses_chat_adapter_for_tools_and_visible_content(self):
+        self.assertEqual(
+            build_litellm_model("ollama", "qwen3:8b"),
+            "ollama_chat/qwen3:8b",
+        )
+
     def test_normalize_known_provider_base_urls(self):
         self.assertEqual(
             normalize_base_url("moonshot", "https://api.moonshot.cn/v1/chat/completions"),
@@ -63,3 +91,23 @@ class LLMRegistryTests(unittest.TestCase):
         with self.assertRaises(ProviderConfigError) as ctx:
             validate_extra_headers("openai", {"Authorization": "Bearer x"})
         self.assertEqual(ctx.exception.code, "FORBIDDEN_HEADER")
+
+        for header in (
+            "X-Token",
+            "Access-Token",
+            "Cookie",
+            "XApiKey",
+            "proxyAuthorization",
+        ):
+            with self.subTest(header=header), self.assertRaises(ProviderConfigError):
+                validate_extra_headers(
+                    "openai_compatible",
+                    {header: "must-not-be-stored"},
+                )
+
+    def test_invalid_base_url_is_not_written_to_logs(self):
+        secret_url = "not-a-url?access_token=must-not-appear"
+        with self.assertLogs("paper-tracker.llm_registry", level="WARNING") as logs:
+            with self.assertRaises(ProviderConfigError):
+                validate_base_url("openai", secret_url, is_local=False)
+        self.assertNotIn("must-not-appear", "\n".join(logs.output))

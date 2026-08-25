@@ -1,6 +1,7 @@
 """Unified LangGraph graph factory for all agent types."""
 
 import copy
+import inspect
 import json
 from collections.abc import Callable
 from typing import Annotated, Any, TypedDict
@@ -155,6 +156,8 @@ def create_tool_graph(
         tool_responses = []
         for tool_call in last_message.tool_calls:
             result_str = tool_executor(tool_call["name"], tool_call["args"])
+            if inspect.isawaitable(result_str):
+                result_str = await result_str
             tool_responses.append(
                 ToolMessage(
                     content=result_str,

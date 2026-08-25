@@ -381,6 +381,12 @@
 }
 
 /* ── Recent sessions ── */
+.wf-session-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  min-width: 0;
+}
 .wf-session-btn {
   display: flex;
   align-items: center;
@@ -392,14 +398,108 @@
   background: var(--glass-card-medium);
   cursor: pointer;
   text-align: left;
-  transition: all 0.2s ease;
-  width: 100%;
+  transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+  flex: 1;
+  min-width: 0;
   outline: none;
 }
-.wf-session-btn:hover {
+.wf-session-btn:hover,
+.wf-session-btn:focus-visible {
   border-color: var(--accent);
+  background: var(--glass-card-premium);
   box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-  transform: translateX(2px);
+}
+.wf-session-btn:focus-visible,
+.wf-session-actions:focus-visible,
+.wf-session-menu__danger:focus-visible {
+  box-shadow: 0 0 0 3px var(--ring, rgba(59,130,246,0.18));
+}
+.wf-session-title {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wf-session-topic {
+  overflow: hidden;
+  margin-top: 2px;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wf-session-stage {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.wf-session-actions {
+  display: inline-flex;
+  width: 42px;
+  flex: 0 0 42px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--glass-stroke);
+  border-radius: 16px;
+  background: var(--glass-card-medium);
+  color: var(--text-secondary);
+  cursor: pointer;
+  opacity: 0.72;
+  outline: none;
+  transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease, opacity 0.2s ease;
+}
+.wf-session-row:hover .wf-session-actions,
+.wf-session-actions:hover,
+.wf-session-actions:focus-visible,
+.wf-session-actions[aria-expanded='true'] {
+  border-color: var(--accent);
+  background: var(--glass-card-premium);
+  color: var(--text-primary);
+  opacity: 1;
+}
+.wf-session-menu {
+  position: fixed;
+  z-index: 40;
+  width: 176px;
+  padding: 5px;
+  border: 1px solid var(--glass-stroke);
+  border-radius: 14px;
+  background: var(--glass-panel-premium);
+  box-shadow: var(--glass-shadow-edge), var(--shadow-premium);
+  backdrop-filter: blur(var(--glass-blur-premium)) saturate(170%);
+  -webkit-backdrop-filter: blur(var(--glass-blur-premium)) saturate(170%);
+}
+.wf-session-menu__danger {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--danger);
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 600;
+  outline: none;
+  text-align: left;
+  transition: background-color 0.18s ease;
+}
+.wf-session-menu__danger:hover,
+.wf-session-menu__danger:focus-visible {
+  background: rgba(213, 79, 95, 0.1);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .wf-session-actions {
+    opacity: 0;
+  }
 }
 
 /* ── Params form ── */
@@ -1221,7 +1321,7 @@
 
 .wf-metric-tile__value {
   margin-top: 12px;
-  font-family: 'Orbitron', 'Exo 2', sans-serif;
+  font-family: var(--font-display);
   font-size: 24px;
   font-weight: 700;
   line-height: 1;
@@ -1306,7 +1406,7 @@
 }
 
 .wf-paper-card__index {
-  font-family: 'Orbitron', 'Exo 2', sans-serif;
+  font-family: var(--font-display);
   color: var(--card-accent, var(--accent));
   background: color-mix(in srgb, var(--card-accent, var(--accent)) 10%, transparent);
 }
@@ -1514,7 +1614,7 @@
 }
 
 .wf-trend-metric__value {
-  font-family: 'Orbitron', 'Exo 2', sans-serif;
+  font-family: var(--font-display);
   font-size: 22px;
   font-weight: 700;
   color: var(--text-primary);
@@ -1610,7 +1710,7 @@
 }
 
 .wf-rank-item__index {
-  font-family: 'Orbitron', 'Exo 2', sans-serif;
+  font-family: var(--font-display);
   font-size: 11px;
   color: var(--text-tertiary);
 }
@@ -1717,7 +1817,7 @@
 
 .wf-chart-tooltip__value {
   margin-top: 4px;
-  font-family: 'Orbitron', 'Exo 2', sans-serif;
+  font-family: var(--font-display);
   font-size: 14px;
   font-weight: 700;
   color: var(--text-primary);

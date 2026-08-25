@@ -8,6 +8,7 @@ import WorkflowStatePanel from '../components/workflow/WorkflowStatePanel'
 import WorkflowChatPanel from '../components/workflow/WorkflowChatPanel'
 import { getWorkflowTemplate } from '../components/workflow/templates'
 import { waitForPersistedWorkflow } from '../components/workflow/workflowRecovery'
+import { useToast } from '../components/ui'
 
 function createSessionId() {
   return `wf-${crypto.randomUUID()}`
@@ -118,9 +119,15 @@ export default function WorkflowPage() {
   const [recentSessions, setRecentSessions] = useState([])
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyError, setHistoryError] = useState(null)
+  const [deletingSessionId, setDeletingSessionId] = useState(null)
+  const deletingSessionRef = useRef(null)
+  const blockedSessionIdsRef = useRef(new Set())
+  const openSessionRequestsRef = useRef(new Map())
+  const sessionsRequestIdRef = useRef(0)
 
   const setWorkflowContext = useStore((state) => state.setWorkflowContext)
   const clearWorkflowContext = useStore((state) => state.clearWorkflowContext)
+  const { addToast } = useToast()
 
   const activeTab = useMemo(
     () => tabs.find((tab) => tab.id === activeTabId) || null,
@@ -171,15 +178,22 @@ export default function WorkflowPage() {
   }, [])
 
   const refreshWorkflowSessions = useCallback(async () => {
+    const requestId = sessionsRequestIdRef.current + 1
+    sessionsRequestIdRef.current = requestId
     setHistoryLoading(true)
     setHistoryError(null)
     try {
       const response = await api.get('/api/agui/workflow/sessions')
-      setRecentSessions(Array.isArray(response.data) ? response.data : [])
+      if (sessionsRequestIdRef.current !== requestId) return
+      const sessions = Array.isArray(response.data) ? response.data : []
+      setRecentSessions(
+        sessions.filter((session) => !blockedSessionIdsRef.current.has(session.session_id)),
+      )
     } catch (error) {
+      if (sessionsRequestIdRef.current !== requestId) return
       setHistoryError(error instanceof Error ? error.message : '加载 workflow 历史失败')
     } finally {
-      setHistoryLoading(false)
+      if (sessionsRequestIdRef.current === requestId) setHistoryLoading(false)
     }
   }, [])
 
@@ -267,11 +281,21 @@ export default function WorkflowPage() {
   }, [draftTemplateId])
 
   const handleOpenSession = useCallback(async (sessionId) => {
+    if (blockedSessionIdsRef.current.has(sessionId)) return
+    const requestToken = Symbol(sessionId)
+    openSessionRequestsRef.current.set(sessionId, requestToken)
+
     try {
       const [sessionResponse, messagesResponse] = await Promise.all([
         api.get(`/api/agui/workflow/${sessionId}`),
         api.get(`/api/agui/workflow/${sessionId}/messages`),
       ])
+      if (
+        blockedSessionIdsRef.current.has(sessionId)
+        || openSessionRequestsRef.current.get(sessionId) !== requestToken
+      ) {
+        return
+      }
       const nextTab = buildTabFromSession(sessionResponse.data, messagesResponse.data)
       setTabs((prevTabs) => {
         const alreadyOpen = prevTabs.some((tab) => tab.sessionId === sessionId)
@@ -282,7 +306,17 @@ export default function WorkflowPage() {
       setActiveTabId(nextTab.id)
       setDraftTemplateId(null)
     } catch (error) {
+      if (
+        blockedSessionIdsRef.current.has(sessionId)
+        || openSessionRequestsRef.current.get(sessionId) !== requestToken
+      ) {
+        return
+      }
       setHistoryError(error instanceof Error ? error.message : '恢复 workflow 会话失败')
+    } finally {
+      if (openSessionRequestsRef.current.get(sessionId) === requestToken) {
+        openSessionRequestsRef.current.delete(sessionId)
+      }
     }
   }, [])
 
@@ -295,6 +329,40 @@ export default function WorkflowPage() {
       return remaining
     })
   }, [activeTabId])
+
+  const handleDeleteSession = useCallback(async (sessionId) => {
+    if (!sessionId || deletingSessionRef.current) return
+
+    deletingSessionRef.current = sessionId
+    blockedSessionIdsRef.current.add(sessionId)
+    openSessionRequestsRef.current.delete(sessionId)
+    setDeletingSessionId(sessionId)
+    try {
+      await api.delete(`/api/agui/workflow/${encodeURIComponent(sessionId)}`)
+      setRecentSessions((prevSessions) =>
+        prevSessions.filter((session) => session.session_id !== sessionId),
+      )
+      setTabs((prevTabs) => {
+        const remaining = prevTabs.filter((tab) => tab.sessionId !== sessionId)
+        setActiveTabId((currentId) => (
+          currentId === sessionId ? remaining[remaining.length - 1]?.id || null : currentId
+        ))
+        return remaining
+      })
+      addToast({ type: 'success', message: '工作流已删除' })
+    } catch (error) {
+      blockedSessionIdsRef.current.delete(sessionId)
+      const message = error?.response?.data?.detail
+        || (error instanceof Error ? error.message : '删除工作流失败')
+      addToast({ type: 'error', message })
+      throw error
+    } finally {
+      if (deletingSessionRef.current === sessionId) {
+        deletingSessionRef.current = null
+        setDeletingSessionId(null)
+      }
+    }
+  }, [addToast])
 
   const currentPhase = activeTab
     ? derivePhase(activeTab)
@@ -372,6 +440,8 @@ export default function WorkflowPage() {
                 historyLoading={historyLoading}
                 historyError={historyError}
                 onOpenSession={handleOpenSession}
+                onDeleteSession={handleDeleteSession}
+                deletingSessionId={deletingSessionId}
                 onSelectTemplate={handleSelectTemplate}
                 onStartWorkflow={handleStartWorkflow}
                 onBackToTemplates={handleBackToTemplates}

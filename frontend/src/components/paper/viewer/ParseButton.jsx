@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '../../ui'
 import api from '../../../api'
 import useStore from '../../../store'
+import { RUNTIME_CAPABILITIES } from '../../../config/runtime'
 
 const PARSE_ENGINES = [
   { id: 'mineru', label: 'MinerU' },
@@ -9,9 +10,14 @@ const PARSE_ENGINES = [
 ]
 
 export default function ParseButton({ paperId, fileId, parseStatus: initialStatus, fileType, onParseComplete }) {
+  const cloudParsingAvailable = RUNTIME_CAPABILITIES.cloudDocumentParsing
+  const statusPollingAvailable = fileType !== 'pdf' || cloudParsingAvailable
   const [status, setStatus] = useState(initialStatus || null)
   const [error, setError] = useState(null)
-  const [polling, setPolling] = useState(() => initialStatus === 'pending' || initialStatus === 'processing' || initialStatus === 'translating')
+  const [polling, setPolling] = useState(
+    () => statusPollingAvailable
+      && (initialStatus === 'pending' || initialStatus === 'processing' || initialStatus === 'translating'),
+  )
   const [engineMenuOpen, setEngineMenuOpen] = useState(false)
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0 })
   const menuRef = useRef(null)
@@ -21,8 +27,11 @@ export default function ParseButton({ paperId, fileId, parseStatus: initialStatu
   useEffect(() => {
     setStatus(initialStatus || null)
     setError(null)
-    setPolling(initialStatus === 'pending' || initialStatus === 'processing' || initialStatus === 'translating')
-  }, [initialStatus, fileId])
+    setPolling(
+      statusPollingAvailable
+        && (initialStatus === 'pending' || initialStatus === 'processing' || initialStatus === 'translating'),
+    )
+  }, [initialStatus, fileId, statusPollingAvailable])
 
   // Close engine menu on outside click
   useEffect(() => {
@@ -65,7 +74,7 @@ export default function ParseButton({ paperId, fileId, parseStatus: initialStatu
 
   // Poll status
   useEffect(() => {
-    if (!polling) return
+    if (!polling || !statusPollingAvailable) return
     const interval = setInterval(async () => {
       try {
         const res = await api.get(`/api/papers/${paperId}/files/${fileId}/parse-status`)
@@ -81,7 +90,11 @@ export default function ParseButton({ paperId, fileId, parseStatus: initialStatu
       }
     }, 5000)
     return () => clearInterval(interval)
-  }, [polling, paperId, fileId, onParseComplete])
+  }, [polling, paperId, fileId, onParseComplete, statusPollingAvailable])
+
+  // MinerU and Doc2X are cloud-backed. Keep the document viewer mounted in
+  // offline builds, but do not expose or poll their parsing controls.
+  if (fileType === 'pdf' && !cloudParsingAvailable) return null
 
   // Spinner for in-progress states
   if (status === 'pending' || status === 'processing') {

@@ -8,12 +8,14 @@ import logging
 import time
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
-from ..models import LLMUsageLog
+from ..models import LLMConfig, LLMUsageLog
+from ..offline import is_offline_mode
 
 logger = logging.getLogger("paper-tracker.usage")
+_LOCAL_LLM_PROVIDERS = ("ollama", "vllm", "lmstudio", "llamacpp")
 
 
 def create_usage_collector(
@@ -21,6 +23,7 @@ def create_usage_collector(
     config_id: int | None = None,
     provider: str = "",
     model_name: str = "",
+    is_local: bool | None = None,
     agent_type: str | None = None,
     session_id: str | None = None,
     user_id: int | None = None,
@@ -32,6 +35,7 @@ def create_usage_collector(
         "config_id": config_id,
         "provider": provider,
         "model_name": model_name,
+        "is_local": is_local,
         "agent_type": agent_type,
         "session_id": session_id,
         "user_id": user_id,
@@ -45,8 +49,30 @@ def create_usage_collector(
         "tool_calls_count": 0,
         "status": "success",
         "error_code": None,
+        "finish_reason": None,
+        "output_truncated": False,
         "_first_token_received": False,
     }
+
+
+def _resolve_usage_is_local(db: Session, collector: dict) -> bool:
+    """Return the call-time local classification stored with a usage log."""
+    snapshot = collector.get("is_local")
+    if snapshot is not None:
+        return bool(snapshot)
+
+    config_id = collector.get("config_id")
+    if config_id is not None:
+        configured = (
+            db.query(LLMConfig.is_local)
+            .filter(LLMConfig.id == config_id)
+            .scalar()
+        )
+        if configured is not None:
+            return bool(configured)
+
+    provider = str(collector.get("provider") or "").strip().lower()
+    return provider in _LOCAL_LLM_PROVIDERS
 
 
 def save_usage_log(db: Session, collector: dict) -> None:
@@ -61,6 +87,7 @@ def save_usage_log(db: Session, collector: dict) -> None:
             config_id=collector.get("config_id"),
             provider=collector.get("provider", "unknown"),
             model_name=collector.get("model_name", "unknown"),
+            is_local=_resolve_usage_is_local(db, collector),
             agent_type=collector.get("agent_type"),
             session_id=collector.get("session_id"),
             user_id=collector.get("user_id"),
@@ -118,7 +145,49 @@ def save_usage_log(db: Session, collector: dict) -> None:
 # Aggregation helpers
 # ---------------------------------------------------------------------------
 
-def get_usage_summary(db: Session, *, days: int = 30, config_id: int | None = None, user_id: int | None = None) -> dict:
+def filter_local_usage(query, *, local_only: bool = False):
+    if not local_only and not is_offline_mode():
+        return query
+    matching_config_exists = (
+        select(LLMConfig.id)
+        .where(LLMConfig.id == LLMUsageLog.config_id)
+        .exists()
+    )
+    local_config_exists = (
+        select(LLMConfig.id)
+        .where(
+            LLMConfig.id == LLMUsageLog.config_id,
+            LLMConfig.is_local.is_(True),
+        )
+        .exists()
+    )
+    return query.filter(
+        or_(
+            LLMUsageLog.is_local.is_(True),
+            and_(
+                LLMUsageLog.is_local.is_(None),
+                or_(
+                    local_config_exists,
+                    and_(
+                        ~matching_config_exists,
+                        func.lower(func.trim(LLMUsageLog.provider)).in_(
+                            _LOCAL_LLM_PROVIDERS
+                        ),
+                    ),
+                ),
+            ),
+        )
+    )
+
+
+def get_usage_summary(
+    db: Session,
+    *,
+    days: int = 30,
+    config_id: int | None = None,
+    local_only: bool = False,
+    user_id: int | None = None,
+) -> dict:
     cutoff = datetime.now(UTC) - timedelta(days=days)
     q = db.query(
         func.count(LLMUsageLog.id),
@@ -132,6 +201,7 @@ def get_usage_summary(db: Session, *, days: int = 30, config_id: int | None = No
     ).filter(LLMUsageLog.created_at >= cutoff)
     if config_id is not None:
         q = q.filter(LLMUsageLog.config_id == config_id)
+    q = filter_local_usage(q, local_only=local_only)
     if user_id is not None:
         q = q.filter(LLMUsageLog.user_id == user_id)
     row = q.one()
@@ -148,7 +218,13 @@ def get_usage_summary(db: Session, *, days: int = 30, config_id: int | None = No
     }
 
 
-def get_usage_by_model(db: Session, *, days: int = 30, user_id: int | None = None) -> list[dict]:
+def get_usage_by_model(
+    db: Session,
+    *,
+    days: int = 30,
+    local_only: bool = False,
+    user_id: int | None = None,
+) -> list[dict]:
     cutoff = datetime.now(UTC) - timedelta(days=days)
     query = (
         db.query(
@@ -161,6 +237,7 @@ def get_usage_by_model(db: Session, *, days: int = 30, user_id: int | None = Non
         )
         .filter(LLMUsageLog.created_at >= cutoff)
     )
+    query = filter_local_usage(query, local_only=local_only)
     if user_id is not None:
         query = query.filter(LLMUsageLog.user_id == user_id)
     rows = (
@@ -181,7 +258,13 @@ def get_usage_by_model(db: Session, *, days: int = 30, user_id: int | None = Non
     ]
 
 
-def get_usage_by_agent(db: Session, *, days: int = 30, user_id: int | None = None) -> list[dict]:
+def get_usage_by_agent(
+    db: Session,
+    *,
+    days: int = 30,
+    local_only: bool = False,
+    user_id: int | None = None,
+) -> list[dict]:
     cutoff = datetime.now(UTC) - timedelta(days=days)
     query = (
         db.query(
@@ -192,6 +275,7 @@ def get_usage_by_agent(db: Session, *, days: int = 30, user_id: int | None = Non
         )
         .filter(LLMUsageLog.created_at >= cutoff)
     )
+    query = filter_local_usage(query, local_only=local_only)
     if user_id is not None:
         query = query.filter(LLMUsageLog.user_id == user_id)
     rows = (
@@ -210,7 +294,14 @@ def get_usage_by_agent(db: Session, *, days: int = 30, user_id: int | None = Non
     ]
 
 
-def get_usage_timeline(db: Session, *, days: int = 30, interval: str = "day", user_id: int | None = None) -> list[dict]:
+def get_usage_timeline(
+    db: Session,
+    *,
+    days: int = 30,
+    interval: str = "day",
+    local_only: bool = False,
+    user_id: int | None = None,
+) -> list[dict]:
     cutoff = datetime.now(UTC) - timedelta(days=days)
     fmt = "%Y-%m-%d" if interval == "day" else "%Y-%m-%d %H:00"
     query = (
@@ -221,6 +312,7 @@ def get_usage_timeline(db: Session, *, days: int = 30, interval: str = "day", us
         )
         .filter(LLMUsageLog.created_at >= cutoff)
     )
+    query = filter_local_usage(query, local_only=local_only)
     if user_id is not None:
         query = query.filter(LLMUsageLog.user_id == user_id)
     rows = (
@@ -232,8 +324,15 @@ def get_usage_timeline(db: Session, *, days: int = 30, interval: str = "day", us
     return [{"date": r[0], "calls": r[1], "tokens": r[2]} for r in rows]
 
 
-def get_recent_usage(db: Session, *, limit: int = 50, user_id: int | None = None) -> list[LLMUsageLog]:
+def get_recent_usage(
+    db: Session,
+    *,
+    limit: int = 50,
+    local_only: bool = False,
+    user_id: int | None = None,
+) -> list[LLMUsageLog]:
     query = db.query(LLMUsageLog)
+    query = filter_local_usage(query, local_only=local_only)
     if user_id is not None:
         query = query.filter(LLMUsageLog.user_id == user_id)
     return (
