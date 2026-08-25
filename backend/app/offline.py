@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import ipaddress
 import os
-import socket
 from urllib.parse import urlparse
 
 OFFLINE_ERROR_CODE = "OFFLINE_MODE_BLOCKED"
@@ -18,6 +17,7 @@ _DEFAULT_LLM_HOSTS = {
     "127.0.0.1",
     "::1",
 }
+_FIXED_INTERNAL_LLM_HOSTS = {"model-proxy"}
 _OFFLINE_NETWORKS = tuple(
     ipaddress.ip_network(cidr)
     for cidr in (
@@ -95,30 +95,13 @@ def _is_offline_address(address: ipaddress.IPv4Address | ipaddress.IPv6Address) 
     return any(address in network for network in _OFFLINE_NETWORKS)
 
 
-def _resolve_host_addresses(host: str) -> set[ipaddress.IPv4Address | ipaddress.IPv6Address]:
-    addresses: set[ipaddress.IPv4Address | ipaddress.IPv6Address] = set()
-    try:
-        infos = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
-    except OSError:
-        return addresses
-    for info in infos:
-        sockaddr = info[4]
-        if not sockaddr:
-            continue
-        try:
-            addresses.add(ipaddress.ip_address(sockaddr[0]))
-        except ValueError:
-            continue
-    return addresses
-
-
 def is_offline_llm_host_allowed(host: str | None) -> bool:
     """Return whether *host* is an explicitly offline-safe LLM endpoint.
 
-    Only literal loopback IPs are built in.  ``OFFLINE_LLM_ALLOWED_HOSTS`` may
-    add exact hostnames/IPs, CIDR ranges, or ``*.example.internal`` style
-    suffixes.  A blanket ``*`` is never accepted.  Host aliases such as
-    ``localhost`` and ``host.docker.internal`` must be opted into explicitly.
+    Only literal loopback IPs are built in. ``OFFLINE_LLM_ALLOWED_HOSTS`` may
+    add literal private IPs/CIDRs or the bundled Compose service name
+    ``model-proxy``. Arbitrary hostnames and suffix patterns are rejected so a
+    DNS answer checked here cannot be rebound before the HTTP client connects.
     """
 
     if not host:
@@ -130,54 +113,30 @@ def is_offline_llm_host_allowed(host: str | None) -> bool:
     except ValueError:
         candidate_ip = None
 
-    if candidate in _DEFAULT_LLM_HOSTS:
-        addresses = (
-            {candidate_ip}
-            if candidate_ip is not None
-            else _resolve_host_addresses(candidate)
-        )
-        return bool(addresses) and all(
-            _is_offline_address(address) for address in addresses
-        )
+    if candidate_ip is not None:
+        if not _is_offline_address(candidate_ip):
+            return False
+        if candidate in _DEFAULT_LLM_HOSTS:
+            return True
 
-    matched = False
-    for raw_entry in _configured_llm_hosts():
-        entry = _normalise_host(raw_entry)
-        if not entry or entry == "*":
-            continue
-
-        if "/" in entry and candidate_ip is not None:
+        for raw_entry in _configured_llm_hosts():
+            entry = _normalise_host(raw_entry)
+            if not entry or entry == "*":
+                continue
             try:
-                if candidate_ip in ipaddress.ip_network(entry, strict=False):
-                    matched = True
-                    break
+                network = ipaddress.ip_network(entry, strict=False)
             except ValueError:
                 continue
-
-        if entry.startswith("*."):
-            suffix = entry[2:]
-            if candidate.endswith(f".{suffix}"):
-                matched = True
-                break
-            continue
-        if entry.startswith("."):
-            suffix = entry[1:]
-            if candidate == suffix or candidate.endswith(f".{suffix}"):
-                matched = True
-                break
-            continue
-        if candidate == entry:
-            matched = True
-            break
-
-    if not matched:
+            if candidate_ip in network:
+                return True
         return False
 
-    # An allowlist entry narrows names/ranges; it must never turn a public
-    # target into an offline-safe one.  Fail closed on DNS errors or mixed
-    # private/public responses to reduce DNS-rebinding exposure.
-    addresses = {candidate_ip} if candidate_ip is not None else _resolve_host_addresses(candidate)
-    return bool(addresses) and all(_is_offline_address(address) for address in addresses)
+    configured_hosts = {
+        _normalise_host(entry)
+        for entry in _configured_llm_hosts()
+        if entry and entry != "*"
+    }
+    return candidate in _FIXED_INTERNAL_LLM_HOSTS and candidate in configured_hosts
 
 
 def require_offline_llm_endpoint(base_url: str | None) -> None:

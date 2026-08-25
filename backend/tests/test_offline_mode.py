@@ -50,22 +50,10 @@ def _resolved_config(base_url: str, *, is_local: bool) -> ResolvedLLMConfig:
 
 class OfflineLLMPolicyTests(unittest.TestCase):
     def test_only_explicit_model_proxy_hostname_is_allowed_and_builds(self):
-        private_dns = [
-            (
-                socket.AF_INET,
-                socket.SOCK_STREAM,
-                socket.IPPROTO_TCP,
-                "",
-                ("192.168.65.254", 0),
-            )
-        ]
-        with (
-            patched_env(
-                OFFLINE_MODE="true",
-                OFFLINE_LLM_ALLOWED_HOSTS="model-proxy",
-                ALLOW_LOCAL_LLM_BASE_URLS=None,
-            ),
-            patch("backend.app.offline.socket.getaddrinfo", return_value=private_dns),
+        with patched_env(
+            OFFLINE_MODE="true",
+            OFFLINE_LLM_ALLOWED_HOSTS="model-proxy",
+            ALLOW_LOCAL_LLM_BASE_URLS=None,
         ):
             self.assertFalse(is_offline_llm_host_allowed("host.docker.internal"))
             self.assertTrue(is_offline_llm_host_allowed("model-proxy"))
@@ -83,63 +71,48 @@ class OfflineLLMPolicyTests(unittest.TestCase):
                 constructor.assert_called_once()
 
     def test_host_aliases_are_rejected_without_explicit_allowlist(self):
-        public_dns = [
-            (
-                socket.AF_INET,
-                socket.SOCK_STREAM,
-                socket.IPPROTO_TCP,
-                "",
-                ("8.8.8.8", 0),
-            )
-        ]
-        with (
-            patched_env(OFFLINE_MODE="true"),
-            patch("backend.app.offline.socket.getaddrinfo", return_value=public_dns),
-        ):
+        with patched_env(OFFLINE_MODE="true"):
             self.assertFalse(is_offline_llm_host_allowed("host.docker.internal"))
             self.assertFalse(is_offline_llm_host_allowed("localhost"))
+            self.assertFalse(is_offline_llm_host_allowed("model-proxy"))
 
     def test_public_host_cannot_be_enabled_by_offline_allowlist(self):
-        public_dns = [
-            (
-                socket.AF_INET,
-                socket.SOCK_STREAM,
-                socket.IPPROTO_TCP,
-                "",
-                ("8.8.8.8", 0),
-            )
-        ]
-        with (
-            patched_env(
-                OFFLINE_MODE="true",
-                OFFLINE_LLM_ALLOWED_HOSTS="api.openai.com",
-            ),
-            patch("backend.app.offline.socket.getaddrinfo", return_value=public_dns),
+        with patched_env(
+            OFFLINE_MODE="true",
+            OFFLINE_LLM_ALLOWED_HOSTS="api.openai.com",
         ):
             self.assertFalse(is_offline_llm_host_allowed("api.openai.com"))
             with self.assertRaises(OfflineModeError) as ctx:
                 require_offline_llm_endpoint("https://api.openai.com/v1")
         self.assertEqual(ctx.exception.code, OFFLINE_ERROR_CODE)
 
-    def test_allowlisted_private_hostname_is_allowed_only_after_private_resolution(self):
-        private_dns = [
-            (
-                socket.AF_INET,
-                socket.SOCK_STREAM,
-                socket.IPPROTO_TCP,
-                "",
-                ("10.20.30.40", 0),
-            )
-        ]
-        with (
-            patched_env(
-                OFFLINE_MODE="true",
-                OFFLINE_LLM_ALLOWED_HOSTS="llm.internal",
+    def test_arbitrary_private_hostname_and_suffix_patterns_are_rejected(self):
+        for allowed in ("llm.internal", ".internal", "*.internal"):
+            with (
+                patched_env(
+                    OFFLINE_MODE="true",
+                    OFFLINE_LLM_ALLOWED_HOSTS=allowed,
+                ),
+                patch.object(socket, "getaddrinfo") as resolver,
+            ):
+                self.assertFalse(is_offline_llm_host_allowed("llm.internal"))
+                with self.assertRaises(OfflineModeError):
+                    require_offline_llm_endpoint("http://llm.internal:8000/v1")
+                resolver.assert_not_called()
+
+    def test_literal_private_ip_and_cidr_are_allowed_without_dns(self):
+        with patched_env(
+            OFFLINE_MODE="true",
+            OFFLINE_LLM_ALLOWED_HOSTS=(
+                "10.20.30.40,192.168.0.0/16,fd00::10,fc00::/7,8.8.8.8/32"
             ),
-            patch("backend.app.offline.socket.getaddrinfo", return_value=private_dns),
         ):
-            self.assertTrue(is_offline_llm_host_allowed("llm.internal"))
-            require_offline_llm_endpoint("http://llm.internal:8000/v1")
+            self.assertTrue(is_offline_llm_host_allowed("10.20.30.40"))
+            self.assertTrue(is_offline_llm_host_allowed("192.168.20.30"))
+            self.assertTrue(is_offline_llm_host_allowed("fd00::10"))
+            self.assertTrue(is_offline_llm_host_allowed("fd00::20"))
+            self.assertFalse(is_offline_llm_host_allowed("10.20.30.41"))
+            self.assertFalse(is_offline_llm_host_allowed("8.8.8.8"))
 
     def test_final_llm_builder_rejects_remote_config(self):
         with (
