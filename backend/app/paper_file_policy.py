@@ -69,9 +69,3 @@ def require_pdf_egress_allowed(paper_file, file_path: Path) -> None:
             "message": "论文 PDF 原件的在线查看与下载已由服务策略关闭。",
         },
     )
-
-
-def client_pdf_url(value: str | None) -> str | None:
-    """Hide direct PDF source URLs when the no-egress policy is active."""
-
-    return value if is_paper_pdf_egress_enabled() else None

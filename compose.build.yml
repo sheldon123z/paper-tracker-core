@@ -33,4 +33,4 @@ services:
         VITE_COPILOT_RUNTIME_URL: /api/copilotkit
         VITE_OFFLINE_MODE: "true"
         VITE_ENABLE_RSS: "true"
-        VITE_ALLOW_PDF_EGRESS: "false"
+        PAPER_TRACKER_ALLOW_PDF_EGRESS: ${PAPER_TRACKER_ALLOW_PDF_EGRESS:-false}

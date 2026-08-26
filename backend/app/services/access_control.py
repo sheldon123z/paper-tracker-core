@@ -8,7 +8,6 @@ from sqlalchemy.orm import Query, Session, with_loader_criteria
 
 from ..control_plane.models import User
 from ..models import Feed, Paper, PaperUserState, Tag
-from ..paper_file_policy import client_pdf_url
 
 MANAGER_ROLES = {"manager", "admin", "super_admin"}
 
@@ -140,5 +139,4 @@ def paper_response(db: Session, paper: Paper, user: User) -> dict:
     result["is_read"] = bool(state.is_read) if state else (bool(paper.is_read) if legacy_fallback else False)
     result["is_favorited"] = bool(state.is_favorited) if state else (bool(paper.is_favorited) if legacy_fallback else False)
     result["notes"] = state.notes if state else (paper.notes if legacy_fallback else "")
-    result["pdf_url"] = client_pdf_url(result.get("pdf_url"))
     return result

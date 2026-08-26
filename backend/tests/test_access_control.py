@@ -15,7 +15,6 @@ from backend.app.services.access_control import (
 )
 from backend.app.services.tools.paper_tools import _execute_get_paper_notes
 from backend.app.services.tools.stats_tools import _execute_get_research_stats
-from backend.tests.support import patched_env
 from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -112,15 +111,6 @@ class AccessControlMatrixTests(unittest.TestCase):
         self.assertFalse(second["is_read"])
         self.assertFalse(second["is_favorited"])
         self.assertEqual(second["notes"], "")
-
-    def test_no_egress_policy_redacts_direct_pdf_urls_from_paper_responses(self):
-        self.public.pdf_url = "https://example.test/paper.pdf"
-        self.db.commit()
-
-        with patched_env(PAPER_TRACKER_ALLOW_PDF_EGRESS="false"):
-            response = paper_response(self.db, self.public, principal(10))
-
-        self.assertIsNone(response["pdf_url"])
 
     def test_scoped_session_filters_ai_tool_queries(self):
         scoped_db = self.Session()
