@@ -45,6 +45,28 @@ describe('InlineFileViewer document tabs', () => {
     vi.restoreAllMocks()
   })
 
+  it('does not send PDF bytes or expose download controls when egress is disabled', () => {
+    render(
+      <InlineFileViewer
+        paperId={42}
+        files={[pdfFile]}
+        onFilesChange={vi.fn()}
+        onClose={vi.fn()}
+        initialFileId={7}
+        pdfEgressEnabled={false}
+      />,
+    )
+
+    expect(screen.getByText(/服务已关闭向浏览器传输 PDF 原始文件/)).toBeInTheDocument()
+    expect(screen.queryByTestId('pdf-viewer')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '导出 PDF 原件' })).not.toBeInTheDocument()
+
+    fireEvent.contextMenu(screen.getByRole('tab'), { clientX: 120, clientY: 80 })
+    expect(screen.queryByRole('menuitem', { name: '下载' })).not.toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: '删除' })).toBeInTheDocument()
+    expect(apiMock.head).not.toHaveBeenCalled()
+  })
+
   it('shows an accessible PDF original export button only for the active PDF', () => {
     const markdownFile = {
       id: 8,

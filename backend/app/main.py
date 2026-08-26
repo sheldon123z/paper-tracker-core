@@ -296,15 +296,13 @@ async def limit_agui_body_size(request: Request, call_next):
 app.add_middleware(SlowAPIMiddleware)
 
 
-if not is_offline_mode():
-    app.include_router(feeds_router)
+app.include_router(feeds_router)
 app.include_router(papers_router)
 app.include_router(pdf_import_router)
 app.include_router(llm_config_router)
 app.include_router(prompt_templates_router)
 app.include_router(tags_router)
-if not is_offline_mode():
-    app.include_router(scheduler_router)
+app.include_router(scheduler_router)
 app.include_router(system_prompts_router)
 app.include_router(agui_router)
 app.include_router(agui_workflow_router)
@@ -357,7 +355,8 @@ def startup_event():
         db.close()
     if is_offline_mode():
         # The scheduler is started only as infrastructure for local database
-        # backups.  RSS routers and feed jobs remain absent.
+        # backups. RSS configuration routes stay available, but feed jobs are
+        # deliberately absent while the runtime has no network access.
         start_scheduler()
     else:
         init_scheduler()

@@ -16,9 +16,10 @@ from backend.app.auth.dependencies import (
     get_current_user_or_ingestion_service,
 )
 from backend.app.models import Feed
+from backend.app.offline import OFFLINE_ERROR_CODE
 from backend.app.routes import scheduler_routes as scheduler_module
 from backend.app.services import scheduler as scheduler_service
-from backend.tests.support import make_fake_user, make_test_session_factory
+from backend.tests.support import make_fake_user, make_test_session_factory, patched_env
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -67,6 +68,19 @@ class ScheduleFeedTests(unittest.TestCase):
             self.assertAlmostEqual(remaining, 15 * 60, delta=1)
         finally:
             test_scheduler.shutdown(wait=False)
+
+    def test_offline_feed_definition_is_not_scheduled(self):
+        test_scheduler = BackgroundScheduler()
+        test_scheduler.add_job(lambda: None, "interval", hours=1, id="feed_10")
+        feed = SimpleNamespace(id=10, fetch_interval=3600)
+
+        with (
+            patched_env(OFFLINE_MODE="true"),
+            patch.object(scheduler_service, "_scheduler", test_scheduler),
+        ):
+            scheduler_service.schedule_feed(feed)
+
+        self.assertIsNone(test_scheduler.get_job("feed_10"))
 
 
 class SchedulerTestBase(unittest.TestCase):
@@ -174,6 +188,16 @@ class SchedulerStatusTests(SchedulerTestBase):
         self.assertEqual(data["jobs"], [])
         self.assertEqual(data["total_jobs"], 0)
 
+    @patch("backend.app.routes.scheduler_routes.get_scheduler_status")
+    def test_scheduler_status_remains_available_offline(self, mock_get_status):
+        mock_get_status.return_value = []
+
+        with patched_env(OFFLINE_MODE="true"):
+            response = self.client.get("/api/scheduler/status")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"jobs": [], "total_jobs": 0})
+
 
 class TriggerFeedTests(SchedulerTestBase):
     """Tests for POST /api/scheduler/trigger/{feed_id} endpoint."""
@@ -239,6 +263,17 @@ class TriggerFeedTests(SchedulerTestBase):
         # The endpoint calls ingest_feeds directly without try/except,
         # so the exception propagates and FastAPI returns 500.
         self.assertEqual(response.status_code, 500)
+
+    @patch("backend.app.routes.scheduler_routes.ingest_feeds")
+    def test_trigger_feed_is_blocked_offline_before_ingestion(self, mock_ingest):
+        feed = self._create_feed(is_active=True)
+
+        with patched_env(OFFLINE_MODE="true"):
+            response = self.client.post(f"/api/scheduler/trigger/{feed.id}")
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()["detail"]["code"], OFFLINE_ERROR_CODE)
+        mock_ingest.assert_not_called()
 
 
 if __name__ == "__main__":

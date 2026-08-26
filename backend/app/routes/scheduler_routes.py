@@ -9,6 +9,7 @@ from ..control_plane.models import User
 from ..database import get_db
 from ..models import Feed, Paper
 from ..offline import require_online_http
+from ..paper_file_policy import client_pdf_url
 from ..schemas import PaperOut
 from ..services.access_control import filter_visible, get_visible_or_404, paper_response, require_writable
 from ..services.rss_parser import ingest_feeds
@@ -68,10 +69,12 @@ def trigger_feed(
         .order_by(Paper.created_at.desc())
         .all()
     )
-    new_items = (
-        [PaperOut.model_validate(p).model_dump(mode="json") for p in new_papers]
-        if principal is None else [paper_response(db, p, principal) for p in new_papers]
-    )
+    if principal is None:
+        new_items = [PaperOut.model_validate(p).model_dump(mode="json") for p in new_papers]
+        for item in new_items:
+            item["pdf_url"] = client_pdf_url(item.get("pdf_url"))
+    else:
+        new_items = [paper_response(db, p, principal) for p in new_papers]
 
     return {
         "message": "Feed triggered",

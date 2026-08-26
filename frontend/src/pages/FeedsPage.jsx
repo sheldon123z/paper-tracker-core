@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import api from '../api'
 import { Badge, Button, Card, Input, Modal, Select, useToast } from '../components/ui'
+import { RUNTIME_CAPABILITIES } from '../config/runtime'
 import useStore from '../store'
 
 const SECONDS_PER_HOUR = 3600
@@ -43,6 +44,13 @@ function normalizeFeedForm(form) {
   }
 }
 
+function apiErrorMessage(error, fallback) {
+  const detail = error?.response?.data?.detail
+  if (typeof detail === 'string') return detail
+  if (detail && typeof detail.message === 'string') return detail.message
+  return fallback
+}
+
 export function parseApiTimestamp(isoStr) {
   if (!isoStr) return null
   const hasTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(isoStr)
@@ -64,7 +72,7 @@ export function formatRelativeTime(isoStr, now = Date.now()) {
   return `${Math.floor(hrs / 24)} 天前`
 }
 
-export function FeedRow({ feed, onDelete, onUpdate, onFetched, now }) {
+export function FeedRow({ feed, onDelete, onUpdate, onFetched, now, fetchAvailable = true }) {
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState({
     name: feed.name,
@@ -89,7 +97,7 @@ export function FeedRow({ feed, onDelete, onUpdate, onFetched, now }) {
       await onFetched?.()
       setTriggerMsg({ text: '已触发', type: 'success' })
     } catch (err) {
-      setTriggerMsg({ text: err.response?.data?.detail || '触发失败', type: 'error' })
+      setTriggerMsg({ text: apiErrorMessage(err, '触发失败'), type: 'error' })
     } finally {
       setTriggering(false)
       setTimeout(() => setTriggerMsg(null), 3000)
@@ -103,7 +111,7 @@ export function FeedRow({ feed, onDelete, onUpdate, onFetched, now }) {
     >
       {editing ? (
         <div className="p-4 space-y-3">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Input
               label="名称"
               value={form.name}
@@ -120,7 +128,7 @@ export function FeedRow({ feed, onDelete, onUpdate, onFetched, now }) {
             value={form.url}
             onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))}
           />
-          <div className="flex items-end gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
             <Input
               label="自动抓取间隔 (小时)"
               type="number"
@@ -158,7 +166,7 @@ export function FeedRow({ feed, onDelete, onUpdate, onFetched, now }) {
           </div>
         </div>
       ) : (
-        <div className="flex items-start gap-4 p-4">
+        <div className="flex flex-col items-start gap-4 p-4 sm:flex-row">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-0.5">
               <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
@@ -214,14 +222,16 @@ export function FeedRow({ feed, onDelete, onUpdate, onFetched, now }) {
               </p>
             )}
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
             <Button
               variant="secondary"
               size="sm"
               onClick={handleTrigger}
               loading={triggering}
+              disabled={!fetchAvailable || triggering}
+              title={!fetchAvailable ? '当前为离线环境，RSS 抓取不会运行' : undefined}
             >
-              {triggering ? '触发中...' : '立即抓取'}
+              {triggering ? '触发中...' : fetchAvailable ? '立即抓取' : '离线环境不抓取'}
             </Button>
             <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>
               编辑
@@ -291,7 +301,7 @@ export default function FeedsPage() {
       loadFeeds()
       addToast({ type: 'success', message: '订阅已添加' })
     } catch (err) {
-      addToast({ type: 'error', message: err.response?.data?.detail || '添加失败' })
+      addToast({ type: 'error', message: apiErrorMessage(err, '添加失败') })
     }
   }
 
@@ -302,7 +312,7 @@ export default function FeedsPage() {
       loadFeeds()
       addToast({ type: 'success', message: '已删除' })
     } catch (err) {
-      addToast({ type: 'error', message: err.response?.data?.detail || '删除失败' })
+      addToast({ type: 'error', message: apiErrorMessage(err, '删除失败') })
     } finally {
       setDeleteTargetId(null)
     }
@@ -314,7 +324,7 @@ export default function FeedsPage() {
       loadFeeds()
       addToast({ type: 'success', message: '已更新' })
     } catch (err) {
-      addToast({ type: 'error', message: err.response?.data?.detail || '更新失败' })
+      addToast({ type: 'error', message: apiErrorMessage(err, '更新失败') })
     }
   }
 
@@ -322,11 +332,24 @@ export default function FeedsPage() {
 
   return (
     <section className="space-y-4 p-4">
-      <div className="flex items-center justify-between">
+      {RUNTIME_CAPABILITIES.offlineMode && (
+        <div
+          role="status"
+          className="rounded-xl border px-4 py-3 text-sm leading-6"
+          style={{
+            borderColor: 'var(--border)',
+            backgroundColor: 'var(--bg-secondary)',
+            color: 'var(--text-secondary)',
+          }}
+        >
+          当前环境处于离线模式：RSS 订阅配置仍可查看和维护，自动与手动抓取不会运行。
+        </div>
+      )}
+      <div className="flex items-center justify-between gap-4">
         <div>
           <div className="panel-header-kicker mb-2">Ingestion Network</div>
           <h1 className="section-title text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
-          订阅管理
+            RSS 订阅源
           </h1>
         </div>
         <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
@@ -337,7 +360,7 @@ export default function FeedsPage() {
       {/* Add feed form */}
       <Card title="添加订阅" surface="premium">
         <form onSubmit={handleSubmit} className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Input
               label="名称"
               placeholder="订阅名称"
@@ -365,7 +388,7 @@ export default function FeedsPage() {
               {scope === 'department' && <Select label="所属部门" value={departmentId} onChange={setDepartmentId} options={departments.map((department) => ({ value: String(department.id), label: department.name }))} />}
             </div>
           )}
-          <div className="flex items-end gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
             <Input
               label="自动抓取间隔 (小时)"
               type="number"
@@ -417,6 +440,7 @@ export default function FeedsPage() {
               onUpdate={handleUpdate}
               onFetched={handleFetched}
               now={now}
+              fetchAvailable={!RUNTIME_CAPABILITIES.offlineMode}
             />
           ))
         )}

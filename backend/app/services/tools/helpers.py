@@ -3,6 +3,7 @@
 from sqlalchemy.orm import Session
 
 from ...models import Paper, PaperUserState
+from ...paper_file_policy import client_pdf_url
 
 
 def _current_user_id(db: Session) -> int | None:
@@ -42,7 +43,7 @@ def _paper_to_dict(db: Session, paper: Paper) -> dict:
         "arxiv_id": paper.arxiv_id,
         "doi": paper.doi,
         "link": paper.link,
-        "pdf_url": paper.pdf_url,
+        "pdf_url": client_pdf_url(paper.pdf_url),
         "ai_summary": paper.ai_summary,
     }
 
@@ -96,7 +97,7 @@ def _format_paper_detail(db: Session, paper: Paper) -> str:
         lines.append(f"  arXiv: {paper.arxiv_id}")
     if paper.doi:
         lines.append(f"  DOI: {paper.doi}")
-    if paper.pdf_url:
+    if client_pdf_url(paper.pdf_url):
         lines.append(f"  PDF: {paper.pdf_url}")
     if paper.link:
         lines.append(f"  Link: {paper.link}")

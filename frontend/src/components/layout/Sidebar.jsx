@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import api from '../../api'
+import { RUNTIME_CAPABILITIES } from '../../config/runtime'
 import useStore from '../../store'
 import { AppIcon, Badge } from '../ui'
 
 const navItems = [
   { path: '/', label: '仪表盘', icon: 'dashboard', description: '研究概览' },
+  { path: '/feeds', label: 'RSS 订阅源', icon: 'feeds', description: '订阅与抓取', requires: 'rssSubscriptions' },
   { path: '/papers', label: '论文库', icon: 'papers', description: '文献总览' },
   { path: '/assistant', label: 'AI 助手', icon: 'assistant', description: '智能检索' },
   { path: '/workflow', label: '科研工作流', icon: 'workflow', description: '自动编排' },
@@ -99,7 +101,10 @@ export default function Sidebar() {
             </div>
 
             <nav className="min-h-0 flex-1 space-y-2 overflow-y-auto px-1">
-              {navItems.filter((item) => !item.managerOnly || user?.role === 'manager').map((item) => (
+              {navItems.filter((item) => (
+                (!item.managerOnly || user?.role === 'manager')
+                && (!item.requires || RUNTIME_CAPABILITIES[item.requires])
+              )).map((item) => (
                 <NavLink
                   key={item.path}
                   to={item.path}

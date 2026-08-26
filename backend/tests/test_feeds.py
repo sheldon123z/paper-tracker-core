@@ -7,9 +7,11 @@ from datetime import UTC, datetime
 from unittest.mock import patch
 from uuid import uuid4
 
+from apscheduler.schedulers.background import BackgroundScheduler
 from backend.app.auth.dependencies import get_current_user
 from backend.app.database import Base
 from backend.app.models import Feed
+from backend.app.offline import OFFLINE_ERROR_CODE
 from backend.tests.support import make_fake_user, make_test_session_factory, patched_env
 from starlette.testclient import TestClient
 
@@ -160,6 +162,63 @@ class TestFeeds(unittest.TestCase):
 
                 # Verify scheduler was called for active feed
                 mock_schedule.assert_called_once()
+
+    def test_offline_feed_crud_works_without_scheduling_fetches(self):
+        test_scheduler = BackgroundScheduler()
+
+        with (
+            patched_env(
+                OFFLINE_MODE="true",
+                ENCRYPTION_KEY="lK5o9r4iJmP2uV1xYw8nQaBcDeFgHiJkLmNoPqRsTuU=",
+                JWT_SECRET_KEY="test-jwt-secret-key-32-bytes-long!!",
+            ),
+            patch("backend.app.services.scheduler._scheduler", test_scheduler),
+        ):
+            client = self._create_app()
+            create_response = client.post(
+                "/api/feeds",
+                json={
+                    "name": "Offline-configured Feed",
+                    "url": "https://example.com/offline-feed.xml",
+                    "source": "rss",
+                    "is_active": True,
+                    "fetch_interval": 120,
+                },
+            )
+            self.assertEqual(create_response.status_code, 200)
+            feed_id = create_response.json()["id"]
+            self.assertEqual(test_scheduler.get_jobs(), [])
+
+            list_response = client.get("/api/feeds")
+            self.assertEqual(list_response.status_code, 200)
+            self.assertEqual([item["id"] for item in list_response.json()], [feed_id])
+
+            update_response = client.put(
+                f"/api/feeds/{feed_id}",
+                json={"name": "Updated while offline", "is_active": True},
+            )
+            self.assertEqual(update_response.status_code, 200)
+            self.assertEqual(update_response.json()["name"], "Updated while offline")
+            self.assertEqual(test_scheduler.get_jobs(), [])
+
+            delete_response = client.delete(f"/api/feeds/{feed_id}")
+            self.assertEqual(delete_response.status_code, 200)
+            self.assertEqual(client.get("/api/feeds").json(), [])
+
+    def test_offline_abstract_refresh_is_blocked_before_network_fetch(self):
+        with (
+            patched_env(
+                OFFLINE_MODE="true",
+                ENCRYPTION_KEY="lK5o9r4iJmP2uV1xYw8nQaBcDeFgHiJkLmNoPqRsTuU=",
+                JWT_SECRET_KEY="test-jwt-secret-key-32-bytes-long!!",
+            ),
+            patch("backend.app.services.rss_parser.feedparser.parse") as parse,
+        ):
+            response = self._create_app().post("/api/feeds/refresh-abstracts")
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()["detail"]["code"], OFFLINE_ERROR_CODE)
+        parse.assert_not_called()
 
     def test_create_feed_with_custom_source(self):
         """Test creating a feed with custom source type."""

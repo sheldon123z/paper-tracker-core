@@ -13,6 +13,7 @@ from ..control_plane.models import User
 from ..database import SessionLocal, get_db
 from ..models import Paper, PaperFile
 from ..offline import require_online_http
+from ..paper_file_policy import require_pdf_egress_allowed
 from ..schemas import PaperFileOut, PaperFileUpdate
 from ..services.access_control import get_visible_or_404, require_writable
 from ..services.file_storage import (
@@ -117,6 +118,7 @@ def download_file(paper_id: int, file_id: int, user: User = Depends(get_current_
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="文件已丢失") from None
 
+    require_pdf_egress_allowed(paper_file, file_path)
     return FileResponse(
         path=str(file_path),
         filename=paper_file.filename,
@@ -150,6 +152,7 @@ def get_file_content(paper_id: int, file_id: int, user: User = Depends(get_curre
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="文件已丢失") from None
 
+    require_pdf_egress_allowed(paper_file, file_path)
     if paper_file.file_type in ("markdown", "text"):
         text_content = file_path.read_text(encoding="utf-8", errors="replace")
         from fastapi.responses import PlainTextResponse

@@ -37,12 +37,37 @@ describe('runtime configuration', () => {
 
     expect(capabilities).toMatchObject({
       offlineMode: true,
-      rssSubscriptions: false,
+      rssSubscriptions: true,
+      paperPdfEgress: false,
       cloudDocumentParsing: false,
       remoteLlmProviders: false,
     })
     expect(filterLlmConfigsForRuntime(catalog, capabilities).map((item) => item.id))
       .toEqual([2, 3])
+  })
+
+  it('supports independent Docker build policies for RSS visibility and PDF egress', () => {
+    expect(createRuntimeCapabilities({
+      VITE_OFFLINE_MODE: 'false',
+      VITE_ENABLE_RSS: 'false',
+      VITE_ALLOW_PDF_EGRESS: 'false',
+    })).toMatchObject({
+      offlineMode: false,
+      rssSubscriptions: false,
+      paperPdfEgress: false,
+      cloudDocumentParsing: true,
+      remoteLlmProviders: true,
+    })
+
+    expect(createRuntimeCapabilities({
+      VITE_OFFLINE_MODE: 'true',
+      VITE_ENABLE_RSS: 'true',
+      VITE_ALLOW_PDF_EGRESS: 'true',
+    })).toMatchObject({
+      offlineMode: true,
+      rssSubscriptions: true,
+      paperPdfEgress: true,
+    })
   })
 
   it('filters usage by its related local config even without provider metadata', () => {
