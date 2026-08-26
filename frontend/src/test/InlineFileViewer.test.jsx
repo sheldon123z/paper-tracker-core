@@ -23,7 +23,7 @@ vi.mock('../components/paper/viewer/DocxViewer', () => ({ default: () => null })
 vi.mock('../components/paper/viewer/XlsxViewer', () => ({ default: () => null }))
 vi.mock('../components/paper/viewer/ParseButton', () => ({ default: () => null }))
 
-import InlineFileViewer from '../components/paper/viewer/InlineFileViewer'
+import InlineFileViewer, { canDownloadAttachment } from '../components/paper/viewer/InlineFileViewer'
 import useStore from '../store'
 
 const pdfFile = {
@@ -43,6 +43,12 @@ describe('InlineFileViewer document tabs', () => {
 
   afterEach(() => {
     vi.restoreAllMocks()
+  })
+
+  it('limits the no-egress rule to PDF attachments', () => {
+    expect(canDownloadAttachment(pdfFile, false)).toBe(false)
+    expect(canDownloadAttachment({ file_type: 'markdown' }, false)).toBe(true)
+    expect(canDownloadAttachment(pdfFile, true)).toBe(true)
   })
 
   it('does not send PDF bytes or expose download controls when egress is disabled', () => {

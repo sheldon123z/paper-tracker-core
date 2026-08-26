@@ -41,6 +41,10 @@ function OfficeUnsupported({ filename }) {
   )
 }
 
+export function canDownloadAttachment(file, pdfEgressEnabled) {
+  return file?.file_type !== 'pdf' || pdfEgressEnabled
+}
+
 function PdfAccessDisabled({ filename }) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center" role="status">
@@ -142,7 +146,8 @@ export default function InlineFileViewer({
     event.preventDefault()
     setActiveFileId(file.id)
     const menuWidth = 168
-    const menuHeight = pdfEgressEnabled ? 88 : 48
+    const downloadAvailable = canDownloadAttachment(file, pdfEgressEnabled)
+    const menuHeight = downloadAvailable ? 88 : 48
     setContextMenu({
       file,
       x: Math.max(8, Math.min(event.clientX, window.innerWidth - menuWidth - 8)),
@@ -355,7 +360,7 @@ export default function InlineFileViewer({
             backgroundColor: 'var(--bg-primary)',
           }}
         >
-          {pdfEgressEnabled && (
+          {canDownloadAttachment(contextMenu.file, pdfEgressEnabled) && (
             <button
               type="button"
               role="menuitem"
