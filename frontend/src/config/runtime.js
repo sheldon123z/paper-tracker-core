@@ -23,6 +23,11 @@ export function parseEnvFlag(value) {
   return TRUE_ENV_VALUES.has(String(value ?? '').trim().toLowerCase())
 }
 
+function resolveEnvFlag(env, key, fallback) {
+  const value = readEnvString(env, key)
+  return value ? parseEnvFlag(value) : fallback
+}
+
 export function resolveApiBaseUrl(env = {}) {
   return readEnvString(env, 'VITE_API_BASE_URL')
 }
@@ -36,9 +41,10 @@ export function createRuntimeCapabilities(env = {}) {
 
   return Object.freeze({
     offlineMode,
-    // RSS is intentionally absent from the current product surface. Keep the
-    // capability explicit so offline work cannot accidentally expose it.
-    rssSubscriptions: false,
+    // Keep the module visible in every product build. OFFLINE_MODE remains the
+    // backend authority for whether network fetches may actually run.
+    rssSubscriptions: resolveEnvFlag(env, 'VITE_ENABLE_RSS', true),
+    paperPdfEgress: resolveEnvFlag(env, 'VITE_ALLOW_PDF_EGRESS', !offlineMode),
     cloudDocumentParsing: !offlineMode,
     remoteLlmProviders: !offlineMode,
   })

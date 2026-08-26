@@ -12,7 +12,7 @@ from backend.app.auth.dependencies import get_current_user
 from backend.app.models import Paper, PaperFile
 from backend.app.routes import files as files_module
 from backend.app.services import file_storage as storage_module
-from backend.tests.support import make_fake_user, make_test_session_factory
+from backend.tests.support import make_fake_user, make_test_session_factory, patched_env
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -116,6 +116,101 @@ class PaperFileDownloadTests(unittest.TestCase):
         self.assertEqual(response.headers["content-type"], "application/pdf")
         self.assertEqual(int(response.headers["content-length"]), len(self.pdf_bytes))
         self.assertIn("attachment", response.headers["content-disposition"].lower())
+
+    def test_disabled_pdf_egress_blocks_download_content_head_and_ranges(self):
+        requests = (
+            ("GET", f"/api/papers/{self.paper_id}/files/{self.file_id}/download", {}),
+            ("HEAD", f"/api/papers/{self.paper_id}/files/{self.file_id}/download", {}),
+            (
+                "GET",
+                f"/api/papers/{self.paper_id}/files/{self.file_id}/download",
+                {"headers": {"Range": "bytes=0-7"}},
+            ),
+            ("GET", f"/api/papers/{self.paper_id}/files/{self.file_id}/content", {}),
+            (
+                "GET",
+                f"/api/papers/{self.paper_id}/files/{self.file_id}/content",
+                {"headers": {"Range": "bytes=0-7"}},
+            ),
+        )
+
+        with (
+            patched_env(PAPER_TRACKER_ALLOW_PDF_EGRESS="false"),
+            patch.object(files_module, "read_file", return_value=self.pdf_path),
+        ):
+            responses = [self.client.request(method, path, **kwargs) for method, path, kwargs in requests]
+
+        for response in responses:
+            self.assertEqual(response.status_code, 403)
+            self.assertNotIn(b"%PDF", response.content)
+            self.assertNotEqual(response.headers.get("content-type"), "application/pdf")
+            self.assertNotIn("accept-ranges", response.headers)
+            self.assertNotIn("content-range", response.headers)
+        self.assertEqual(responses[0].json()["detail"]["code"], "PAPER_PDF_EGRESS_DISABLED")
+
+    def test_disabled_pdf_egress_sniffs_disguised_pdf_signature(self):
+        with self.session_factory() as db:
+            paper_file = db.query(PaperFile).filter(PaperFile.id == self.file_id).one()
+            paper_file.filename = "notes.txt"
+            paper_file.file_type = "text"
+            paper_file.content_type = "text/plain"
+            paper_file.storage_path = f"{self.paper_id}/notes.txt"
+            db.commit()
+
+        with (
+            patched_env(PAPER_TRACKER_ALLOW_PDF_EGRESS="false"),
+            patch.object(files_module, "read_file", return_value=self.pdf_path),
+        ):
+            response = self.client.get(
+                f"/api/papers/{self.paper_id}/files/{self.file_id}/content",
+            )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertNotIn(b"%PDF", response.content)
+
+    def test_disabled_pdf_egress_sniffs_a_padded_pdf_header(self):
+        padded_pdf = Path(self.temp_dir.name) / "notes.txt"
+        padded_pdf.write_bytes(b"\xef\xbb\xbf\n" + self.pdf_bytes)
+        with self.session_factory() as db:
+            paper_file = db.query(PaperFile).filter(PaperFile.id == self.file_id).one()
+            paper_file.filename = "notes.txt"
+            paper_file.file_type = "text"
+            paper_file.content_type = "text/plain"
+            paper_file.storage_path = f"{self.paper_id}/notes.txt"
+            db.commit()
+
+        with (
+            patched_env(PAPER_TRACKER_ALLOW_PDF_EGRESS="false"),
+            patch.object(files_module, "read_file", return_value=padded_pdf),
+        ):
+            response = self.client.get(
+                f"/api/papers/{self.paper_id}/files/{self.file_id}/content",
+            )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertNotIn(b"%PDF", response.content)
+
+    def test_disabled_pdf_egress_keeps_non_pdf_attachment_content_available(self):
+        text_path = Path(self.temp_dir.name) / "notes.txt"
+        text_path.write_text("local notes", encoding="utf-8")
+        with self.session_factory() as db:
+            paper_file = db.query(PaperFile).filter(PaperFile.id == self.file_id).one()
+            paper_file.filename = "notes.txt"
+            paper_file.file_type = "text"
+            paper_file.content_type = "text/plain"
+            paper_file.storage_path = f"{self.paper_id}/notes.txt"
+            db.commit()
+
+        with (
+            patched_env(PAPER_TRACKER_ALLOW_PDF_EGRESS="false"),
+            patch.object(files_module, "read_file", return_value=text_path),
+        ):
+            response = self.client.get(
+                f"/api/papers/{self.paper_id}/files/{self.file_id}/content",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.text, "local notes")
 
     def test_cross_paper_storage_path_is_unavailable_and_not_deleted(self):
         storage_root = Path(self.temp_dir.name) / "paper-files"

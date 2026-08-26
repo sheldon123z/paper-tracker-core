@@ -23,7 +23,7 @@ vi.mock('../components/paper/viewer/DocxViewer', () => ({ default: () => null })
 vi.mock('../components/paper/viewer/XlsxViewer', () => ({ default: () => null }))
 vi.mock('../components/paper/viewer/ParseButton', () => ({ default: () => null }))
 
-import InlineFileViewer from '../components/paper/viewer/InlineFileViewer'
+import InlineFileViewer, { canDownloadAttachment } from '../components/paper/viewer/InlineFileViewer'
 import useStore from '../store'
 
 const pdfFile = {
@@ -43,6 +43,34 @@ describe('InlineFileViewer document tabs', () => {
 
   afterEach(() => {
     vi.restoreAllMocks()
+  })
+
+  it('limits the no-egress rule to PDF attachments', () => {
+    expect(canDownloadAttachment(pdfFile, false)).toBe(false)
+    expect(canDownloadAttachment({ file_type: 'markdown' }, false)).toBe(true)
+    expect(canDownloadAttachment(pdfFile, true)).toBe(true)
+  })
+
+  it('does not send PDF bytes or expose download controls when egress is disabled', () => {
+    render(
+      <InlineFileViewer
+        paperId={42}
+        files={[pdfFile]}
+        onFilesChange={vi.fn()}
+        onClose={vi.fn()}
+        initialFileId={7}
+        pdfEgressEnabled={false}
+      />,
+    )
+
+    expect(screen.getByText(/服务已关闭向浏览器传输 PDF 原始文件/)).toBeInTheDocument()
+    expect(screen.queryByTestId('pdf-viewer')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '导出 PDF 原件' })).not.toBeInTheDocument()
+
+    fireEvent.contextMenu(screen.getByRole('tab'), { clientX: 120, clientY: 80 })
+    expect(screen.queryByRole('menuitem', { name: '下载' })).not.toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: '删除' })).toBeInTheDocument()
+    expect(apiMock.head).not.toHaveBeenCalled()
   })
 
   it('shows an accessible PDF original export button only for the active PDF', () => {

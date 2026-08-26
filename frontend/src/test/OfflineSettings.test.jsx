@@ -11,7 +11,8 @@ vi.mock('../config/runtime', async (importOriginal) => {
   const actual = await importOriginal()
   const capabilities = {
     offlineMode: true,
-    rssSubscriptions: false,
+    rssSubscriptions: true,
+    paperPdfEgress: false,
     cloudDocumentParsing: false,
     remoteLlmProviders: false,
   }

@@ -14,6 +14,7 @@ import { ToastContainer } from './components/ui'
 import LoginPage from './pages/LoginPage'
 import useStore from './store'
 import useIsMobile from './hooks/useIsMobile'
+import { RUNTIME_CAPABILITIES } from './config/runtime'
 
 if (typeof document !== 'undefined' && !document.querySelector('style[data-copilotkit-v2-styles]')) {
   const stylesheet = document.createElement('style')
@@ -56,6 +57,7 @@ if (typeof document !== 'undefined' && !document.querySelector('style[data-copil
 
 const Dashboard = React.lazy(() => import('./pages/Dashboard'))
 const PapersPage = React.lazy(() => import('./pages/PapersPage'))
+const FeedsPage = React.lazy(() => import('./pages/FeedsPage'))
 const TagsPage = React.lazy(() => import('./pages/TagsPage'))
 const DuplicatesPage = React.lazy(() => import('./pages/DuplicatesPage'))
 const SettingsPage = React.lazy(() => import('./pages/SettingsPage'))
@@ -166,7 +168,10 @@ export default function App() {
                   <Suspense fallback={SuspenseFallback}>
                     <Routes>
                       <Route path="/" element={<Dashboard />} />
-                      <Route path="/feeds" element={<Navigate to="/" replace />} />
+                      <Route
+                        path="/feeds"
+                        element={RUNTIME_CAPABILITIES.rssSubscriptions ? <FeedsPage /> : <Navigate to="/" replace />}
+                      />
                       <Route path="/papers" element={<PapersPage />} />
                       <Route path="/tags" element={<TagsPage />} />
                       <Route path="/duplicates" element={<DuplicatesPage />} />
@@ -236,7 +241,10 @@ export default function App() {
                       <Suspense fallback={SuspenseFallback}>
                         <Routes>
                           <Route path="/" element={<Dashboard />} />
-                          <Route path="/feeds" element={<Navigate to="/" replace />} />
+                          <Route
+                            path="/feeds"
+                            element={RUNTIME_CAPABILITIES.rssSubscriptions ? <FeedsPage /> : <Navigate to="/" replace />}
+                          />
                           <Route path="/papers" element={<PapersPage />} />
                           <Route path="/tags" element={<TagsPage />} />
                           <Route path="/duplicates" element={<DuplicatesPage />} />

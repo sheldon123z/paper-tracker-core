@@ -156,7 +156,7 @@ export default function PdfViewer({ fileUrl, onSelectionChange }) {
                 />
                 {pageRenderErrors[i + 1] && (
                   <div className="text-sm text-red-500 py-3 text-center" role="alert">
-                    第 {i + 1} 页渲染失败，请刷新页面或下载原文查看
+                    第 {i + 1} 页渲染失败，请刷新页面后重试
                   </div>
                 )}
               </Fragment>

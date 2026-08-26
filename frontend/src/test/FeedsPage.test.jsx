@@ -59,6 +59,29 @@ describe('FeedsPage fetch status', () => {
     expect(screen.getByText('已触发')).toBeInTheDocument()
   })
 
+  it('keeps feed configuration visible but disables fetching offline', () => {
+    render(
+      <FeedRow
+        feed={{
+          id: 7,
+          name: 'IEEE TNNLS',
+          url: 'https://example.com/feed.xml',
+          source: 'rss',
+          is_active: true,
+          fetch_interval: 3600,
+        }}
+        onDelete={vi.fn()}
+        onUpdate={vi.fn()}
+        fetchAvailable={false}
+      />,
+    )
+
+    const trigger = screen.getByRole('button', { name: '离线环境不抓取' })
+    expect(trigger).toBeDisabled()
+    expect(screen.getByText('IEEE TNNLS')).toBeInTheDocument()
+    expect(apiMock.post).not.toHaveBeenCalled()
+  })
+
   it('allows clearing the hour input before saving a new value in seconds', async () => {
     const onUpdate = vi.fn().mockResolvedValue(undefined)
     render(

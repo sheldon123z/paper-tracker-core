@@ -41,7 +41,35 @@ function OfficeUnsupported({ filename }) {
   )
 }
 
-export default function InlineFileViewer({ paperId, files, onFilesChange, onClose, initialFileId }) {
+export function canDownloadAttachment(file, pdfEgressEnabled) {
+  return file?.file_type !== 'pdf' || pdfEgressEnabled
+}
+
+function PdfAccessDisabled({ filename }) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center" role="status">
+      <span
+        className="inline-flex h-12 w-12 items-center justify-center rounded-2xl border"
+        style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
+      >
+        <AppIcon name="access-control" size={22} />
+      </span>
+      <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{filename}</p>
+      <p className="max-w-md text-xs leading-5" style={{ color: 'var(--text-secondary)' }}>
+        为防止论文库 PDF 原件被下载或导出，服务已关闭向浏览器传输 PDF 原始文件；服务端解析与论文助手不受影响。
+      </p>
+    </div>
+  )
+}
+
+export default function InlineFileViewer({
+  paperId,
+  files,
+  onFilesChange,
+  onClose,
+  initialFileId,
+  pdfEgressEnabled = RUNTIME_CAPABILITIES.paperPdfEgress,
+}) {
   const [activeFileId, setActiveFileId] = useState(initialFileId || null)
   const [uploading, setUploading] = useState(false)
   const [downloadingFileId, setDownloadingFileId] = useState(null)
@@ -51,7 +79,6 @@ export default function InlineFileViewer({ paperId, files, onFilesChange, onClos
   const { addToast } = useToast()
   const setPdfSelection = useStore((s) => s.setPdfSelection)
   const setPdfActiveFileId = useStore((s) => s.setPdfActiveFileId)
-
   useEffect(() => {
     if (initialFileId) setActiveFileId(initialFileId)
   }, [initialFileId])
@@ -119,13 +146,14 @@ export default function InlineFileViewer({ paperId, files, onFilesChange, onClos
     event.preventDefault()
     setActiveFileId(file.id)
     const menuWidth = 168
-    const menuHeight = 88
+    const downloadAvailable = canDownloadAttachment(file, pdfEgressEnabled)
+    const menuHeight = downloadAvailable ? 88 : 48
     setContextMenu({
       file,
       x: Math.max(8, Math.min(event.clientX, window.innerWidth - menuWidth - 8)),
       y: Math.max(8, Math.min(event.clientY, window.innerHeight - menuHeight - 8)),
     })
-  }, [])
+  }, [pdfEgressEnabled])
 
   const openKeyboardContextMenu = useCallback((event, file) => {
     if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return
@@ -194,6 +222,7 @@ export default function InlineFileViewer({ paperId, files, onFilesChange, onClos
     }
     switch (activeFile.file_type) {
       case 'pdf':
+        if (!pdfEgressEnabled) return <PdfAccessDisabled filename={activeFile.filename} />
         return (
           <PdfViewer
             fileUrl={`${baseUrl}/api/papers/${paperId}/files/${activeFile.id}/content`}
@@ -237,7 +266,7 @@ export default function InlineFileViewer({ paperId, files, onFilesChange, onClos
               role="tab"
               tabIndex={0}
               aria-selected={isActive}
-              title={f.file_type === 'pdf' ? '右键可下载或删除' : undefined}
+              title={f.file_type === 'pdf' ? (pdfEgressEnabled ? '右键可下载或删除' : '右键可删除') : undefined}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-colors cursor-pointer"
               style={{
                 backgroundColor: isActive ? 'var(--accent-light)' : 'transparent',
@@ -283,7 +312,7 @@ export default function InlineFileViewer({ paperId, files, onFilesChange, onClos
         </div>
 
         <div className="flex flex-shrink-0 items-center gap-1">
-          {activeFile?.file_type === 'pdf' && (
+          {activeFile?.file_type === 'pdf' && pdfEgressEnabled && (
             <Button
               size="sm"
               variant="ghost"
@@ -331,17 +360,19 @@ export default function InlineFileViewer({ paperId, files, onFilesChange, onClos
             backgroundColor: 'var(--bg-primary)',
           }}
         >
-          <button
-            type="button"
-            role="menuitem"
-            aria-busy={downloadingFileId === contextMenu.file.id}
-            disabled={downloadingFileId !== null}
-            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-[var(--bg-secondary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
-            style={{ color: 'var(--text-primary)' }}
-            onClick={() => handleDownload(contextMenu.file)}
-          >
-            {downloadingFileId === contextMenu.file.id ? '下载中...' : '下载'}
-          </button>
+          {canDownloadAttachment(contextMenu.file, pdfEgressEnabled) && (
+            <button
+              type="button"
+              role="menuitem"
+              aria-busy={downloadingFileId === contextMenu.file.id}
+              disabled={downloadingFileId !== null}
+              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-[var(--bg-secondary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
+              style={{ color: 'var(--text-primary)' }}
+              onClick={() => handleDownload(contextMenu.file)}
+            >
+              {downloadingFileId === contextMenu.file.id ? '下载中...' : '下载'}
+            </button>
+          )}
           <button
             type="button"
             role="menuitem"

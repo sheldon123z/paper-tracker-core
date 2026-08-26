@@ -79,11 +79,11 @@ describe('Sidebar', () => {
     expect(sidebarContent).not.toHaveAttribute('hidden')
   })
 
-  it('does not expose the RSS subscriptions entry', () => {
+  it('exposes the RSS subscriptions entry', () => {
     renderSidebar()
 
-    expect(screen.queryByRole('link', { name: /订阅源/ })).not.toBeInTheDocument()
-    expect(document.querySelector('a[href="/feeds"]')).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /RSS 订阅源/ })).toBeInTheDocument()
+    expect(document.querySelector('a[href="/feeds"]')).toBeInTheDocument()
   })
 
   it('shows the department name badge for a department account', () => {

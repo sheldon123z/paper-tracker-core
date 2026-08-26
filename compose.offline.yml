@@ -8,6 +8,7 @@ services:
       - ${PAPER_TRACKER_ENV_FILE:-offline.env}
     environment:
       OFFLINE_MODE: "true"
+      PAPER_TRACKER_ALLOW_PDF_EGRESS: "false"
       LITELLM_LOCAL_MODEL_COST_MAP: "True"
       PAPER_TRACKER_DATA_DIR: /app/backend/data
       DATABASE_URL: sqlite:////app/backend/data/paper_tracker.db

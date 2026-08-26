@@ -247,7 +247,7 @@ class OfflineStartupTests(unittest.TestCase):
             if test_scheduler.running:
                 test_scheduler.shutdown(wait=False)
 
-    def test_offline_app_does_not_register_feed_or_scheduler_routers(self):
+    def test_offline_app_registers_feed_and_scheduler_routers(self):
         script = "\n".join(
             (
                 "import json",
@@ -279,8 +279,9 @@ class OfflineStartupTests(unittest.TestCase):
             text=True,
         )
         paths = json.loads(result.stdout.strip().splitlines()[-1])
-        self.assertNotIn("/api/feeds", paths)
-        self.assertFalse(any(path.startswith("/api/scheduler") for path in paths))
+        self.assertIn("/api/feeds", paths)
+        self.assertIn("/api/scheduler/status", paths)
+        self.assertIn("/api/scheduler/trigger-all", paths)
         self.assertIn("/api/papers/run", paths)
 
     def test_offline_lifespan_starts_only_backup_job_in_persistent_root(self):

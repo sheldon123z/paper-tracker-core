@@ -71,7 +71,7 @@ describe('PdfViewer', () => {
     act(() => reactPdfState.documentProps.onLoadSuccess({ numPages: 1 }))
     act(() => reactPdfState.pageProps.onRenderError(new Error('canvas failed')))
     expect(screen.getByRole('alert')).toHaveTextContent(
-      '第 1 页渲染失败，请刷新页面或下载原文查看',
+      '第 1 页渲染失败，请刷新页面后重试',
     )
 
     act(() => reactPdfState.pageProps.onRenderSuccess())

@@ -9,7 +9,8 @@ const storeState = vi.hoisted(() => ({
 vi.mock('../config/runtime', () => ({
   RUNTIME_CAPABILITIES: {
     offlineMode: true,
-    rssSubscriptions: false,
+    rssSubscriptions: true,
+    paperPdfEgress: false,
     cloudDocumentParsing: false,
     remoteLlmProviders: false,
   },
@@ -47,7 +48,7 @@ vi.mock('../components/paper/viewer/ParseButton', () => ({
 import InlineFileViewer from '../components/paper/viewer/InlineFileViewer'
 
 describe('offline document capabilities', () => {
-  it('keeps local PDF viewing while hiding cloud parsing controls', () => {
+  it('keeps PDF bytes inside the service while hiding cloud parsing controls', () => {
     render(
       <InlineFileViewer
         paperId={42}
@@ -63,9 +64,9 @@ describe('offline document capabilities', () => {
       />,
     )
 
-    expect(screen.getByTestId('local-pdf-viewer')).toHaveTextContent(
-      '/api/papers/42/files/7/content',
-    )
+    expect(screen.queryByTestId('local-pdf-viewer')).not.toBeInTheDocument()
+    expect(screen.getByText(/服务已关闭向浏览器传输 PDF 原始文件/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '导出 PDF 原件' })).not.toBeInTheDocument()
     expect(screen.queryByText(/智能解析|MinerU|Doc2X/i)).not.toBeInTheDocument()
   })
 })

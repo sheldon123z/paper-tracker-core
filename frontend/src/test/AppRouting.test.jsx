@@ -72,6 +72,10 @@ vi.mock('../pages/Dashboard', () => ({
   default: () => <div>Dashboard view</div>,
 }))
 
+vi.mock('../pages/FeedsPage', () => ({
+  default: () => <div>RSS subscriptions view</div>,
+}))
+
 function LocationProbe() {
   const location = useLocation()
   return <output data-testid="location">{location.pathname}</output>
@@ -90,12 +94,12 @@ describe.each([
   ['desktop', false],
   ['mobile', true],
 ])('%s application routing', (_label, isMobile) => {
-  it('redirects the hidden RSS subscriptions route to the dashboard', async () => {
+  it('keeps the RSS subscriptions route visible', async () => {
     mobileMode.value = isMobile
     renderFeedsDeepLink()
 
-    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/'))
-    expect(await screen.findByText('Dashboard view')).toBeInTheDocument()
-    expect(screen.queryByText(/Feeds|订阅管理|RSS URL/i)).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/feeds'))
+    expect(await screen.findByText('RSS subscriptions view')).toBeInTheDocument()
+    expect(screen.queryByText('Dashboard view')).not.toBeInTheDocument()
   })
 })

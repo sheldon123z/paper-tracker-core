@@ -3,6 +3,7 @@ import { Drawer, Button } from '../../ui'
 import PdfViewer from './PdfViewer'
 import MarkdownViewer from './MarkdownViewer'
 import api from '../../../api'
+import { RUNTIME_CAPABILITIES } from '../../../config/runtime'
 
 const FILE_TYPE_LABELS = {
   pdf: 'PDF',
@@ -134,10 +135,15 @@ export default function FileDrawer({ isOpen, onClose, paperId, files, onFilesCha
               </Button>
             </div>
           )}
-          {activeFile?.file_type === 'pdf' && (
+          {activeFile?.file_type === 'pdf' && RUNTIME_CAPABILITIES.paperPdfEgress && (
             <PdfViewer
               fileUrl={`${baseUrl}/api/papers/${paperId}/files/${activeFile.id}/content`}
             />
+          )}
+          {activeFile?.file_type === 'pdf' && !RUNTIME_CAPABILITIES.paperPdfEgress && (
+            <div className="flex h-full items-center justify-center px-6 text-center text-sm" style={{ color: 'var(--text-secondary)' }}>
+              为防止论文库 PDF 原件被下载或导出，服务已关闭向浏览器传输 PDF 原始文件。
+            </div>
           )}
           {activeFile && activeFile.file_type !== 'pdf' && (
             <MarkdownViewer paperId={paperId} fileId={activeFile.id} />

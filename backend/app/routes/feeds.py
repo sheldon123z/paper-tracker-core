@@ -32,7 +32,6 @@ def list_feeds(user: User = Depends(get_current_user), db: Session = Depends(get
 
 @router.post("", response_model=FeedOut)
 def create_feed(payload: FeedCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    require_online_http("RSS feed subscriptions")
     visibility, department_id = normalize_new_scope(user, payload.visibility, payload.department_id)
     existing = db.query(Feed).filter(
         Feed.url == payload.url,
@@ -57,7 +56,6 @@ def create_feed(payload: FeedCreate, user: User = Depends(get_current_user), db:
 
 @router.put("/{feed_id}", response_model=FeedOut)
 def update_feed(feed_id: int, payload: FeedUpdate, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    require_online_http("RSS feed subscriptions")
     feed = get_visible_or_404(db, Feed, feed_id, user)
     require_writable(feed, user)
 

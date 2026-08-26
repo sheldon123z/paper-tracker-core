@@ -51,8 +51,16 @@ def _run_feed_job(feed_id: int) -> None:
 
 def schedule_feed(feed: Feed) -> None:
     """Add or replace the interval job for a feed."""
-    require_online("RSS scheduling")
     job_id = f"feed_{feed.id}"
+    if is_offline_mode():
+        if _scheduler.get_job(job_id):
+            _scheduler.remove_job(job_id)
+        logger.info(
+            "OFFLINE_MODE enabled; feed %d was saved without a scheduled fetch job.",
+            feed.id,
+        )
+        return
+
     interval_seconds = max(feed.fetch_interval or 18000, 60)
     next_run_time = _next_feed_run_time(feed, interval_seconds)
 
